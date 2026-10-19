@@ -54,7 +54,9 @@ const _unreserved =
 String _randomUrlSafe(int length) {
   final random = Random.secure();
   return List.generate(
-      length, (_) => _unreserved[random.nextInt(_unreserved.length)]).join();
+    length,
+    (_) => _unreserved[random.nextInt(_unreserved.length)],
+  ).join();
 }
 
 @immutable
@@ -119,8 +121,8 @@ class OidcSession {
     required this.tokens,
     http.Client? httpClient,
     DateTime Function()? clock,
-  })  : _http = httpClient ?? http.Client(),
-        _clock = clock ?? (() => DateTime.now().toUtc());
+  }) : _http = httpClient ?? http.Client(),
+       _clock = clock ?? (() => DateTime.now().toUtc());
 
   final OidcConfig config;
   final TokenStore tokens;
@@ -134,7 +136,8 @@ class OidcSession {
   Future<Map<String, Object?>> _metadata() async {
     if (_discovery != null) return _discovery!;
     final response = await _http.get(
-        Uri.parse('${config.issuer}/.well-known/openid-configuration'));
+      Uri.parse('${config.issuer}/.well-known/openid-configuration'),
+    );
     if (response.statusCode != 200) {
       throw OidcException('The sign-in service could not be reached');
     }
@@ -160,7 +163,10 @@ class OidcSession {
   }
 
   /// Completes sign-in from the redirect the browser returned.
-  Future<void> completeSignIn(AuthorisationRequest request, String callbackUrl) async {
+  Future<void> completeSignIn(
+    AuthorisationRequest request,
+    String callbackUrl,
+  ) async {
     final params = Uri.parse(callbackUrl).queryParameters;
     if (params['error'] != null) {
       throw OidcException('Sign-in was not completed: ${params['error']}');
@@ -182,8 +188,9 @@ class OidcSession {
   Future<void> _token(Map<String, String> form) async {
     final metadata = await _metadata();
     final response = await _http.post(
-        Uri.parse(metadata['token_endpoint'] as String),
-        body: form);
+      Uri.parse(metadata['token_endpoint'] as String),
+      body: form,
+    );
     if (response.statusCode != 200) {
       if (form['grant_type'] == 'refresh_token') {
         await tokens.delete();

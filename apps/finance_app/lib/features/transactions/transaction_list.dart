@@ -142,10 +142,14 @@ class _TransactionListState extends State<TransactionList> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          child: SearchBar(
-            hintText: 'Search payee, notes, amount or tag',
-            leading: const Icon(Icons.search),
-            onChanged: (q) => setState(() => _query = q.trim()),
+          child: Semantics(
+            label: 'Search transactions',
+            textField: true,
+            child: SearchBar(
+              hintText: 'Search payee, notes, amount or tag',
+              leading: const Icon(Icons.search),
+              onChanged: (q) => setState(() => _query = q.trim()),
+            ),
           ),
         ),
         if (_selected.isNotEmpty)
@@ -153,10 +157,12 @@ class _TransactionListState extends State<TransactionList> {
             color: Theme.of(context).colorScheme.secondaryContainer,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: Row(
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
                 children: [
                   Text('${_selected.length} selected'),
-                  const Spacer(),
                   TextButton.icon(
                     icon: const Icon(Icons.category_outlined),
                     label: const Text('Categorise'),

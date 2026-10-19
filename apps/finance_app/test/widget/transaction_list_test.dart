@@ -89,6 +89,37 @@ void main() {
     await tester.pump();
     expect(find.text('Fresh Grocer'), findsOneWidget);
   });
+
+  testWidgets('bulk actions wrap instead of clipping at 200% text on a phone', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(
+            size: Size(390, 844),
+            textScaler: TextScaler.linear(2),
+          ),
+          child: Scaffold(
+            body: TransactionList(
+              items: items(),
+              categories: world.chart.categories.toList(),
+              onOpen: (_) {},
+              onMarkReviewed: (_) {},
+              onCategorise: (_, _) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.longPress(find.text('Fresh Grocer'));
+    await tester.pump();
+    expect(find.text('1 selected'), findsOneWidget);
+    expect(find.text('Mark reviewed'), findsWidgets);
+  });
 }
 
 class _Log {

@@ -83,10 +83,14 @@ class _ReceiptsPageState extends State<ReceiptsPage> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: SearchBar(
-            hintText: 'Search merchant, amount, notes or receipt text',
-            leading: const Icon(Icons.search),
-            onChanged: (q) => setState(() => _query = q.trim()),
+          child: Semantics(
+            label: 'Search receipts',
+            textField: true,
+            child: SearchBar(
+              hintText: 'Search merchant, amount, notes or receipt text',
+              leading: const Icon(Icons.search),
+              onChanged: (q) => setState(() => _query = q.trim()),
+            ),
           ),
         ),
         Padding(

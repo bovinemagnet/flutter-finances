@@ -266,7 +266,9 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
             style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
         const SizedBox(height: 16),
-        Row(
+        OverflowBar(
+          alignment: MainAxisAlignment.spaceBetween,
+          overflowAlignment: OverflowBarAlignment.end,
           children: [
             TextButton.icon(
               icon: const Icon(Icons.delete_outline),
@@ -297,7 +299,6 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
                 }
               },
             ),
-            const Spacer(),
             FilledButton(onPressed: _submit, child: const Text('Confirm')),
           ],
         ),

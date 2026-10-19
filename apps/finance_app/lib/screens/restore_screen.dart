@@ -137,7 +137,9 @@ class _RestoreScreenState extends State<RestoreScreen> {
                 'the backup was made; they are included as entries, not replayed.',
               ),
             const SizedBox(height: 16),
-            Row(
+            OverflowBar(
+              alignment: MainAxisAlignment.spaceBetween,
+              overflowAlignment: OverflowBarAlignment.end,
               children: [
                 TextButton(
                   onPressed: () async {
@@ -146,7 +148,6 @@ class _RestoreScreenState extends State<RestoreScreen> {
                   },
                   child: const Text('Discard'),
                 ),
-                const Spacer(),
                 FilledButton(
                   onPressed: preview.canActivate
                       ? () async => widget.onRestored(await staged.activate())

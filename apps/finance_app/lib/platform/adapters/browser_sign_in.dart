@@ -8,13 +8,16 @@ import '../capabilities.dart';
 const desktopRedirectPort = 43823;
 const mobileRedirectScheme = 'com.paulsnow.finance.app';
 
-String redirectUriFor(PlatformCapabilities capabilities) => capabilities.isDesktop
+String redirectUriFor(PlatformCapabilities capabilities) =>
+    capabilities.isDesktop
     ? 'http://localhost:$desktopRedirectPort/callback'
     : '$mobileRedirectScheme:/oauth';
 
 /// Runs the browser part of sign-in and completes the session.
 Future<void> signInWithBrowser(
-    OidcSession session, PlatformCapabilities capabilities) async {
+  OidcSession session,
+  PlatformCapabilities capabilities,
+) async {
   final request = await session.authorisationRequest();
   final callback = await FlutterWebAuth2.authenticate(
     url: request.uri.toString(),
