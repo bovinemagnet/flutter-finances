@@ -264,6 +264,54 @@ it again with every module's purger at startup and every 15 minutes.
 **Errors.** Non-2xx responses are `{"error", "message", "correlationId"}`;
 every response carries `X-Correlation-Id`.
 
+## Optional cloud extraction (AUTO 02, P1)
+
+Cloud extraction of receipt text is off unless the deployment configures a
+provider and a workspace owner consents. Its consent is separate from
+cloud sync consent (SEC 05). No provider is configured by default.
+
+**Consent.** `GET /v1/workspaces/{id}/extraction-consent` (owners only;
+another member is `403 OWNER_REQUIRED`, a non-member `404
+WORKSPACE_NOT_FOUND`) returns `{"workspaceId", "status": "none | granted |
+withdrawn", "providerName", "disclosedRetention", "grantedAt",
+"withdrawnAt", "available", "offeredProvider", "offeredRetention"}`.
+`available` is false when no provider is configured; the client shows
+`offeredProvider` and `offeredRetention` before asking for consent.
+`PUT` of the same path with `{"granted": true, "providerName",
+"disclosedRetention"}` records consent; both values must repeat what was
+offered (`400 PROVIDER_MISMATCH`, `400 RETENTION_MISMATCH`), so a
+recorded consent always names the provider and retention the owner saw,
+and with no provider it is `409 EXTRACTION_UNAVAILABLE`. `{"granted":
+false}` withdraws consent and deletes every extraction result of the
+workspace in the same transaction. Both answer the consent view and are
+audited (`extraction.consent_granted`, `extraction.consent_withdrawn`).
+Consent covers one named provider: if the deployment's provider changes,
+nothing is sent until an owner consents again.
+
+**Extraction.** When the scan releases a `source` asset while consent to
+the configured provider stands, the server queues a `receipts.extract`
+job. The job checks consent again, sends the document to the isolated
+provider adapter and stores what it returns; storing locks the consent
+record, so a result is never kept after a withdrawal. The adapter returns
+recognised text and lines only. It has no access to commands, the ledger,
+matching or other workspace data, and it returns no amounts, merchants,
+dates or actions. Its job result holds identifiers and a status
+(`extracted` or `skipped`), never text.
+
+**Results.** `GET /v1/receipts/{receiptId}/extraction` returns
+`{"receiptId", "untrusted": true, "results": [{"assetId", "provider",
+"text", "lines", "extractedAt"}]}` to members who may see the receipt.
+Another workspace's receipt, a hidden receipt or a deleted receipt is
+`404 NOT_FOUND`, and a receipt without results is `404
+EXTRACTION_NOT_FOUND`. Receipt text is untrusted data: the server removes
+control characters (keeping line breaks and tabs in `text`) and bounds it
+to 20,000 characters, 500 lines and 500 characters per line, but never
+interprets it. Clients display it as plain text and may use it only to
+pre-fill a draft the user reviews; it can never post, change an amount or
+approve a match. Results are deleted when consent is withdrawn, when the
+receipt entity is deleted (in the deleting command's transaction) and by
+the workspace deletion job.
+
 ## Entity JSON
 
 Journal:
