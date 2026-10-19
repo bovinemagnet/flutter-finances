@@ -33,3 +33,5 @@ export 'src/store/workspace.dart'
         WorkspaceNotActiveException,
         WorkspaceNotFoundException,
         WorkspaceSettings;
+export 'src/vault/asset_record.dart' hide uploadStateFromWire, uploadStateWire;
+export 'src/vault/receipt_vault.dart';

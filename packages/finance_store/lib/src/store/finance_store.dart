@@ -10,6 +10,7 @@ import '../db/database.dart';
 import '../db/migrations.dart';
 import '../db/schema.dart';
 import '../db/search_index.dart';
+import '../vault/receipt_vault.dart';
 import 'command_effects.dart';
 import 'entity_ref.dart';
 import 'ledger_queries.dart';
@@ -218,7 +219,10 @@ class FinanceStore {
     descriptor.write(directory);
   }
 
-  void _afterOpen() {}
+  void _afterOpen() => vault.removeOrphans();
+
+  /// Encrypted receipt files of this workspace.
+  late final ReceiptVault vault = ReceiptVault(_ctx);
 
   WorkspaceSettings get settings => _ctx.settings;
 
