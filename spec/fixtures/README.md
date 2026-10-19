@@ -6,6 +6,13 @@ These JSON files are the executable contract between the Dart client
 on any operation they do not implement. Change a rule by changing a fixture
 first.
 
+Files in `client-only/` hold rules that only the client implements so far
+(currently `imports-p1.json`, the P1 OFX and QIF parsers). The Dart runner
+loads them as well; the Java runner reads only this top-level directory, so
+it does not see them. A Java implementation of these operations is not
+required yet. When one is added, move the file up into this directory so both
+runners check it.
+
 Each file has `schemaVersion` (currently `1`), an `area`, and `cases`, each
 with a unique `id`, an `op`, an `input` and an `expect` object. Amounts in
 `ledger.scenario` and planning operations are decimal strings parsed with the
@@ -155,6 +162,95 @@ Cases live in `documents.json`. Amounts are integer minor units.
   dictionary names `/Encrypt`. `readable` needs `%%EOF` in the last 1024
   characters, a `startxref`, and either a page count or an `/ObjStm`
   that may hide the page tree. Receipts use it for the 10-page limit.
+
+## P1 import operations (client only)
+
+Cases live in `client-only/imports-p1.json` and run in the Dart suite only;
+no Java handler exists yet. Both parsers produce the same rows and errors as
+`csv.parse` (`{row, date, amountMinor, description, reference?}` and
+`{row, code}`), so their rows go through the same preview, fingerprint
+(`csv.fingerprint`) and commit rules. Input `exponent` defaults to 2. Only
+the keys present in `expect` are compared. Error code `UNRECOGNISED_FORMAT`
+on row `0` (the file as a whole) means the text is not that format, and
+nothing else is reported.
+
+`ofx.parse`
+: Input `{text, accountId?, exponent?}`. Output `{accountId, bankId,
+  accountType, isCreditCard, currency, ledgerBalanceMinor,
+  ledgerBalanceDate, statementStart, statementEnd, otherAccountIds, rows,
+  errors}`.
+
+  *Syntax*: OFX 1.x SGML and 2.x XML are read alike, starting at the first
+  `<OFX>` (anything before it, such as the 1.x header or XML declarations,
+  is ignored; no `<OFX>` is `UNRECOGNISED_FORMAT`). Tag names are matched
+  without regard to case. An element followed by text is a value and ends
+  at the next tag (SGML does not close it); a closing tag closes every open
+  element up to the matching one and is ignored when there is none. The
+  values are trimmed and `&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;` and
+  numeric character references are decoded.
+
+  *Statement*: every `STMTRS` (bank) and `CCSTMTRS` (credit card) in the
+  file, in order; none is `UNRECOGNISED_FORMAT`. The account id is
+  `BANKACCTFROM/ACCTID` or `CCACCTFROM/ACCTID`. The chosen statement is the
+  one whose account id equals `accountId`, otherwise the first.
+  `otherAccountIds` lists the others' account ids. `bankId` and
+  `accountType` are `BANKID` and `ACCTTYPE`; `currency` is `CURDEF`;
+  `ledgerBalanceMinor` and `ledgerBalanceDate` are `LEDGERBAL/BALAMT`
+  (signed as printed, so a card balance owed is negative) and
+  `LEDGERBAL/DTASOF`; `statementStart` and `statementEnd` are
+  `BANKTRANLIST/DTSTART` and `DTEND`. Missing values are null.
+
+  *Rows*: each `STMTTRN` of the statement in order; `row` is its 1-based
+  position. Dates are the first eight characters of `DTPOSTED` as
+  `YYYYMMDD` (the bank's local date; the time and zone are ignored).
+  `TRNAMT` is already signed from the account's point of view: negative is
+  money leaving, including card purchases. It uses `.` as the decimal
+  separator, or `,` when it has no `.`; fraction digits beyond the exponent
+  are accepted only when they are all zero; otherwise the `csv.parse`
+  amount-cell rules apply. `description` is `NAME` (or `PAYEE/NAME`),
+  followed by ` - ` and `MEMO` unless the memo is empty or already
+  contained in the name ignoring case; the memo alone when there is no
+  name. `reference` is the trimmed `FITID`, omitted when empty, so
+  fingerprints use it.
+
+  *Errors*, at most one per transaction, in this order: `MISSING_FIELD` (no
+  `DTPOSTED`), `BAD_DATE` (not eight leading digits forming a real date),
+  `BAD_AMOUNT`, `MISSING_AMOUNT` (no `TRNAMT` value), `ZERO_AMOUNT`.
+
+`qif.parse`
+: Input `{text, dateConvention?, decimalSeparator?, exponent?}` where
+  `dateConvention` is `dayMonth` (default) or `monthDay` and
+  `decimalSeparator` defaults to `.`. Output `{accountType, rows, errors}`.
+
+  *Sections*: lines are split at CRLF, LF or CR, trailing whitespace is
+  removed and blank lines are skipped. A line starting `!Type:` begins a
+  section; `Bank`, `CCard`, `Cash`, `Oth A` and `Oth L` (any case) are
+  transaction sections and `accountType` is the first one as printed. Any
+  other `!` line begins a skipped section (`!Account`, `!Type:Cat`, ...),
+  except `!Option:` and `!Clear:` lines, which change nothing. A file
+  without a transaction section is `UNRECOGNISED_FORMAT`.
+
+  *Records* end at a line starting `^` or at the end of the file. Each
+  non-empty record in a transaction section is a row; `row` is its 1-based
+  position among them. The first line starting with each code is used:
+  `D` date, `T` amount (else `U`), `P` payee, `M` memo; the rest (`N`, `L`,
+  `C`, splits) is kept only as raw evidence. `description` joins payee and
+  memo as for OFX. There is never a `reference`: `N` holds cheque numbers
+  or words such as `ATM`, which are not unique.
+
+  *Dates*: spaces are removed. `yyyy-m-d` (with `-`, `/` or `.`) is read as
+  written. Otherwise `a?b?y` with `/`, `-` or `.` between the parts, where
+  `a` is the day for `dayMonth` and the month for `monthDay`. An
+  apostrophe before the year (`10/19'26`, `1/ 9' 5`) means 2000 plus a one
+  or two digit year; after any other separator a two-digit year below 70
+  is 20yy and from 70 is 19yy; four digits are as written; other lengths
+  are bad dates.
+
+  *Amounts* follow the `csv.parse` amount-cell rules with
+  `decimalSeparator`.
+
+  *Errors*, at most one per record, in this order: `MISSING_FIELD` (no
+  `D`), `BAD_DATE`, `BAD_AMOUNT`, `MISSING_AMOUNT`, `ZERO_AMOUNT`.
 
 ## Planning operations
 

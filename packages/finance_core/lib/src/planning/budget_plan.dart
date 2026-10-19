@@ -5,9 +5,56 @@ import '../time/local_date.dart';
 import 'budget_template.dart';
 import 'periods.dart';
 
-/// Needs/Wants/Savings groups, or plain categories (BUD 01). Both modes use
-/// the same versions and allocations; category-only plans have no groups.
-enum BudgetMode { groups, categoryOnly }
+/// Needs/Wants/Savings groups, plain categories (BUD 01), or zero-based
+/// (P1). Every mode uses the same versions and allocations; category-only
+/// and zero-based plans have no groups.
+enum BudgetMode {
+  groups,
+  categoryOnly,
+
+  /// Every dollar of income is assigned to categories, goals or debt;
+  /// money left unassigned is an error to fix, not a buffer. See
+  /// [checkZeroBased].
+  zeroBased,
+}
+
+/// Whether a zero-based plan assigns exactly its income.
+enum ZeroBasedState { balanced, unassigned, overAssigned }
+
+/// Income against everything assigned in a zero-based plan.
+@immutable
+class ZeroBasedCheck {
+  const ZeroBasedCheck({required this.income, required this.assigned});
+
+  final Money income;
+
+  /// Planned amounts of every allocation (categories, goals and loan
+  /// principal), plus approved adjustments when checked for a period.
+  final Money assigned;
+
+  /// `income − assigned`: positive is unassigned, negative over-assigned.
+  Money get difference => income - assigned;
+
+  ZeroBasedState get state => difference.isZero
+      ? ZeroBasedState.balanced
+      : difference.isPositive
+      ? ZeroBasedState.unassigned
+      : ZeroBasedState.overAssigned;
+
+  /// Unassigned and over-assigned money are both errors in this mode.
+  bool get isError => state != ZeroBasedState.balanced;
+}
+
+/// Checks that [version] assigns every dollar of its income (P1
+/// zero-based mode). [adjustments] adds approved changes for one period.
+ZeroBasedCheck checkZeroBased(BudgetVersion version, {Money? adjustments}) {
+  var assigned = version.allocations.fold(
+    Money.zero(version.income.currency),
+    (sum, a) => sum + a.planned,
+  );
+  if (adjustments != null) assigned += adjustments;
+  return ZeroBasedCheck(income: version.income, assigned: assigned);
+}
 
 /// A budget group such as Needs, Wants or Savings.
 @immutable
@@ -248,9 +295,8 @@ class BudgetPlan {
          <BudgetVersion>[...versions]
            ..sort((a, b) => a.effectiveFrom.compareTo(b.effectiveFrom)),
        ) {
-    if (mode == BudgetMode.categoryOnly &&
-        versions.any((v) => v.groups.isNotEmpty)) {
-      throw ArgumentError('Category-only budgets have no groups');
+    if (mode != BudgetMode.groups && versions.any((v) => v.groups.isNotEmpty)) {
+      throw ArgumentError('Only group budgets have groups');
     }
   }
 

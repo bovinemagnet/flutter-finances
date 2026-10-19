@@ -13,6 +13,8 @@ final Map<String, FixtureOp> documentsOps = {
   'csv.sanitise': _csvSanitise,
   'content.sniff': _contentSniff,
   'pdf.inspect': _pdfInspect,
+  'ofx.parse': _ofxParse,
+  'qif.parse': _qifParse,
 };
 
 void _pdfInspect(Map<String, dynamic> input, Map<String, dynamic> expected) {
@@ -90,4 +92,65 @@ void _contentSniff(Map<String, dynamic> input, Map<String, dynamic> expected) {
         : {'contentType': type.mimeType};
   }
   expect(actual, expected);
+}
+
+List<Map<String, Object?>> _rows(CsvParseResult result) => [
+  for (final row in result.rows)
+    {
+      'row': row.rowNumber,
+      'date': row.date.toString(),
+      'amountMinor': row.amount.minor,
+      'description': row.description,
+      if (row.reference != null) 'reference': row.reference,
+    },
+];
+
+List<Map<String, Object?>> _errors(CsvParseResult result) => [
+  for (final error in result.errors)
+    {'row': error.row, 'code': error.code.code},
+];
+
+/// Compares the keys present in [expected] only.
+void _expectKeys(Map<String, Object?> actual, Map<String, dynamic> expected) {
+  expect({for (final key in expected.keys) key: actual[key]}, expected);
+}
+
+void _ofxParse(Map<String, dynamic> input, Map<String, dynamic> expected) {
+  final currency = Currency('AUD', input['exponent'] as int? ?? 2);
+  final result = parseOfx(
+    input['text'] as String,
+    currency,
+    accountId: input['accountId'] as String?,
+  );
+  _expectKeys({
+    'accountId': result.accountId,
+    'bankId': result.bankId,
+    'accountType': result.accountType,
+    'isCreditCard': result.isCreditCard,
+    'currency': result.currencyCode,
+    'ledgerBalanceMinor': result.ledgerBalance?.minor,
+    'ledgerBalanceDate': result.ledgerBalanceDate?.toString(),
+    'statementStart': result.statementStart?.toString(),
+    'statementEnd': result.statementEnd?.toString(),
+    'otherAccountIds': result.otherAccountIds,
+    'rows': _rows(result),
+    'errors': _errors(result),
+  }, expected);
+}
+
+void _qifParse(Map<String, dynamic> input, Map<String, dynamic> expected) {
+  final currency = Currency('AUD', input['exponent'] as int? ?? 2);
+  final result = parseQif(
+    input['text'] as String,
+    currency,
+    dateConvention: DateConvention.values.byName(
+      input['dateConvention'] as String? ?? 'dayMonth',
+    ),
+    decimalSeparator: input['decimalSeparator'] as String? ?? '.',
+  );
+  _expectKeys({
+    'accountType': result.accountType,
+    'rows': _rows(result),
+    'errors': _errors(result),
+  }, expected);
 }

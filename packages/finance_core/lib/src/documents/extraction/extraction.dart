@@ -30,7 +30,20 @@ enum UncertaintyReason {
   taxImplausible('TAX_IMPLAUSIBLE'),
   missingMerchant('MISSING_MERCHANT'),
   missingDate('MISSING_DATE'),
-  missingTotal('MISSING_TOTAL');
+  missingTotal('MISSING_TOTAL'),
+
+  /// Item-level extraction (P1): the items do not add up to the printed
+  /// subtotal or total.
+  itemsDoNotReconcile('ITEMS_DO_NOT_RECONCILE'),
+
+  /// An item's quantity times unit price is not its line total.
+  itemArithmeticMismatch('ITEM_ARITHMETIC_MISMATCH'),
+
+  /// No purchased lines were found.
+  noItemsFound('NO_ITEMS_FOUND'),
+
+  /// Neither a subtotal nor a total was printed to check the items with.
+  itemsNotChecked('ITEMS_NOT_CHECKED');
 
   const UncertaintyReason(this.code);
   final String code;

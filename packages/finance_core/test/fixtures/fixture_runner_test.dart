@@ -8,14 +8,15 @@ import 'ops.dart';
 /// Runs every case in the shared `spec/fixtures` directory. The Java server
 /// runs the same files, so both implementations agree on financial rules.
 void main() {
-  final dir = Directory('${_repoRoot()}/spec/fixtures');
-  final files =
-      dir
+  // `client-only` holds fixtures for rules the server does not implement
+  // yet; the Java runner only reads the top-level directory.
+  final files = [
+    for (final path in ['spec/fixtures', 'spec/fixtures/client-only'])
+      ...Directory('${_repoRoot()}/$path')
           .listSync()
           .whereType<File>()
-          .where((f) => f.path.endsWith('.json'))
-          .toList()
-        ..sort((a, b) => a.path.compareTo(b.path));
+          .where((f) => f.path.endsWith('.json')),
+  ]..sort((a, b) => a.path.compareTo(b.path));
 
   for (final file in files) {
     final document =

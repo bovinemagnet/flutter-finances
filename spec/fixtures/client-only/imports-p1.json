@@ -1,0 +1,326 @@
+{
+  "schemaVersion": 1,
+  "area": "imports-p1",
+  "cases": [
+    {
+      "id": "OFX-sgml-bank-statement",
+      "op": "ofx.parse",
+      "input": {
+        "text": "OFXHEADER:100\nDATA:OFXSGML\nVERSION:102\nCHARSET:1252\n\n<OFX>\n<BANKMSGSRSV1><STMTTRNRS><TRNUID>1<STATUS><CODE>0<SEVERITY>INFO</STATUS>\n<STMTRS><CURDEF>AUD\n<BANKACCTFROM><BANKID>062000<ACCTID>12345678<ACCTTYPE>CHECKING</BANKACCTFROM>\n<BANKTRANLIST><DTSTART>20261001<DTEND>20261019\n<STMTTRN>\n<TRNTYPE>DEBIT\n<DTPOSTED>20261003120000[+10:AEST]\n<TRNAMT>-45.20\n<FITID>2026100301\n<NAME>WOOLWORTHS 1234\n<MEMO>Card purchase\n</STMTTRN>\n<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261015<TRNAMT>2500.00<FITID> 2026101502 <NAME>ACME &amp; CO</STMTTRN>\n<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261018<TRNAMT>-12.50<FITID>2026101803<NAME>CAFE<MEMO>cafe</STMTTRN>\n<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261018<TRNAMT>-7.00<MEMO>ATM FEE</STMTTRN>\n</BANKTRANLIST>\n<LEDGERBAL><BALAMT>1234.56<DTASOF>20261019</LEDGERBAL>\n</STMTRS></STMTTRNRS></BANKMSGSRSV1>\n</OFX>\n"
+      },
+      "expect": {
+        "accountId": "12345678",
+        "bankId": "062000",
+        "accountType": "CHECKING",
+        "isCreditCard": false,
+        "currency": "AUD",
+        "ledgerBalanceMinor": 123456,
+        "ledgerBalanceDate": "2026-10-19",
+        "statementStart": "2026-10-01",
+        "statementEnd": "2026-10-19",
+        "otherAccountIds": [],
+        "rows": [
+          {
+            "row": 1,
+            "date": "2026-10-03",
+            "amountMinor": -4520,
+            "description": "WOOLWORTHS 1234 - Card purchase",
+            "reference": "2026100301"
+          },
+          {
+            "row": 2,
+            "date": "2026-10-15",
+            "amountMinor": 250000,
+            "description": "ACME & CO",
+            "reference": "2026101502"
+          },
+          {
+            "row": 3,
+            "date": "2026-10-18",
+            "amountMinor": -1250,
+            "description": "CAFE",
+            "reference": "2026101803"
+          },
+          {
+            "row": 4,
+            "date": "2026-10-18",
+            "amountMinor": -700,
+            "description": "ATM FEE"
+          }
+        ],
+        "errors": []
+      }
+    },
+    {
+      "id": "OFX-xml-credit-card",
+      "op": "ofx.parse",
+      "input": {
+        "text": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<?OFX OFXHEADER=\"200\" VERSION=\"220\" SECURITY=\"NONE\" OLDFILEUID=\"NONE\" NEWFILEUID=\"NONE\"?>\n<OFX>\n <CREDITCARDMSGSRSV1><CCSTMTTRNRS><TRNUID>1</TRNUID><CCSTMTRS>\n  <CURDEF>AUD</CURDEF>\n  <CCACCTFROM><ACCTID>4111XXXXXXXX1111</ACCTID></CCACCTFROM>\n  <BANKTRANLIST><DTSTART>20261001</DTSTART><DTEND>20261031</DTEND>\n   <STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20261005</DTPOSTED><TRNAMT>-89.95</TRNAMT><FITID>CC-1</FITID><NAME>JB HI-FI</NAME><MEMO></MEMO></STMTTRN>\n   <STMTTRN><TRNTYPE>CREDIT</TRNTYPE><DTPOSTED>20261020</DTPOSTED><TRNAMT>500.00</TRNAMT><FITID>CC-2</FITID><PAYEE><NAME>PAYMENT THANK YOU</NAME></PAYEE></STMTTRN>\n   <STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20261021</DTPOSTED><TRNAMT>-3,50</TRNAMT><FITID>CC-3</FITID><NAME>PARKING</NAME></STMTTRN>\n  </BANKTRANLIST>\n  <LEDGERBAL><BALAMT>-1520.40</BALAMT><DTASOF>20261031</DTASOF></LEDGERBAL>\n </CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1>\n</OFX>\n"
+      },
+      "expect": {
+        "accountId": "4111XXXXXXXX1111",
+        "bankId": null,
+        "accountType": null,
+        "isCreditCard": true,
+        "currency": "AUD",
+        "ledgerBalanceMinor": -152040,
+        "ledgerBalanceDate": "2026-10-31",
+        "statementStart": "2026-10-01",
+        "statementEnd": "2026-10-31",
+        "otherAccountIds": [],
+        "rows": [
+          {
+            "row": 1,
+            "date": "2026-10-05",
+            "amountMinor": -8995,
+            "description": "JB HI-FI",
+            "reference": "CC-1"
+          },
+          {
+            "row": 2,
+            "date": "2026-10-20",
+            "amountMinor": 50000,
+            "description": "PAYMENT THANK YOU",
+            "reference": "CC-2"
+          },
+          {
+            "row": 3,
+            "date": "2026-10-21",
+            "amountMinor": -350,
+            "description": "PARKING",
+            "reference": "CC-3"
+          }
+        ],
+        "errors": []
+      }
+    },
+    {
+      "id": "OFX-row-errors",
+      "op": "ofx.parse",
+      "input": {
+        "text": "<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS>\n<BANKACCTFROM><ACCTID>1</BANKACCTFROM><BANKTRANLIST>\n<STMTTRN><DTPOSTED>2026-10-03<TRNAMT>-1.00<FITID>a</STMTTRN>\n<STMTTRN><DTPOSTED>20261003<TRNAMT>abc<FITID>b</STMTTRN>\n<STMTTRN><TRNAMT>-1.00<FITID>c</STMTTRN>\n<STMTTRN><DTPOSTED>20261003<FITID>d</STMTTRN>\n<STMTTRN><DTPOSTED>20261003<TRNAMT>0.00<FITID>e</STMTTRN>\n<STMTTRN><DTPOSTED>20261003<TRNAMT>-1.5000<FITID>f</STMTTRN>\n<STMTTRN><DTPOSTED>20260231<TRNAMT>-1.00<FITID>g</STMTTRN>\n</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>"
+      },
+      "expect": {
+        "accountId": "1",
+        "bankId": null,
+        "accountType": null,
+        "isCreditCard": false,
+        "currency": null,
+        "ledgerBalanceMinor": null,
+        "ledgerBalanceDate": null,
+        "statementStart": null,
+        "statementEnd": null,
+        "otherAccountIds": [],
+        "rows": [
+          {
+            "row": 6,
+            "date": "2026-10-03",
+            "amountMinor": -150,
+            "description": "",
+            "reference": "f"
+          }
+        ],
+        "errors": [
+          {
+            "row": 1,
+            "code": "BAD_DATE"
+          },
+          {
+            "row": 2,
+            "code": "BAD_AMOUNT"
+          },
+          {
+            "row": 3,
+            "code": "MISSING_FIELD"
+          },
+          {
+            "row": 4,
+            "code": "MISSING_AMOUNT"
+          },
+          {
+            "row": 5,
+            "code": "ZERO_AMOUNT"
+          },
+          {
+            "row": 7,
+            "code": "BAD_DATE"
+          }
+        ]
+      }
+    },
+    {
+      "id": "OFX-chooses-account-statement",
+      "op": "ofx.parse",
+      "input": {
+        "text": "<OFX><BANKMSGSRSV1>\n<STMTTRNRS><STMTRS><BANKACCTFROM><ACCTID>111</BANKACCTFROM><BANKTRANLIST>\n<STMTTRN><DTPOSTED>20261001<TRNAMT>-1.00<FITID>x1<NAME>ONE</STMTTRN>\n</BANKTRANLIST></STMTRS></STMTTRNRS>\n<STMTTRNRS><STMTRS><BANKACCTFROM><ACCTID>222</BANKACCTFROM><BANKTRANLIST>\n<STMTTRN><DTPOSTED>20261002<TRNAMT>-2.00<FITID>y1<NAME>TWO</STMTTRN>\n</BANKTRANLIST></STMTRS></STMTTRNRS>\n</BANKMSGSRSV1></OFX>",
+        "accountId": "222"
+      },
+      "expect": {
+        "accountId": "222",
+        "bankId": null,
+        "accountType": null,
+        "isCreditCard": false,
+        "currency": null,
+        "ledgerBalanceMinor": null,
+        "ledgerBalanceDate": null,
+        "statementStart": null,
+        "statementEnd": null,
+        "otherAccountIds": [
+          "111"
+        ],
+        "rows": [
+          {
+            "row": 1,
+            "date": "2026-10-02",
+            "amountMinor": -200,
+            "description": "TWO",
+            "reference": "y1"
+          }
+        ],
+        "errors": []
+      }
+    },
+    {
+      "id": "OFX-not-ofx",
+      "op": "ofx.parse",
+      "input": {
+        "text": "Date,Description,Amount\n03/10/2026,Coffee,-4.50\n"
+      },
+      "expect": {
+        "rows": [],
+        "errors": [
+          {
+            "row": 0,
+            "code": "UNRECOGNISED_FORMAT"
+          }
+        ]
+      }
+    },
+    {
+      "id": "QIF-bank-day-month",
+      "op": "qif.parse",
+      "input": {
+        "text": "!Type:Bank\nD03/10/2026\nT-45.20\nPWOOLWORTHS 1234\nMCard purchase\nN1001\nLGroceries\n^\nD15/10'26\nU2,500.00\nT2,500.00\nPACME PAYROLL\n^\nD18/10/2026\nT-12.50\nPCAFE\n^\nD18/10/2026\nT-12.50\nPCAFE\n^\n"
+      },
+      "expect": {
+        "accountType": "Bank",
+        "rows": [
+          {
+            "row": 1,
+            "date": "2026-10-03",
+            "amountMinor": -4520,
+            "description": "WOOLWORTHS 1234 - Card purchase"
+          },
+          {
+            "row": 2,
+            "date": "2026-10-15",
+            "amountMinor": 250000,
+            "description": "ACME PAYROLL"
+          },
+          {
+            "row": 3,
+            "date": "2026-10-18",
+            "amountMinor": -1250,
+            "description": "CAFE"
+          },
+          {
+            "row": 4,
+            "date": "2026-10-18",
+            "amountMinor": -1250,
+            "description": "CAFE"
+          }
+        ],
+        "errors": []
+      }
+    },
+    {
+      "id": "QIF-card-month-day-years",
+      "op": "qif.parse",
+      "input": {
+        "text": "!Option:AutoSwitch\n!Account\nNVisa\nTCCard\n^\n!Clear:AutoSwitch\n!Type:Cat\nNGroceries\nE\n^\n!Type:CCard\nD10/ 5'26\nT-20.00\nPSHELL\n^\nD12/31/99\nT(5.00)\nMREFUND\n^\nD1/1/05\nU-1.00\nPFEE\n",
+        "dateConvention": "monthDay"
+      },
+      "expect": {
+        "accountType": "CCard",
+        "rows": [
+          {
+            "row": 1,
+            "date": "2026-10-05",
+            "amountMinor": -2000,
+            "description": "SHELL"
+          },
+          {
+            "row": 2,
+            "date": "1999-12-31",
+            "amountMinor": -500,
+            "description": "REFUND"
+          },
+          {
+            "row": 3,
+            "date": "2005-01-01",
+            "amountMinor": -100,
+            "description": "FEE"
+          }
+        ],
+        "errors": []
+      }
+    },
+    {
+      "id": "QIF-row-errors",
+      "op": "qif.parse",
+      "input": {
+        "text": "!Type:Bank\nT-1.00\nPNO DATE\n^\nD31/02/2026\nT-1.00\n^\nD01/02/2026\nTabc\n^\nD01/02/2026\nPNO AMOUNT\n^\nD01/02/2026\nT0.00\n^\nD01/02/2026\nT-2.00\n"
+      },
+      "expect": {
+        "accountType": "Bank",
+        "rows": [
+          {
+            "row": 6,
+            "date": "2026-02-01",
+            "amountMinor": -200,
+            "description": ""
+          }
+        ],
+        "errors": [
+          {
+            "row": 1,
+            "code": "MISSING_FIELD"
+          },
+          {
+            "row": 2,
+            "code": "BAD_DATE"
+          },
+          {
+            "row": 3,
+            "code": "BAD_AMOUNT"
+          },
+          {
+            "row": 4,
+            "code": "MISSING_AMOUNT"
+          },
+          {
+            "row": 5,
+            "code": "ZERO_AMOUNT"
+          }
+        ]
+      }
+    },
+    {
+      "id": "QIF-not-qif",
+      "op": "qif.parse",
+      "input": {
+        "text": "D03/10/2026\nT-1.00\n^\n"
+      },
+      "expect": {
+        "accountType": null,
+        "rows": [],
+        "errors": [
+          {
+            "row": 0,
+            "code": "UNRECOGNISED_FORMAT"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -87,6 +87,7 @@ class BudgetPeriodEvaluation {
     required List<BudgetLine> lines,
     required List<BudgetLine> unbudgeted,
     required List<BudgetGroupLine> groups,
+    this.zeroBased,
   }) : lines = List.unmodifiable(lines),
        unbudgeted = List.unmodifiable(unbudgeted),
        groups = List.unmodifiable(groups);
@@ -100,6 +101,11 @@ class BudgetPeriodEvaluation {
   /// Expense categories with activity but no allocation (planned zero).
   final List<BudgetLine> unbudgeted;
   final List<BudgetGroupLine> groups;
+
+  /// For a zero-based plan with a version in force: income against what
+  /// is assigned, including approved adjustments for this period. Any
+  /// difference is an error state. Null in other modes.
+  final ZeroBasedCheck? zeroBased;
 
   AllocationSummary? get summary => version?.summary();
 
@@ -192,6 +198,14 @@ class BudgetEvaluator {
         for (final group in version?.groups ?? const <BudgetGroup>[])
           _groupLine(group, lines.where((l) => l.groupId == group.id)),
       ],
+      zeroBased: plan.mode == BudgetMode.zeroBased && version != null
+          ? checkZeroBased(
+              version,
+              adjustments: _adjustments
+                  .where((a) => a.periodStart == period.start)
+                  .fold<Money>(_zero, (sum, a) => sum + a.amount),
+            )
+          : null,
     );
   }
 
