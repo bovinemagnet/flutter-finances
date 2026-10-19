@@ -109,6 +109,35 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
+  Future<void> _exportReceipts(BuildContext context) async {
+    final state = AppScope.of(context);
+    final services = AppScope.servicesOf(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final path = await services.fileImporter.chooseDirectory();
+    if (path == null) return;
+    final count = await state.receipts.exportOriginals(
+      Directory('$path/receipts-${state.today()}'),
+    );
+    messenger.showSnackBar(
+      SnackBar(content: Text('Exported $count receipt files with a manifest')),
+    );
+  }
+
+  Future<void> _freeSpace(BuildContext context, int bytes) async {
+    final state = AppScope.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await state.store.vault.evictToFree(bytes);
+    state.refresh();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          'Removed ${result.evictedCount} copies already safe on the server '
+          '(${_size(result.freedBytes)}). They download again when opened.',
+        ),
+      ),
+    );
+  }
+
   Future<void> _import(BuildContext context) async {
     final services = AppScope.servicesOf(context);
     final file = await services.fileImporter.pickStatement();
@@ -270,6 +299,42 @@ class SettingsPage extends StatelessWidget {
           ),
           onTap: () => _backup(context),
         ),
+        ListTile(
+          leading: const Icon(Icons.folder_zip_outlined),
+          title: const Text('Export receipts'),
+          subtitle: const Text('Original files with a manifest'),
+          onTap: () => _exportReceipts(context),
+        ),
+        const _Header('Storage on this device'),
+        Builder(
+          builder: (context) {
+            final report = state.store.vault.storageReport();
+            return Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.storage_outlined),
+                  title: Text('${_size(report.totalBytes)} used'),
+                  subtitle: Text(
+                    'Receipts ${_size(report.originalBytes)}, readable copies '
+                    '${_size(report.derivativeBytes)}, previews ${_size(report.previewBytes)}, '
+                    'database ${_size(report.databaseBytes)}. '
+                    '${_size(report.unsyncedBytes)} is not yet backed up to the server '
+                    'and is never removed.',
+                  ),
+                ),
+                if (report.evictableBytes > 0)
+                  ListTile(
+                    leading: const Icon(Icons.cleaning_services_outlined),
+                    title: Text('Free ${_size(report.evictableBytes)}'),
+                    subtitle: const Text(
+                      'Removes local copies of receipts already stored on the server',
+                    ),
+                    onTap: () => _freeSpace(context, report.evictableBytes),
+                  ),
+              ],
+            );
+          },
+        ),
         if (syncSection != null) ...[const _Header('Sync'), syncSection!],
         const _Header('Planning'),
         ListTile(
@@ -337,4 +402,13 @@ class _Header extends StatelessWidget {
       child: Text(text, style: Theme.of(context).textTheme.titleSmall),
     ),
   );
+}
+
+String _size(int bytes) {
+  if (bytes >= 1024 * 1024 * 1024)
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  if (bytes >= 1024 * 1024)
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
+  return '$bytes bytes';
 }

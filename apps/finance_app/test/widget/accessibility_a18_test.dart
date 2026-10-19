@@ -31,6 +31,8 @@ class _NoFiles implements FileImporter {
   @override
   Future<String?> pickBackupPath() async => null;
   @override
+  Future<String?> chooseDirectory() async => null;
+  @override
   Future<String?> chooseSaveLocation(String suggestedName) async => null;
 }
 

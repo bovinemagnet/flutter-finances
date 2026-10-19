@@ -139,7 +139,11 @@ void main() {
       ..payee = 'Market'
       ..tags = {'holiday'}
       ..effectiveDate = LocalDate(2026, 10, 17);
-    final restored = TransactionFormModel.fromDraftJson(chart, form.toDraftJson(), today: today);
+    final restored = TransactionFormModel.fromDraftJson(
+      chart,
+      form.toDraftJson(),
+      today: today,
+    );
     expect(restored.amountText, '103.47');
     expect(restored.splits.map((s) => s.categoryId), ['groceries', 'dining']);
     expect(restored.payee, 'Market');

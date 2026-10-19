@@ -303,6 +303,58 @@ class AppState extends ChangeNotifier {
     refresh();
   }
 
+  Map<String, Object?> get _preferences =>
+      store.entity(AppEntityTypes.appPreferences, 'preferences')?.json ??
+      const {};
+
+  Future<void> _setPreferences(Map<String, Object?> fields) => _put(
+    AppEntityTypes.appPreferences,
+    'preferences',
+    {..._preferences, 'id': 'preferences', ...fields},
+  );
+
+  /// Saved changes to financial data, ignoring preferences and drafts.
+  int get _dataChangeCount => store
+      .pendingCommands()
+      .where(
+        (e) =>
+            e.command.entityType != AppEntityTypes.appPreferences &&
+            e.command.entityType != AppEntityTypes.entryDraft,
+      )
+      .length;
+
+  Future<void> recordBackup({DateTime? at}) async {
+    await _setPreferences({
+      'lastBackupAt': (at ?? DateTime.now()).toUtc().toIso8601String(),
+      'commandsAtBackup': _dataChangeCount,
+    });
+    refresh();
+  }
+
+  /// A reminder for local-only data that has no recent backup (DATA 02):
+  /// such data can only be recovered from a backup the user made.
+  String? backupReminder({DateTime? now}) {
+    if (settings.syncMode != SyncMode.local) return null;
+    final changes = _dataChangeCount;
+    final last = _preferences['lastBackupAt'] as String?;
+    if (last == null) {
+      return changes >= 10
+          ? 'Your data is only on this device and has never been backed up.'
+          : null;
+    }
+    final since = changes - (_preferences['commandsAtBackup'] as int? ?? 0);
+    final days = (now ?? DateTime.now())
+        .toUtc()
+        .difference(DateTime.parse(last))
+        .inDays;
+    if (days >= 30 && since > 0) {
+      return 'Your last backup was $days days ago and there are newer changes.';
+    }
+    if (since >= 200)
+      return 'You have made $since changes since your last backup.';
+    return null;
+  }
+
   /// Fields of an entry interrupted before saving (UX 02).
   Map<String, Object?>? get entryDraft {
     final record = store.entity(AppEntityTypes.entryDraft, 'current');

@@ -30,9 +30,25 @@ class OverviewPage extends StatelessWidget {
         .where((s) => s.outstanding.isPositive)
         .toList();
     final theme = Theme.of(context);
+    final reminder = state.backupReminder();
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        if (reminder != null)
+          Card(
+            color: theme.colorScheme.tertiaryContainer,
+            child: ListTile(
+              leading: const Icon(Icons.backup_outlined),
+              title: Text(reminder),
+              subtitle: const Text(
+                'An encrypted backup is the only way to recover data kept on this device.',
+              ),
+              trailing: TextButton(
+                onPressed: () => onNavigate(Destination.settings),
+                child: const Text('Back up'),
+              ),
+            ),
+          ),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),

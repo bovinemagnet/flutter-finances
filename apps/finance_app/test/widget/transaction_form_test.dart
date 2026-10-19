@@ -119,29 +119,35 @@ void main() {
     expect(model.amount, Money(1230, Currency.aud));
   });
 
-  testWidgets('a refund links to the original purchase (FIN 06)', (tester) async {
+  testWidgets('a refund links to the original purchase (FIN 06)', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(500, 1600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    final original = JournalFactory(chart).build(TransactionDraft(
-      type: TransactionType.expense,
-      accountId: 'card',
-      amount: Money(10000, Currency.aud),
-      effectiveDate: LocalDate(2026, 9, 20),
-      payee: 'Outdoor Store',
-      splits: [Split('groceries', Money(10000, Currency.aud))],
-    ));
+    final original = JournalFactory(chart).build(
+      TransactionDraft(
+        type: TransactionType.expense,
+        accountId: 'card',
+        amount: Money(10000, Currency.aud),
+        effectiveDate: LocalDate(2026, 9, 20),
+        payee: 'Outdoor Store',
+        splits: [Split('groceries', Money(10000, Currency.aud))],
+      ),
+    );
     final saved = <TransactionDraft>[];
     final model = TransactionFormModel(chart, today: LocalDate(2026, 10, 19));
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: TransactionForm(
-          model: model,
-          refundCandidates: [original],
-          onSave: (d) async => saved.add(d),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TransactionForm(
+            model: model,
+            refundCandidates: [original],
+            onSave: (d) async => saved.add(d),
+          ),
         ),
       ),
-    ));
+    );
     await tester.tap(find.text('Refund'));
     await tester.pump();
     await tester.tap(find.text('Refund of'));
@@ -156,18 +162,22 @@ void main() {
     expect(saved.single.splits.single.categoryId, 'groceries');
   });
 
-  testWidgets('backgrounding the app hands unsaved input over (UX 02)', (tester) async {
+  testWidgets('backgrounding the app hands unsaved input over (UX 02)', (
+    tester,
+  ) async {
     final interrupted = <TransactionFormModel>[];
     final model = TransactionFormModel(chart, today: LocalDate(2026, 10, 19));
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: TransactionForm(
-          model: model,
-          onSave: (_) async {},
-          onInterrupted: interrupted.add,
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TransactionForm(
+            model: model,
+            onSave: (_) async {},
+            onInterrupted: interrupted.add,
+          ),
         ),
       ),
-    ));
+    );
     await tester.enterText(find.widgetWithText(TextField, 'Amount'), '12.50');
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);

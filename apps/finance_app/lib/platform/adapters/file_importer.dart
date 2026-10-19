@@ -51,6 +51,9 @@ class PlatformFileImporter implements FileImporter {
   ))?.path;
 
   @override
+  Future<String?> chooseDirectory() => getDirectoryPath();
+
+  @override
   Future<String?> chooseSaveLocation(String suggestedName) async =>
       (await getSaveLocation(suggestedName: suggestedName))?.path;
 }

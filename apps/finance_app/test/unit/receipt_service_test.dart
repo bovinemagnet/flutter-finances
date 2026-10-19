@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -238,18 +239,27 @@ void main() {
 
   test('warns about the same file saved twice without blocking it', () async {
     final bytes = photo();
-    final first = await receipts.capture([CapturedFile(bytes, source: CaptureSource.fileImport)]);
-    final second = await receipts.capture([CapturedFile(bytes, source: CaptureSource.fileImport)]);
+    final first = await receipts.capture([
+      CapturedFile(bytes, source: CaptureSource.fileImport),
+    ]);
+    final second = await receipts.capture([
+      CapturedFile(bytes, source: CaptureSource.fileImport),
+    ]);
     final warnings = await receipts.warningsFor(second.id);
     expect(warnings.map((w) => w.otherReceiptId), contains(first.id));
     expect(receipts.receipts(), hasLength(2));
   });
 
   test('a readable copy is saved beside the untouched original', () async {
-    final receipt = await receipts.capture([CapturedFile(photo(), source: CaptureSource.camera)]);
+    final receipt = await receipts.capture([
+      CapturedFile(photo(), source: CaptureSource.camera),
+    ]);
     final page = receipts.pagesFor(receipt.id).single;
     final original = await state.store.vault.readAsset(page.sourceAssetId);
-    await receipts.saveReadableCopy(page, const ImageEdits(quarterTurns: 1, enhanceContrast: true));
+    await receipts.saveReadableCopy(
+      page,
+      const ImageEdits(quarterTurns: 1, enhanceContrast: true),
+    );
     final updated = receipts.pagesFor(receipt.id).single;
     expect(updated.derivativeAssetId, isNotNull);
     expect(await state.store.vault.readAsset(updated.sourceAssetId), original);
@@ -261,9 +271,28 @@ void main() {
       CapturedFile(photo(), source: CaptureSource.camera),
       CapturedFile(photo(), source: CaptureSource.camera),
     ]);
-    final created = await receipts.splitPages(receipt.id, [[1, 3], [2]]);
+    final created = await receipts.splitPages(receipt.id, [
+      [1, 3],
+      [2],
+    ]);
     expect(receipts.pagesFor(receipt.id).map((p) => p.pageNumber), [1, 2]);
     expect(receipts.pagesFor(created.single.id), hasLength(1));
     expect(receipts.receipts(), hasLength(2));
+  });
+
+  test('receipts export as original files with a manifest (EXP 01)', () async {
+    final bytes = photo();
+    final receipt = await receipts.capture([
+      CapturedFile(bytes, source: CaptureSource.fileImport),
+    ]);
+    final out = Directory('${dir.path}/export');
+    expect(await receipts.exportOriginals(out), 1);
+    final manifest = jsonDecode(
+      File('${out.path}/manifest.json').readAsStringSync(),
+    ) as Map<String, dynamic>;
+    final entry = (manifest['receipts'] as List).single as Map<String, dynamic>;
+    expect(entry['receiptId'], receipt.id);
+    final file = (entry['files'] as List).single as Map<String, dynamic>;
+    expect(File('${out.path}/${file['file']}').readAsBytesSync(), bytes);
   });
 }

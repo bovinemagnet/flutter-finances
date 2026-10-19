@@ -47,6 +47,7 @@ abstract interface class FileImporter {
   Future<List<CapturedFile>> pickReceipts();
   Future<CapturedFile?> pickStatement();
   Future<String?> pickBackupPath();
+  Future<String?> chooseDirectory();
   Future<String?> chooseSaveLocation(String suggestedName);
 }
 

@@ -16,10 +16,13 @@ img.Image _checkerboard(int size, int cell) {
 void main() {
   test('rotates a quarter turn and crops by fractions', () {
     final source = img.encodePng(img.Image(width: 40, height: 20));
-    final rotated = img.decodeImage(applyEdits(source, const ImageEdits(quarterTurns: 1)))!;
+    final rotated = img.decodeImage(
+      applyEdits(source, const ImageEdits(quarterTurns: 1)),
+    )!;
     expect((rotated.width, rotated.height), (20, 40));
-    final cropped = img.decodeImage(applyEdits(source,
-        const ImageEdits(crop: CropRect(0.25, 0, 0.5, 1))))!;
+    final cropped = img.decodeImage(
+      applyEdits(source, const ImageEdits(crop: CropRect(0.25, 0, 0.5, 1))),
+    )!;
     expect((cropped.width, cropped.height), (20, 20));
   });
 
@@ -30,7 +33,8 @@ void main() {
       faded.setPixelRgb(x, 0, v, v, v);
     }
     final out = img.decodeImage(
-        applyEdits(img.encodePng(faded), const ImageEdits(enhanceContrast: true)))!;
+      applyEdits(img.encodePng(faded), const ImageEdits(enhanceContrast: true)),
+    )!;
     final values = [for (var x = 0; x < 10; x++) out.getPixel(x, 0).r.toInt()];
     expect(values.first, lessThan(20));
     expect(values.last, greaterThan(235));

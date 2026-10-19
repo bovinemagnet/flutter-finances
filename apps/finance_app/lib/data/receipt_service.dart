@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:finance_core/finance_core.dart';
@@ -390,6 +392,70 @@ class ReceiptService {
     }
     state.refresh();
     return created;
+  }
+
+  /// Writes every receipt's original files into [directory] with a
+  /// `manifest.json` describing fields, links and SHA-256 hashes (EXP 01).
+  /// Originals only on the server are listed as not exported.
+  Future<int> exportOriginals(Directory directory) async {
+    await directory.create(recursive: true);
+    final entries = <Map<String, Object?>>[];
+    var written = 0;
+    for (final receipt in receipts()) {
+      final extraction = extractionFor(receipt);
+      final fields =
+          extraction?.suggested.merge(receipt.confirmed) ?? receipt.confirmed;
+      final files = <Map<String, Object?>>[];
+      for (final asset in _store.vault.assetsFor(
+        ReceiptEntityTypes.receipt,
+        receipt.id,
+      )) {
+        if (asset.kind != store.VaultAssetKind.source) continue;
+        final extension = switch (asset.contentType) {
+          'image/png' => 'png',
+          'image/heic' || 'image/heif' => 'heic',
+          'application/pdf' => 'pdf',
+          _ => 'jpg',
+        };
+        final name = '${receipt.id}-${files.length + 1}.$extension';
+        if (asset.localState != store.AssetLocalState.present) {
+          files.add({
+            'file': null,
+            'sha256': asset.sha256,
+            'note': 'stored only on the server',
+          });
+          continue;
+        }
+        await File('${directory.path}/$name')
+            .writeAsBytes(await _store.vault.readAsset(asset.id), flush: true);
+        files.add({
+          'file': name,
+          'sha256': asset.sha256,
+          'contentType': asset.contentType,
+        });
+        written++;
+      }
+      entries.add({
+        'receiptId': receipt.id,
+        'capturedAt': receipt.capturedAt.toIso8601String(),
+        'merchant': fields.merchant,
+        'date': fields.date?.toString(),
+        'totalMinor': fields.total?.minor,
+        'taxMinor': fields.tax?.minor,
+        'currency': state.currency.code,
+        'linkedJournalIds': [for (final l in linksFor(receipt.id)) l.journalId],
+        'files': files,
+      });
+    }
+    await File('${directory.path}/manifest.json').writeAsString(
+      const JsonEncoder.withIndent('  ').convert({
+        'format': 'finance.receipts',
+        'formatVersion': 1,
+        'exportedAt': DateTime.now().toUtc().toIso8601String(),
+        'receipts': entries,
+      }),
+    );
+    return written;
   }
 
   /// Ranked candidate transactions for a receipt (MATCH 01).

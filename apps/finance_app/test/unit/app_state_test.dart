@@ -216,18 +216,55 @@ void main() {
     },
   );
 
-  test('a what-if scenario changes the projection but never the ledger', () async {
+  test(
+    'a what-if scenario changes the projection but never the ledger',
+    () async {
+      await onboard();
+      final journalsBefore = state.ledger.journals.length;
+      final base = state.forecast().lowestBalance;
+      final scenario = Scenario(
+        id: 's',
+        name: 'What if',
+        changes: [
+          OneOffChange(
+            id: 'c1',
+            date: today.addDays(3),
+            accountId: 'bank',
+            amount: Money(-150000, aud),
+          ),
+        ],
+      );
+      final projected = state.forecast(scenario: scenario);
+      expect(projected.lowestBalance, base - Money(150000, aud));
+      expect(projected.includesHypothetical, isTrue);
+      expect(state.ledger.journals, hasLength(journalsBefore));
+      expect(state.unsyncedCount, isNot(0));
+    },
+  );
+
+  test('local-only workspaces are reminded to back up (DATA 02)', () async {
+    expect(state.backupReminder(now: DateTime.utc(2026, 10, 19)), isNull);
     await onboard();
-    final journalsBefore = state.ledger.journals.length;
-    final base = state.forecast().lowestBalance;
-    final scenario = Scenario(id: 's', name: 'What if', changes: [
-      OneOffChange(
-          id: 'c1', date: today.addDays(3), accountId: 'bank', amount: Money(-150000, aud)),
-    ]);
-    final projected = state.forecast(scenario: scenario);
-    expect(projected.lowestBalance, base - Money(150000, aud));
-    expect(projected.includesHypothetical, isTrue);
-    expect(state.ledger.journals, hasLength(journalsBefore));
-    expect(state.unsyncedCount, isNot(0));
+    expect(
+      state.backupReminder(now: DateTime.utc(2026, 10, 19)),
+      contains('only on this device'),
+    );
+    await state.recordBackup(at: DateTime.utc(2026, 10, 19));
+    expect(state.backupReminder(now: DateTime.utc(2026, 10, 20)), isNull);
+    // Old but unchanged since the backup: nothing to remind about.
+    expect(state.backupReminder(now: DateTime.utc(2026, 11, 25)), isNull);
+    await state.post(
+      TransactionDraft(
+        type: TransactionType.expense,
+        accountId: 'bank',
+        amount: Money(500, aud),
+        effectiveDate: today,
+        splits: [Split(categoryId('Groceries'), Money(500, aud))],
+      ),
+    );
+    expect(
+      state.backupReminder(now: DateTime.utc(2026, 11, 25)),
+      contains('days'),
+    );
   });
 }
