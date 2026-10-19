@@ -12,6 +12,7 @@ export 'src/planning/discretionary.dart';
 export 'src/planning/forecast.dart';
 export 'src/planning/goals.dart';
 export 'src/planning/insights.dart';
+export 'src/planning/json_codec.dart';
 export 'src/planning/ledger_reports.dart';
 export 'src/planning/monthly_equivalent.dart';
 export 'src/planning/payments.dart';
