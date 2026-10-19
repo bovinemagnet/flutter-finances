@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- @VERSION@ and @DATE@ are filled in by build-deb.sh. -->
+<component type="desktop-application">
+  <id>com.paulsnow.finance.app</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-proprietary</project_license>
+  <name>Finance</name>
+  <summary>Personal finance with budgeting, planning and receipt capture</summary>
+  <developer id="com.paulsnow">
+    <name>Paul Snow</name>
+  </developer>
+  <description>
+    <p>
+      Record spending across bank, card and cash accounts, plan budgets around
+      fortnightly pay cycles, forecast bills, and keep receipts alongside the
+      transactions they belong to.
+    </p>
+    <p>
+      Data is stored in an encrypted local database and works fully offline.
+      Optional synchronisation keeps several devices up to date.
+    </p>
+  </description>
+  <launchable type="desktop-id">com.paulsnow.finance.app.desktop</launchable>
+  <url type="homepage">https://github.com/bovinemagnet/flutter-finances</url>
+  <categories>
+    <category>Office</category>
+    <category>Finance</category>
+  </categories>
+  <provides>
+    <binary>finance-app</binary>
+  </provides>
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>touch</control>
+  </supports>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="@VERSION@" date="@DATE@"/>
+  </releases>
+</component>
