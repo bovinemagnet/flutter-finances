@@ -44,9 +44,11 @@ class CommandProcessor {
     private final CommandHandlers handlers;
     private final SyncMetrics metrics;
     private final Clock clock;
+    private final VisibilityService visibility;
 
     CommandProcessor(TransactionTemplate transactions, JdbcClient jdbc, EntityStore store, CommandHandlers handlers,
-            SyncMetrics metrics, Clock clock) {
+            SyncMetrics metrics, Clock clock, VisibilityService visibility) {
+        this.visibility = visibility;
         this.transactions = transactions;
         this.jdbc = jdbc;
         this.store = store;
@@ -60,16 +62,20 @@ class CommandProcessor {
      *
      * @param workspace      workspace the caller acts on
      * @param originDeviceId the calling device, or null for server-originated commands
+     * @param userId         the calling user, or null for server-originated commands
+     * @param role           the calling user's role, or null
      * @param command        the command
      * @return its result
      */
-    CommandResult process(WorkspaceInfo workspace, UUID originDeviceId, SyncCommand command) {
-        CommandResult result = processUnmetered(workspace, originDeviceId, command);
+    CommandResult process(WorkspaceInfo workspace, UUID originDeviceId, UUID userId, String role,
+            SyncCommand command) {
+        CommandResult result = processUnmetered(workspace, originDeviceId, userId, role, command);
         metrics.recordCommand(result.status());
         return result;
     }
 
-    private CommandResult processUnmetered(WorkspaceInfo workspace, UUID originDeviceId, SyncCommand command) {
+    private CommandResult processUnmetered(WorkspaceInfo workspace, UUID originDeviceId, UUID userId, String role,
+            SyncCommand command) {
         String rawId = command.commandId();
         UUID commandId = uuid(rawId);
         UUID entityId = uuid(command.entityId());
@@ -84,6 +90,10 @@ class CommandProcessor {
                 || (originDeviceId != null && !originDeviceId.equals(uuid(command.deviceId())))) {
             return CommandResult.rejected(rawId, CommandResult.PERMISSION_DENIED, List.of("NOT_PERMITTED"));
         }
+        if ("viewer".equals(role)) {
+            // Viewers are read-only (shared households).
+            return CommandResult.rejected(rawId, CommandResult.PERMISSION_DENIED, List.of("NOT_PERMITTED"));
+        }
         JsonNode payload = command.payload();
         if (payload == null || payload.isNull() || payload.isMissingNode()) {
             payload = JsonNodeFactory.instance.objectNode();
@@ -92,11 +102,13 @@ class CommandProcessor {
             return CommandResult.rejected(rawId, CommandResult.VALIDATION_FAILED, List.of("INVALID_COMMAND"));
         }
         String hash = JsonValues.sha256(envelopeForHash(command, payload));
-        Outcome.Context ctx = new Outcome.Context(workspace, commandId, originDeviceId, command.entityType(),
-                entityId, command.baseRevision(), payload);
+        JsonNode body = payload;
         try {
             return transactions.execute(status -> {
                 store.lockWorkspace(workspace.id());
+                Outcome.Context ctx = new Outcome.Context(workspace, commandId, originDeviceId,
+                        command.entityType(), entityId, command.baseRevision(), body, userId,
+                        visibility.forMember(workspace.id(), userId));
                 Optional<StoredResult> stored = findStored(workspace.id(), commandId);
                 if (stored.isPresent()) {
                     if (!stored.get().hash().equals(hash)) {
@@ -149,6 +161,8 @@ class CommandProcessor {
                             conflict.fields()));
             case Outcome.Invalid invalid -> CommandResult.rejected(commandId, CommandResult.VALIDATION_FAILED,
                     invalid.errors());
+            case Outcome.Denied denied -> CommandResult.rejected(commandId, CommandResult.PERMISSION_DENIED,
+                    denied.errors());
         };
     }
 

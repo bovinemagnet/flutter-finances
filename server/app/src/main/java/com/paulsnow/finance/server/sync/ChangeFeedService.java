@@ -16,6 +16,7 @@ import com.paulsnow.finance.server.common.ApiException;
 import com.paulsnow.finance.server.workspace.CurrentDevice;
 
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
 
 /**
  * The ordered change feed and paged snapshots (SYNC 04, SYNC 06).
@@ -49,8 +50,11 @@ class ChangeFeedService {
     private final EntityStore store;
     private final SyncProperties properties;
     private final Clock clock;
+    private final VisibilityService visibility;
 
-    ChangeFeedService(JdbcClient jdbc, EntityStore store, SyncProperties properties, Clock clock) {
+    ChangeFeedService(JdbcClient jdbc, EntityStore store, SyncProperties properties, Clock clock,
+            VisibilityService visibility) {
+        this.visibility = visibility;
         this.jdbc = jdbc;
         this.store = store;
         this.properties = properties;
@@ -74,12 +78,20 @@ class ChangeFeedService {
         }
         List<EntityStore.Change> rows = store.changesAfter(workspaceId, after, pageSize + 1);
         boolean hasMore = rows.size() > pageSize;
+        Visibility sees = visibility.forMember(workspaceId, device.member().user().id());
         List<ChangeView> changes = new ArrayList<>();
         long last = after;
         for (EntityStore.Change change : rows.subList(0, Math.min(pageSize, rows.size()))) {
-            changes.add(new ChangeView(change.entityType(), change.entityId(), change.revision(), change.op(),
-                    change.data()));
             last = change.sequence();
+            if ("delete".equals(change.op())
+                    || !sees.hides(change.entityType(), change.entityId().toString(), change.data())) {
+                changes.add(new ChangeView(change.entityType(), change.entityId(), change.revision(), change.op(),
+                        change.data()));
+            } else if (change.visibilityChange()) {
+                // The entity left this member's view (households).
+                changes.add(new ChangeView(change.entityType(), change.entityId(), change.revision(), "delete",
+                        JsonNodeFactory.instance.objectNode().put("id", change.entityId().toString())));
+            }
         }
         jdbc.sql("insert into sync_device_cursor (device_id, workspace_id, last_sequence, pulled_at) "
                         + "values (?, ?, ?, ?) on conflict (device_id) do update "
@@ -116,7 +128,10 @@ class ChangeFeedService {
         List<ChangeView> page = rows.subList(0, Math.min(pageSize, rows.size()));
         String next = page.isEmpty() ? (after == null ? "" : after)
                 : page.getLast().entityType() + "/" + page.getLast().entityId();
-        return new SnapshotPage(List.copyOf(page), next, hasMore,
+        Visibility sees = visibility.forMember(workspaceId, device.member().user().id());
+        List<ChangeView> visible = page.stream()
+                .filter(c -> !sees.hides(c.entityType(), c.entityId().toString(), c.data())).toList();
+        return new SnapshotPage(visible, next, hasMore,
                 CursorCodec.encode(workspaceId, head, clock.instant()));
     }
 

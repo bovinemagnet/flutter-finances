@@ -62,3 +62,11 @@ create table sync_purge_watermark (
     purged_through bigint not null,
     purged_at timestamptz not null
 );
+
+--changeset "Paul Snow":sync-2
+-- Shared households: the user who created an entity (null when the server
+-- created it), which decides who may see a private account, and a flag on
+-- change records that change what other members may see, so the feed can
+-- tell a member that an entity left their view.
+alter table sync_entity add column created_by uuid;
+alter table sync_change add column visibility_change boolean not null default false;

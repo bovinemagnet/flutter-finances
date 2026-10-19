@@ -16,3 +16,8 @@ create table export_archive (
     completed_at timestamptz
 );
 create index export_archive_workspace_idx on export_archive (workspace_id);
+
+--changeset "Paul Snow":exports-2
+-- Shared households: an archive holds only what the requesting member may
+-- see.
+alter table export_archive add column requested_by uuid;

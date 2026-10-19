@@ -29,6 +29,8 @@ import com.paulsnow.finance.server.jobs.PermanentJobFailure;
 import com.paulsnow.finance.server.receipts.ReceiptService;
 import com.paulsnow.finance.server.storage.ObjectStorage;
 import com.paulsnow.finance.server.sync.EntityReader;
+import com.paulsnow.finance.server.sync.Visibility;
+import com.paulsnow.finance.server.sync.VisibilityService;
 import com.paulsnow.finance.server.workspace.WorkspaceDirectory;
 import com.paulsnow.finance.server.workspace.WorkspaceInfo;
 
@@ -65,9 +67,11 @@ class ArchiveJobHandler implements JobHandler {
     private final ObjectStorage storage;
     private final JsonMapper json;
     private final Clock clock;
+    private final VisibilityService visibility;
 
     ArchiveJobHandler(JdbcClient jdbc, EntityReader entities, ReceiptService receipts, WorkspaceDirectory workspaces,
-            ObjectStorage storage, JsonMapper json, Clock clock) {
+            ObjectStorage storage, JsonMapper json, Clock clock, VisibilityService visibility) {
+        this.visibility = visibility;
         this.jdbc = jdbc;
         this.entities = entities;
         this.receipts = receipts;
@@ -92,7 +96,10 @@ class ArchiveJobHandler implements JobHandler {
         try {
             archive = Files.createTempFile("export-", ".zip");
             long accepted = entities.headSequence(workspaceId);
-            write(archive, workspace, exportId, accepted);
+            String requestedBy = job.payload().path("requestedBy").asString(null);
+            Visibility sees = visibility.forMember(workspaceId,
+                    requestedBy == null ? null : UUID.fromString(requestedBy));
+            write(archive, workspace, exportId, accepted, sees);
             String sha256 = sha256(archive);
             long size = Files.size(archive);
             storage.put(ExportService.objectKey(workspaceId, exportId), archive, "application/zip");
@@ -116,13 +123,22 @@ class ArchiveJobHandler implements JobHandler {
         }
     }
 
-    private void write(Path archive, WorkspaceInfo workspace, UUID exportId, long accepted) throws IOException {
+    private void write(Path archive, WorkspaceInfo workspace, UUID exportId, long accepted, Visibility sees)
+            throws IOException {
+        java.util.Set<UUID> hiddenReceipts = new java.util.HashSet<>();
         ArrayNode files = JsonNodeFactory.instance.arrayNode();
         ArrayNode relationships = JsonNodeFactory.instance.arrayNode();
         Map<String, Integer> counts = new TreeMap<>();
         try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
             EntityFileWriter writer = new EntityFileWriter(zip, files);
             entities.forEachLive(workspace.id(), entity -> {
+                if (sees.hides(entity.entityType(), entity.entityId().toString(), entity.data())) {
+                    // Only what the requesting member may see (households).
+                    if ("receipt".equals(entity.entityType())) {
+                        hiddenReceipts.add(entity.entityId());
+                    }
+                    return;
+                }
                 counts.merge(entity.entityType(), 1, Integer::sum);
                 ObjectNode item = JsonNodeFactory.instance.objectNode();
                 item.put("entityType", entity.entityType());
@@ -143,6 +159,9 @@ class ArchiveJobHandler implements JobHandler {
             writer.close();
             int assets = 0;
             for (ReceiptService.AvailableAsset asset : receipts.availableAssets(workspace.id())) {
+                if (hiddenReceipts.contains(asset.receiptId())) {
+                    continue;
+                }
                 String path = "receipts/" + asset.receiptId() + "/" + asset.assetId();
                 try (InputStream in = receipts.openAvailable(workspace.id(), asset.assetId())) {
                     Hashed hashed = entry(zip, path, out -> in.transferTo(out));

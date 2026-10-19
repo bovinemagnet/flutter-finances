@@ -44,7 +44,8 @@ public class SyncCommandService {
         }
         List<CommandResult> results = new ArrayList<>(commands.size());
         for (SyncCommand command : commands) {
-            results.add(processor.process(device.member().workspace(), device.deviceId(), command));
+            results.add(processor.process(device.member().workspace(), device.deviceId(),
+                    device.member().user().id(), device.member().role(), command));
         }
         return results;
     }
@@ -58,6 +59,6 @@ public class SyncCommandService {
      * @return the result
      */
     public CommandResult submitAsServer(WorkspaceInfo workspace, SyncCommand command) {
-        return processor.process(workspace, null, command);
+        return processor.process(workspace, null, null, null, command);
     }
 }

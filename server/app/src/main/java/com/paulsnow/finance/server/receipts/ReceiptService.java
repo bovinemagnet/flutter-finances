@@ -30,6 +30,7 @@ import com.paulsnow.finance.server.jobs.JobService;
 import com.paulsnow.finance.server.storage.ObjectStorage;
 import com.paulsnow.finance.server.storage.PresignedRequest;
 import com.paulsnow.finance.server.sync.EntityReader;
+import com.paulsnow.finance.server.sync.VisibilityService;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -67,9 +68,11 @@ public class ReceiptService {
     private final ReceiptProperties properties;
     private final Clock clock;
     private final MeterRegistry meters;
+    private final VisibilityService visibility;
 
     ReceiptService(JdbcClient jdbc, ObjectStorage storage, EntityReader entities, JobService jobs,
-            ReceiptProperties properties, Clock clock, MeterRegistry meters) {
+            ReceiptProperties properties, Clock clock, MeterRegistry meters, VisibilityService visibility) {
+        this.visibility = visibility;
         this.jdbc = jdbc;
         this.storage = storage;
         this.entities = entities;
@@ -224,8 +227,28 @@ public class ReceiptService {
                 .params(receiptId, excluding).query(Long.class).single();
     }
 
+    /**
+     * Returns whether a member may see a receipt: a receipt linked to a
+     * journal of another member's private account is hidden (households).
+     *
+     * @param workspaceId workspace
+     * @param userId      member
+     * @param receiptId   receipt
+     * @return true when the receipt entity is live and visible to the member
+     */
+    public boolean isVisible(UUID workspaceId, UUID userId, UUID receiptId) {
+        return entities.find(workspaceId, receiptId).filter(e -> e.isLive("receipt"))
+                .filter(e -> !visibility.forMember(workspaceId, userId).hides("receipt", receiptId.toString(),
+                        e.data()))
+                .isPresent();
+    }
+
     /** Signs a short-lived download of an available asset of the workspace. */
-    PresignedRequest download(UUID workspaceId, UUID receiptId, UUID assetId) {
+    PresignedRequest download(UUID workspaceId, UUID userId, UUID receiptId, UUID assetId) {
+        if (entities.find(workspaceId, receiptId).filter(e -> e.isLive("receipt")).isPresent()
+                && !isVisible(workspaceId, userId, receiptId)) {
+            throw ApiException.notFound("NOT_FOUND", "Not found.");
+        }
         Asset asset = jdbc.sql("select * from receipt_asset where asset_id = ? and receipt_id = ? "
                         + "and workspace_id = ?")
                 .params(assetId, receiptId, workspaceId).query(ReceiptService::mapAsset).optional()

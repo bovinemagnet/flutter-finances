@@ -37,6 +37,9 @@ import tools.jackson.databind.node.ObjectNode;
 class CommandHandlers {
 
     private static final String JOURNAL = "journal";
+    private static final String ACCOUNT = "account";
+    private static final String SHARING = "sharing";
+    private static final Set<String> LEDGER_TYPES = Set.of(JOURNAL, ACCOUNT, "category");
 
     private final EntityStore store;
     private final LedgerService ledger;
@@ -66,6 +69,9 @@ class CommandHandlers {
         Optional<StoredEntity> existing = store.lock(ctx.workspaceId(), ctx.entityId());
         if (existing.isPresent()) {
             StoredEntity entity = existing.get();
+            if (hidden(ctx, entity)) {
+                return Outcome.denied();
+            }
             Outcome blocked = blockedJournal(entity, ctx.baseRevision());
             if (blocked != null) {
                 return blocked;
@@ -83,13 +89,18 @@ class CommandHandlers {
         ObjectNode data = ((ObjectNode) journalJson).deepCopy();
         data.put("id", journal.id());
         if (existing.isPresent()) {
+            Set<String> before = postingAccounts(existing.get().data());
             ledger.replace(ctx.workspaceId(), journal);
             long sequence = store.update(ctx.workspaceId(), existing.get(), data, ctx.commandId(), ctx.deviceId());
+            if (!before.equals(postingAccounts(data))) {
+                // Other members may gain or lose sight of the journal.
+                store.markVisibilityChange(sequence);
+            }
             return new Outcome.Applied(existing.get().revision() + 1, sequence);
         }
         ledger.insert(ctx.workspaceId(), journal);
         return new Outcome.Applied(1, store.create(ctx.workspaceId(), JOURNAL, ctx.entityId(), data,
-                ctx.commandId(), ctx.deviceId()));
+                ctx.commandId(), ctx.deviceId(), ctx.userId()));
     }
 
     /** {@code journal.correct}: reverse a posted journal and optionally replace it, atomically. */
@@ -111,6 +122,9 @@ class CommandHandlers {
         StoredEntity originalEntity = found.get();
         if (originalEntity.deleted()) {
             return deleted(originalEntity);
+        }
+        if (hidden(ctx, originalEntity)) {
+            return Outcome.denied();
         }
         if (!JOURNAL.equals(originalEntity.type())) {
             return Outcome.invalid("ENTITY_TYPE_MISMATCH");
@@ -172,11 +186,11 @@ class CommandHandlers {
         long sequence = store.update(ctx.workspaceId(), originalEntity, reversedData, ctx.commandId(),
                 ctx.deviceId());
         sequence = store.create(ctx.workspaceId(), JOURNAL, UUID.fromString(reversal.id()),
-                ((ObjectNode) payload.path("reversal")).deepCopy(), ctx.commandId(), ctx.deviceId());
+                ((ObjectNode) payload.path("reversal")).deepCopy(), ctx.commandId(), ctx.deviceId(), ctx.userId());
         if (replacement != null) {
             ledger.insert(ctx.workspaceId(), replacement);
             sequence = store.create(ctx.workspaceId(), JOURNAL, UUID.fromString(replacement.id()),
-                    ((ObjectNode) replacementJson).deepCopy(), ctx.commandId(), ctx.deviceId());
+                    ((ObjectNode) replacementJson).deepCopy(), ctx.commandId(), ctx.deviceId(), ctx.userId());
         }
         return new Outcome.Applied(originalEntity.revision() + 1, sequence);
     }
@@ -210,7 +224,7 @@ class CommandHandlers {
             data.put("id", ctx.entityId().toString());
             data.setAll(fields);
             return new Outcome.Applied(1, store.create(ctx.workspaceId(), ctx.entityType(), ctx.entityId(), data,
-                    ctx.commandId(), ctx.deviceId()));
+                    ctx.commandId(), ctx.deviceId(), ctx.userId()));
         }
         StoredEntity entity = existing.get();
         if (entity.deleted()) {
@@ -218,6 +232,16 @@ class CommandHandlers {
         }
         if (!entity.type().equals(ctx.entityType())) {
             return Outcome.invalid("ENTITY_TYPE_MISMATCH");
+        }
+        if (hidden(ctx, entity)) {
+            return Outcome.denied();
+        }
+        boolean sharingChanged = ACCOUNT.equals(entity.type()) && fields.has(SHARING)
+                && !JsonValues.same(entity.data().get(SHARING), fields.get(SHARING));
+        if (sharingChanged && ctx.userId() != null && entity.createdBy() != null
+                && !entity.createdBy().equals(ctx.userId())) {
+            // Only the account's creator decides whether it is shared.
+            return Outcome.denied();
         }
         Set<String> conflicting = new TreeSet<>();
         for (Map.Entry<String, JsonNode> field : fields.properties()) {
@@ -244,8 +268,17 @@ class CommandHandlers {
         if (!changed) {
             return new Outcome.Applied(entity.revision(), 0);
         }
-        return new Outcome.Applied(entity.revision() + 1,
-                store.update(ctx.workspaceId(), entity, merged, ctx.commandId(), ctx.deviceId()));
+        long sequence = store.update(ctx.workspaceId(), entity, merged, ctx.commandId(), ctx.deviceId());
+        if (sharingChanged) {
+            store.markVisibilityChange(sequence);
+            String accountId = entity.id().toString();
+            long last = store.reannounce(ctx.workspaceId(), accountId,
+                    ledger.journalsTouching(ctx.workspaceId(), List.of(accountId)), ctx.commandId(), ctx.deviceId());
+            sequence = Math.max(sequence, last);
+        } else if (!LEDGER_TYPES.contains(entity.type()) && referencesChanged(entity.data(), merged)) {
+            store.markVisibilityChange(sequence);
+        }
+        return new Outcome.Applied(entity.revision() + 1, sequence);
     }
 
     /** {@code entity.delete}: write a tombstone. Posted journals are never deleted. */
@@ -260,6 +293,9 @@ class CommandHandlers {
         }
         if (!entity.type().equals(ctx.entityType())) {
             return Outcome.invalid("ENTITY_TYPE_MISMATCH");
+        }
+        if (hidden(ctx, entity)) {
+            return Outcome.denied();
         }
         boolean journal = JOURNAL.equals(entity.type());
         if (journal && isPostedLedger(entity)) {
@@ -296,12 +332,40 @@ class CommandHandlers {
     }
 
     private List<String> validate(Outcome.Context ctx, JournalJson.Parsed parsed) {
-        return ledger.validate(parsed, ids -> store.liveLedgerEntities(ctx.workspaceId(), ids));
+        return ledger.validate(parsed, ids -> {
+            Set<String> live = new LinkedHashSet<>(store.liveLedgerEntities(ctx.workspaceId(), ids));
+            // A private account of another member does not exist for the caller.
+            live.removeIf(ctx.visibility()::hidesAccount);
+            return live;
+        });
     }
 
     private Outcome rejected(List<String> errors) {
         ledger.recordRejection(errors);
         return new Outcome.Invalid(errors);
+    }
+
+    private static boolean hidden(Outcome.Context ctx, StoredEntity entity) {
+        return ctx.visibility().hides(entity.type(), entity.id().toString(), entity.data());
+    }
+
+    private static Set<String> postingAccounts(JsonNode journal) {
+        Set<String> accounts = new TreeSet<>();
+        if (journal != null) {
+            journal.path("postings").forEach(p -> accounts.add(p.path("account").asString("")));
+        }
+        return accounts;
+    }
+
+    private static boolean referencesChanged(ObjectNode before, ObjectNode after) {
+        for (List<String> fields : List.of(Visibility.ACCOUNT_REFERENCES, Visibility.JOURNAL_REFERENCES)) {
+            for (String field : fields) {
+                if (!JsonValues.same(before.get(field), after.get(field))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static boolean isPostedLedger(StoredEntity entity) {

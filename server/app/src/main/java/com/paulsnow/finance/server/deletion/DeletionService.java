@@ -6,12 +6,14 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.paulsnow.finance.core.ids.Ids;
 import com.paulsnow.finance.server.common.ApiException;
+import com.paulsnow.finance.server.common.AuditEvent;
 import com.paulsnow.finance.server.jobs.JobService;
 import com.paulsnow.finance.server.workspace.CurrentUser;
 import com.paulsnow.finance.server.workspace.WorkspaceDirectory;
@@ -44,10 +46,12 @@ class DeletionService {
     private final JobService jobs;
     private final JsonMapper json;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
 
     DeletionService(JdbcClient jdbc, WorkspaceDirectory workspaces, JobService jobs, JsonMapper json, Clock clock,
-            MeterRegistry meters) {
+            MeterRegistry meters, ApplicationEventPublisher events) {
         this.jdbc = jdbc;
+        this.events = events;
         this.workspaces = workspaces;
         this.jobs = jobs;
         this.json = json;
@@ -79,6 +83,8 @@ class DeletionService {
         jdbc.sql("insert into deletion_request (id, workspace_id, requested_by, job_id, status, created_at) "
                         + "values (?, ?, ?, ?, 'pending', ?)")
                 .params(deletionId, workspaceId, user.id(), jobId, Timestamp.from(clock.instant())).update();
+        events.publishEvent(AuditEvent.of(workspaceId, user.id(), "workspace.deletion_requested", "deletion",
+                deletionId));
         return find(workspaceId).orElseThrow();
     }
 

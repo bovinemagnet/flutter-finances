@@ -79,7 +79,7 @@ class DeviceController {
                 .filter(d -> d.userId().equals(user.id())
                         || directory.roleOf(user, d.workspaceId()).filter("owner"::equals).isPresent())
                 .orElseThrow(() -> ApiException.notFound("DEVICE_NOT_FOUND", "Device not found."));
-        directory.revokeDevice(device.id());
+        directory.revokeDevice(device, user.id());
     }
 
     private static DeviceResponse response(WorkspaceDirectory.DeviceRow device, CurrentUser user) {

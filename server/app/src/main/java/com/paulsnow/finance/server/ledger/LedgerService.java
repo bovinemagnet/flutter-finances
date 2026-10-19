@@ -238,6 +238,36 @@ public class LedgerService {
     }
 
     /**
+     * Returns the ledger accounts one journal posts to.
+     *
+     * @param workspaceId workspace
+     * @param journalId   journal
+     * @return account identifiers, empty when the journal is not in the ledger
+     */
+    public Set<String> accountsOf(UUID workspaceId, UUID journalId) {
+        return new LinkedHashSet<>(jdbc.sql("select distinct account from ledger_posting where workspace_id = ? "
+                        + "and journal_id = ? order by account")
+                .params(workspaceId, journalId).query(String.class).list());
+    }
+
+    /**
+     * Returns every journal (of any status) that posts to one of
+     * {@code accounts}.
+     *
+     * @param workspaceId workspace
+     * @param accounts    ledger account identifiers
+     * @return journal identifiers
+     */
+    public List<UUID> journalsTouching(UUID workspaceId, java.util.Collection<String> accounts) {
+        if (accounts.isEmpty()) {
+            return List.of();
+        }
+        return jdbc.sql("select distinct journal_id from ledger_posting where workspace_id = ? and account = any(?) "
+                        + "order by journal_id")
+                .params(workspaceId, accounts.toArray(String[]::new)).query(UUID.class).list();
+    }
+
+    /**
      * Removes every journal of a workspace (deletion job only).
      *
      * @param workspaceId workspace being deleted

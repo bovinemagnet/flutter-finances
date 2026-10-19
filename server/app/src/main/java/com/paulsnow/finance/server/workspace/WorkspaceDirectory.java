@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -21,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.paulsnow.finance.core.ids.Ids;
 import com.paulsnow.finance.core.money.CurrencyUnit;
 import com.paulsnow.finance.server.common.ApiException;
+import com.paulsnow.finance.server.common.AuditEvent;
 
 /**
  * Resolves callers, workspaces, memberships and devices, and exposes the
@@ -42,10 +44,12 @@ public class WorkspaceDirectory {
 
     private final JdbcClient jdbc;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
 
-    WorkspaceDirectory(JdbcClient jdbc, Clock clock) {
+    WorkspaceDirectory(JdbcClient jdbc, Clock clock, ApplicationEventPublisher events) {
         this.jdbc = jdbc;
         this.clock = clock;
+        this.events = events;
     }
 
     /**
@@ -274,13 +278,127 @@ public class WorkspaceDirectory {
                         + "values (?, ?, ?, ?, ?, ?)")
                 .params(deviceId, member.workspaceId(), member.user().id(), name, platform, Timestamp.from(now()))
                 .update();
+        events.publishEvent(AuditEvent.of(member.workspaceId(), member.user().id(), "device.registered", "device",
+                deviceId));
         return true;
     }
 
     @Transactional
-    void revokeDevice(UUID deviceId) {
-        jdbc.sql("update device set revoked_at = ? where id = ? and revoked_at is null")
-                .params(Timestamp.from(now()), deviceId).update();
+    void revokeDevice(DeviceRow device, UUID actorUserId) {
+        int revoked = jdbc.sql("update device set revoked_at = ? where id = ? and revoked_at is null")
+                .params(Timestamp.from(now()), device.id()).update();
+        if (revoked > 0) {
+            events.publishEvent(AuditEvent.of(device.workspaceId(), actorUserId, "device.revoked", "device",
+                    device.id()));
+        }
+    }
+
+    /**
+     * A member of a workspace.
+     *
+     * @param userId   the member
+     * @param role     {@code owner}, {@code member} or {@code viewer}
+     * @param joinedAt when the membership started
+     */
+    public record Member(UUID userId, String role, Instant joinedAt) {
+    }
+
+    /**
+     * Lists a workspace's members, owners first.
+     *
+     * @param workspaceId workspace
+     * @return members
+     */
+    public List<Member> members(UUID workspaceId) {
+        return jdbc.sql("select user_id, role, created_at from membership where workspace_id = ? "
+                        + "order by case role when 'owner' then 0 when 'member' then 1 else 2 end, created_at")
+                .param(workspaceId)
+                .query((rs, row) -> new Member(rs.getObject("user_id", UUID.class), rs.getString("role"),
+                        rs.getTimestamp("created_at").toInstant()))
+                .list();
+    }
+
+    /**
+     * Adds a user to a workspace with a role, in the caller's transaction.
+     *
+     * @param workspaceId workspace
+     * @param user        the new member
+     * @param role        {@code member} or {@code viewer}
+     * @return false when the user is already a member
+     */
+    @Transactional
+    public boolean addMember(UUID workspaceId, CurrentUser user, String role) {
+        int inserted = jdbc.sql("insert into membership (workspace_id, user_id, role, created_at) "
+                        + "values (?, ?, ?, ?) on conflict (workspace_id, user_id) do nothing")
+                .params(workspaceId, user.id(), role, Timestamp.from(now())).update();
+        if (inserted > 0) {
+            events.publishEvent(AuditEvent.of(workspaceId, user.id(), "member.joined", "user", user.id())
+                    .withDetail(role));
+        }
+        return inserted > 0;
+    }
+
+    /**
+     * Changes a member's role. The last owner cannot be demoted.
+     *
+     * @param workspaceId workspace
+     * @param actor       owner making the change
+     * @param userId      member
+     * @param role        new role
+     * @throws ApiException 404 {@code MEMBER_NOT_FOUND}, 409 {@code LAST_OWNER}
+     */
+    @Transactional
+    public void changeRole(UUID workspaceId, CurrentUser actor, UUID userId, String role) {
+        String current = lockMember(workspaceId, userId);
+        if (current.equals(role)) {
+            return;
+        }
+        if ("owner".equals(current) && ownerCount(workspaceId) <= 1) {
+            throw ApiException.conflict("LAST_OWNER", "A workspace needs at least one owner.");
+        }
+        jdbc.sql("update membership set role = ? where workspace_id = ? and user_id = ?")
+                .params(role, workspaceId, userId).update();
+        events.publishEvent(AuditEvent.of(workspaceId, actor.id(), "member.role_changed", "user", userId)
+                .withDetail(role));
+    }
+
+    /**
+     * Removes a member and revokes every device they registered in the
+     * workspace, at once. The last owner cannot be removed.
+     *
+     * @param workspaceId workspace
+     * @param actor       owner removing the member, or the member leaving
+     * @param userId      member
+     * @return devices revoked
+     * @throws ApiException 404 {@code MEMBER_NOT_FOUND}, 409 {@code LAST_OWNER}
+     */
+    @Transactional
+    public int removeMember(UUID workspaceId, CurrentUser actor, UUID userId) {
+        String current = lockMember(workspaceId, userId);
+        if ("owner".equals(current) && ownerCount(workspaceId) <= 1) {
+            throw ApiException.conflict("LAST_OWNER", "A workspace needs at least one owner.");
+        }
+        int devices = jdbc.sql("update device set revoked_at = ? where workspace_id = ? and user_id = ? "
+                        + "and revoked_at is null")
+                .params(Timestamp.from(now()), workspaceId, userId).update();
+        jdbc.sql("delete from membership where workspace_id = ? and user_id = ?").params(workspaceId, userId)
+                .update();
+        events.publishEvent(AuditEvent.of(workspaceId, actor.id(), "member.removed", "user", userId));
+        return devices;
+    }
+
+    private String lockMember(UUID workspaceId, UUID userId) {
+        // Owner changes are serialised per workspace so two owners cannot
+        // demote each other at the same time.
+        jdbc.sql("select id from workspace where id = ? for update").param(workspaceId).query(UUID.class).optional();
+        return jdbc.sql("select role from membership where workspace_id = ? and user_id = ?")
+                .params(workspaceId, userId).query(String.class).optional()
+                .orElseThrow(() -> ApiException.notFound("MEMBER_NOT_FOUND", "Member not found."));
+    }
+
+    private long ownerCount(UUID workspaceId) {
+        return jdbc.sql("select count(*) from membership where workspace_id = ? and role = 'owner'")
+                .param(workspaceId).query(Long.class).single();
     }
 
     Instant now() {

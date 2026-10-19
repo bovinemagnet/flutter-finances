@@ -46,3 +46,8 @@ create table workspace_deletion_suppression (
     workspace_id uuid primary key,
     deleted_at timestamptz not null
 );
+
+--changeset "Paul Snow":workspace-2
+-- Shared households (P1): a viewer may read the workspace but not change it.
+alter table membership drop constraint membership_role_check;
+alter table membership add constraint membership_role_check check (role in ('owner', 'member', 'viewer'));

@@ -44,6 +44,19 @@ sealed interface Outcome {
     record Invalid(List<String> errors) implements Outcome {
     }
 
+    /**
+     * The caller may not make this change (a viewer, or an entity the
+     * caller cannot see); nothing was applied.
+     *
+     * @param errors error codes
+     */
+    record Denied(List<String> errors) implements Outcome {
+    }
+
+    static Denied denied() {
+        return new Denied(List.of("NOT_PERMITTED"));
+    }
+
     static Invalid invalid(String... errors) {
         return new Invalid(List.of(errors));
     }
@@ -58,9 +71,11 @@ sealed interface Outcome {
      * @param entityId     target entity
      * @param baseRevision revision the device last saw
      * @param payload      payload object
+     * @param userId       calling user, null for server-originated commands
+     * @param visibility   what the calling user may see
      */
     record Context(WorkspaceInfo workspace, UUID commandId, UUID deviceId, String entityType, UUID entityId,
-            long baseRevision, JsonNode payload) {
+            long baseRevision, JsonNode payload, UUID userId, Visibility visibility) {
 
         UUID workspaceId() {
             return workspace.id();

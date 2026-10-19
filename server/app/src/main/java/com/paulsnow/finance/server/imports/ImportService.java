@@ -36,6 +36,7 @@ import com.paulsnow.finance.server.jobs.JobService;
 import com.paulsnow.finance.server.ledger.LedgerService;
 import com.paulsnow.finance.server.ledger.LedgerService.PostingMovement;
 import com.paulsnow.finance.server.sync.EntityReader;
+import com.paulsnow.finance.server.sync.VisibilityService;
 import com.paulsnow.finance.server.workspace.CurrentMember;
 import com.paulsnow.finance.server.workspace.WorkspaceInfo;
 
@@ -79,10 +80,12 @@ class ImportService {
     private final JsonMapper json;
     private final Clock clock;
     private final Counter previewFailures;
+    private final VisibilityService visibility;
 
     ImportService(ImportRepository repository, ImportCommitter committer, EntityReader entities, LedgerService ledger,
             JobService jobs, ImportProperties properties, TransactionTemplate transactions, JsonMapper json,
-            Clock clock, MeterRegistry meters) {
+            Clock clock, MeterRegistry meters, VisibilityService visibility) {
+        this.visibility = visibility;
         this.repository = repository;
         this.committer = committer;
         this.entities = entities;
@@ -100,6 +103,10 @@ class ImportService {
         CsvMapping mapping = mapping(request, workspace);
         String accountId = mapping.accountId();
         requireLive(workspace.id(), accountId, "account", null, "UNKNOWN_ACCOUNT");
+        if (visibility.forMember(workspace.id(), member.user().id()).hidesAccount(accountId)) {
+            // Another member's private account does not exist for the caller.
+            throw fail(ApiException.badRequest("UNKNOWN_ACCOUNT", "Unknown account."));
+        }
         requireLive(workspace.id(), request.outflowCategoryId(), "category", "expense", "UNKNOWN_CATEGORY");
         requireLive(workspace.id(), request.inflowCategoryId(), "category", "income", "UNKNOWN_CATEGORY");
         byte[] bytes = decodeBase64(request.contentBase64());
@@ -302,6 +309,17 @@ class ImportService {
                 date(summary.path("firstDate")), date(summary.path("lastDate")),
                 gap.isObject() ? new DateGap(date(gap.path("from")), date(gap.path("to"))) : null, batch.result(),
                 batch.jobId(), offset, rows);
+    }
+
+    /**
+     * Refuses a batch whose account the member cannot see, as if it did not
+     * exist (shared households).
+     */
+    void requireVisible(CurrentMember member, UUID batchId) {
+        ImportRepository.Batch batch = find(member.workspaceId(), batchId);
+        if (visibility.forMember(member.workspaceId(), member.user().id()).hidesAccount(batch.accountId())) {
+            throw ApiException.notFound("IMPORT_NOT_FOUND", "Import not found.");
+        }
     }
 
     private ImportRepository.Batch find(UUID workspaceId, UUID batchId) {

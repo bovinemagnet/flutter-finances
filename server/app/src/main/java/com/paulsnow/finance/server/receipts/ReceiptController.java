@@ -62,6 +62,7 @@ class ReceiptController {
     @PostMapping("/upload-intents")
     @Operation(summary = "Get a short-lived upload URL; repeating it targets the same object")
     UploadIntentResponse intent(CurrentMember member, @Valid @RequestBody UploadIntentRequest request) {
+        member.requireWriter();
         PresignedRequest signed = receipts.createUploadIntent(member.workspaceId(), request.receiptId(),
                 request.assetId(), request.kind(), request.contentType(), request.sizeBytes(), request.sha256());
         return new UploadIntentResponse(signed.url(), signed.headers(), signed.expiresAt());
@@ -71,13 +72,15 @@ class ReceiptController {
     @Operation(summary = "Verify an upload and quarantine it for scanning; repeating it is a no-op")
     CompleteResponse complete(CurrentMember member, @PathVariable UUID receiptId,
             @Valid @RequestBody CompleteRequest request) {
+        member.requireWriter();
         return new CompleteResponse(receipts.complete(member.workspaceId(), receiptId, request.assetId()));
     }
 
     @GetMapping("/{receiptId}/assets/{assetId}/download")
     @Operation(summary = "Get a short-lived download URL; 409 ASSET_NOT_AVAILABLE until scanned")
     DownloadResponse download(CurrentMember member, @PathVariable UUID receiptId, @PathVariable UUID assetId) {
-        PresignedRequest signed = receipts.download(member.workspaceId(), receiptId, assetId);
+        PresignedRequest signed = receipts.download(member.workspaceId(), member.user().id(), receiptId,
+                assetId);
         return new DownloadResponse(signed.url(), signed.expiresAt());
     }
 }
