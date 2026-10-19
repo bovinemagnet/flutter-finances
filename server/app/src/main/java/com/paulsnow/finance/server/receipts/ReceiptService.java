@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.paulsnow.finance.core.documents.ContentSniffer;
+import com.paulsnow.finance.core.documents.PdfInspector;
 import com.paulsnow.finance.server.common.ApiException;
 import com.paulsnow.finance.server.jobs.JobService;
 import com.paulsnow.finance.server.storage.ObjectStorage;
@@ -52,7 +53,7 @@ public class ReceiptService {
 
     private static final Pattern SHA256 = Pattern.compile("[0-9a-f]{64}");
     private static final List<String> FAILURE_REASONS = List.of("OBJECT_MISSING", "CHECKSUM_MISMATCH",
-            "CONTENT_TYPE_MISMATCH", "SCAN_REJECTED");
+            "CONTENT_TYPE_MISMATCH", "TOO_MANY_PAGES", "SCAN_REJECTED");
 
     /** A stored document asset. */
     record Asset(UUID assetId, UUID receiptId, UUID workspaceId, String kind, String contentType, long sizeBytes,
@@ -143,6 +144,10 @@ public class ReceiptService {
      */
     @Transactional
     String complete(UUID workspaceId, UUID receiptId, UUID assetId) {
+        // Completions of one receipt are serialised for its page limit.
+        jdbc.sql("select receipt_id from receipt_document where receipt_id = ? and workspace_id = ? for update")
+                .params(receiptId, workspaceId).query(UUID.class).optional()
+                .orElseThrow(() -> ApiException.notFound("UNKNOWN_ASSET", "Asset not found."));
         Asset asset = jdbc.sql("select * from receipt_asset where asset_id = ? and receipt_id = ? "
                         + "and workspace_id = ? for update")
                 .params(assetId, receiptId, workspaceId).query(ReceiptService::mapAsset).optional()
@@ -157,6 +162,7 @@ public class ReceiptService {
             throw ApiException.conflict("OBJECT_MISSING", "Upload the document before completing it.");
         }
         Path copy = null;
+        int pages;
         try {
             copy = Files.createTempFile("receipt-", ".bin");
             byte[] header;
@@ -177,6 +183,11 @@ public class ReceiptService {
             if (!ContentSniffer.sniffMimeType(header).filter(asset.contentType()::equals).isPresent()) {
                 reject(staging, "CONTENT_TYPE_MISMATCH");
             }
+            pages = pageCount(asset, copy);
+            if ("source".equals(asset.kind())
+                    && sourcePages(receiptId, assetId) + pages > properties.maxPagesPerReceipt()) {
+                reject(staging, "TOO_MANY_PAGES");
+            }
             storage.put(asset.objectKey(), copy, asset.contentType());
             storage.delete(staging);
         } catch (IOException e) {
@@ -187,10 +198,30 @@ public class ReceiptService {
             deleteQuietly(copy);
         }
         Timestamp now = Timestamp.from(clock.instant());
-        jdbc.sql("update receipt_asset set status = 'quarantined', completed_at = ?, updated_at = ? "
-                + "where asset_id = ?").params(now, now, assetId).update();
+        jdbc.sql("update receipt_asset set status = 'quarantined', page_count = ?, completed_at = ?, "
+                + "updated_at = ? where asset_id = ?").params(pages, now, now, assetId).update();
         jobs.enqueue(SCAN_JOB, workspaceId, JsonNodeFactory.instance.objectNode().put("assetId", assetId.toString()));
         return "quarantined";
+    }
+
+    /**
+     * Pages in a verified document: a PDF's conservative count as the
+     * shared {@code pdf.inspect} reads it, at least one when its page tree
+     * is hidden in object streams; an image is one page.
+     */
+    private static int pageCount(Asset asset, Path file) throws IOException {
+        if (!ContentTypes.PDF.equals(asset.contentType())) {
+            return 1;
+        }
+        Integer pages = PdfInspector.inspect(Files.readAllBytes(file)).pageCount();
+        return pages == null ? 1 : pages;
+    }
+
+    /** Pages of the receipt's other completed, unrejected source documents. */
+    private long sourcePages(UUID receiptId, UUID excluding) {
+        return jdbc.sql("select coalesce(sum(coalesce(page_count, 1)), 0) from receipt_asset where receipt_id = ? "
+                        + "and asset_id <> ? and kind = 'source' and status in ('quarantined', 'available')")
+                .params(receiptId, excluding).query(Long.class).single();
     }
 
     /** Signs a short-lived download of an available asset of the workspace. */

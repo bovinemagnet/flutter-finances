@@ -100,7 +100,8 @@ class FakeSyncServer {
 
   static const maxPageSize = 500;
   static const maxCommandsPerBatch = 500;
-  static const maxSizeBytes = 25 * 1024 * 1024;
+  static const maxSizeBytes = 20 * 1024 * 1024;
+  static const maxPagesPerReceipt = 10;
   static const _systemAccounts = {
     'system:opening-equity',
     'system:balance-adjustments',
@@ -899,6 +900,7 @@ class FakeSyncServer {
         contentType as String,
         size,
         checksum,
+        kind: kind as String,
       );
     }
     return _json(200, {
@@ -968,6 +970,25 @@ class FakeSyncServer {
       objects.remove(assetId);
       throw _HttpError(422, 'CONTENT_TYPE_MISMATCH');
     }
+    final pages = intent.contentType == 'application/pdf'
+        ? inspectPdf(bytes).pageCount ?? 1
+        : 1;
+    if (intent.kind == 'source') {
+      final others = intents.entries
+          .where(
+            (e) =>
+                e.key != assetId &&
+                e.value.receiptId == receiptId &&
+                e.value.kind == 'source' &&
+                assetStatus.containsKey(e.key),
+          )
+          .fold<int>(0, (n, e) => n + (e.value.pages ?? 1));
+      if (others + pages > maxPagesPerReceipt) {
+        objects.remove(assetId);
+        throw _HttpError(422, 'TOO_MANY_PAGES');
+      }
+    }
+    intent.pages = pages;
     completions++;
     // The scan job is immediate here: quarantined, then available.
     assetStatus[assetId] = 'available';
@@ -1084,9 +1105,19 @@ class _Idempotency {
 }
 
 class UploadIntent {
-  UploadIntent(this.receiptId, this.contentType, this.size, this.sha256);
+  UploadIntent(
+    this.receiptId,
+    this.contentType,
+    this.size,
+    this.sha256, {
+    this.kind = 'source',
+  });
   final String receiptId;
   final String contentType;
   final int size;
   final String sha256;
+  final String kind;
+
+  /// Pages counted at completion.
+  int? pages;
 }

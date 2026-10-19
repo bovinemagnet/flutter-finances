@@ -137,6 +137,32 @@ class ReceiptsIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    void aReceiptsSourceDocumentsHoldAtMostTenPages() throws Exception {
+        Actor actor = newActor();
+        String receiptId = createReceipt(actor);
+        assertThat(upload(actor, receiptId, "source", pages(7))).isEqualTo(200);
+        assertThat(upload(actor, receiptId, "source", jpeg())).isEqualTo(200);
+        // A derivative is another rendering of a source, not more pages.
+        assertThat(upload(actor, receiptId, "derivative", pages(5))).isEqualTo(200);
+
+        String tooMany = Ids.newId();
+        byte[] three = pages(3);
+        put(read(intent(actor, receiptId, tooMany, "application/pdf", three).andReturn().getResponse()
+                .getContentAsString()), three);
+        complete(actor, receiptId, tooMany).andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.error").value("TOO_MANY_PAGES"));
+        assertThat(upload(actor, receiptId, "source", pages(2))).isEqualTo(200);
+
+        String other = createReceipt(actor);
+        String eleven = Ids.newId();
+        byte[] elevenPages = pages(11);
+        put(read(intent(actor, other, eleven, "application/pdf", elevenPages).andReturn().getResponse()
+                .getContentAsString()), elevenPages);
+        complete(actor, other, eleven).andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.error").value("TOO_MANY_PAGES"));
+    }
+
+    @Test
     void scannerRejectsActiveContentAndItIsNeverDownloadable() throws Exception {
         Actor actor = newActor();
         String receiptId = createReceipt(actor);
@@ -167,6 +193,11 @@ class ReceiptsIntegrationTest extends IntegrationTestSupport {
                         .content(json.writeValueAsString(Map.of("receiptId", receiptId, "assetId", Ids.newId(),
                                 "kind", "source", "contentType", "image/png", "sizeBytes", 1_000_000_000L,
                                 "sha256", sha256(bytes)))))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").value("TOO_LARGE"));
+        // REC 05: 20 MiB per file, as the client's ContentLimits.
+        intent(actor, receiptId, Ids.newId(), "source", "image/png", 20L * 1024 * 1024, sha256(bytes))
+                .andExpect(status().isOk());
+        intent(actor, receiptId, Ids.newId(), "source", "image/png", 20L * 1024 * 1024 + 1, sha256(bytes))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").value("TOO_LARGE"));
     }
 
@@ -212,12 +243,37 @@ class ReceiptsIntegrationTest extends IntegrationTestSupport {
 
     private ResultActions intent(Actor actor, String receiptId, String assetId, String contentType, byte[] bytes)
             throws Exception {
+        return intent(actor, receiptId, assetId, "source", contentType, bytes.length, sha256(bytes));
+    }
+
+    private ResultActions intent(Actor actor, String receiptId, String assetId, String kind, String contentType,
+            long sizeBytes, String sha256) throws Exception {
         return mvc.perform(post("/v1/receipts/upload-intents").with(user(actor.subject()))
                 .header("X-Workspace-Id", actor.workspaceId().toString())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(Map.of("receiptId", receiptId, "assetId", assetId,
-                        "kind", "source", "contentType", contentType, "sizeBytes", bytes.length,
-                        "sha256", sha256(bytes)))));
+                        "kind", kind, "contentType", contentType, "sizeBytes", sizeBytes, "sha256", sha256))));
+    }
+
+    /** Uploads and completes one asset; returns the completion status code. */
+    private int upload(Actor actor, String receiptId, String kind, byte[] bytes) throws Exception {
+        String assetId = Ids.newId();
+        String contentType = bytes[0] == '%' ? "application/pdf" : "image/jpeg";
+        JsonNode intent = read(intent(actor, receiptId, assetId, kind, contentType, bytes.length, sha256(bytes))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        put(intent, bytes);
+        return complete(actor, receiptId, assetId).andReturn().getResponse().getStatus();
+    }
+
+    /** A PDF with {@code count} page objects. */
+    static byte[] pages(int count) {
+        StringBuilder pdf = new StringBuilder("%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n")
+                .append("2 0 obj << /Type /Pages /Count ").append(count).append(" >> endobj\n");
+        for (int i = 0; i < count; i++) {
+            pdf.append(3 + i).append(" 0 obj << /Type /Page /Parent 2 0 R >> endobj\n");
+        }
+        return pdf.append("trailer << /Root 1 0 R >>\nstartxref\n0\n%%EOF\n").toString()
+                .getBytes(StandardCharsets.US_ASCII);
     }
 
     private ResultActions complete(Actor actor, String receiptId, String assetId) throws Exception {

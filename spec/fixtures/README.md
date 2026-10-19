@@ -145,6 +145,17 @@ Cases live in `documents.json`. Amounts are integer minor units.
   starting at any offset from 0 to 1024 is `application/pdf`. Everything
   else is `UNSUPPORTED_TYPE`.
 
+`pdf.inspect`
+: Input `{base64}` of a whole PDF, output `{readable, encrypted,
+  pageCount}` read from the raw syntax (Latin-1, no stream is
+  decompressed). `pageCount` is the larger of the number of
+  `/Type /Page` objects (not `/Pages`) and the largest `/Count n`, or
+  null when both are zero. `encrypted` is true when any `trailer`
+  dictionary (up to the next `startxref`) or `/Type /XRef` stream
+  dictionary names `/Encrypt`. `readable` needs `%%EOF` in the last 1024
+  characters, a `startxref`, and either a page count or an `/ObjStm`
+  that may hide the page tree. Receipts use it for the 10-page limit.
+
 ## Planning operations
 
 Cases live in `planning.json`. Unless stated otherwise:

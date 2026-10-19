@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 /**
  * The default {@link DocumentScanner}: structural validation without
  * decoding pixels or rendering pages. It rejects truncated files, images
- * beyond the configured dimensions, malformed structures and PDFs with
+ * beyond the configured side length or area (a decompression bomb guard), malformed structures and PDFs with
  * active content (scripts, launch actions, embedded files, XFA forms or rich
  * media). It is not a malware scanner; deployments that need one provide
  * their own {@code DocumentScanner} bean.
@@ -23,10 +23,12 @@ class StructuralDocumentScanner implements DocumentScanner {
     private static final Pattern ACTIVE_PDF_CONTENT = Pattern
             .compile("/(JavaScript|JS|Launch|EmbeddedFiles?|XFA|RichMedia)(?![A-Za-z0-9])");
 
-    private final int maxDimension;
+    private final int maxSide;
+    private final long maxPixels;
 
-    StructuralDocumentScanner(int maxDimension) {
-        this.maxDimension = maxDimension;
+    StructuralDocumentScanner(int maxSide, long maxPixels) {
+        this.maxSide = maxSide;
+        this.maxPixels = maxPixels;
     }
 
     @Override
@@ -107,7 +109,7 @@ class StructuralDocumentScanner implements DocumentScanner {
         if (width <= 0 || height <= 0) {
             return Verdict.reject("MALFORMED");
         }
-        if (width > maxDimension || height > maxDimension) {
+        if (width > maxSide || height > maxSide || width * height > maxPixels) {
             return Verdict.reject("IMAGE_TOO_LARGE");
         }
         return complete ? Verdict.accept() : Verdict.reject("TRUNCATED");

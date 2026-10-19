@@ -68,8 +68,11 @@ finance:
     upload-url-ttl: 15m
     download-url-ttl: 5m
   receipts:
-    max-size-bytes: 26214400
-    max-image-dimension: 20000
+    # REC 05, matching the client's ContentLimits.
+    max-size-bytes: 20971520
+    max-pages-per-receipt: 10
+    max-image-side: 16384
+    max-image-pixels: 50000000
   imports:
     max-rows: 50000
     synchronous-row-limit: 1000
