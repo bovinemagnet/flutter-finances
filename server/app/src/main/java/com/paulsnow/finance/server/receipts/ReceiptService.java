@@ -28,12 +28,14 @@ import com.paulsnow.finance.core.documents.PdfInspector;
 import com.paulsnow.finance.server.common.ApiException;
 import com.paulsnow.finance.server.jobs.JobService;
 import com.paulsnow.finance.server.storage.ObjectStorage;
+import com.paulsnow.finance.server.storage.Retention;
 import com.paulsnow.finance.server.storage.PresignedRequest;
 import com.paulsnow.finance.server.sync.EntityReader;
 import com.paulsnow.finance.server.sync.VisibilityService;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import tools.jackson.databind.node.JsonNodeFactory;
 
 /**
@@ -136,7 +138,7 @@ public class ReceiptService {
                             assetKey(workspaceId, receiptId, assetId), now, now)
                     .update();
         }
-        return storage.presignPut(uploadKey(workspaceId, assetId), contentType);
+        return storage.presignPut(uploadKey(workspaceId, assetId), contentType, Retention.STAGING);
     }
 
     /**
@@ -259,7 +261,11 @@ public class ReceiptService {
         return storage.presignGet(asset.objectKey());
     }
 
-    /** Scans a quarantined asset and releases or rejects it. */
+    /**
+     * Scans a quarantined asset and releases or rejects it. Each scan is
+     * timed as {@code finance.extraction.latency} with its outcome
+     * ({@code available}, {@code rejected} or {@code error}).
+     */
     String scan(UUID assetId, DocumentScanner scanner) {
         Optional<Asset> found = findAsset(assetId);
         if (found.isEmpty() || !"quarantined".equals(found.get().status())) {
@@ -267,6 +273,8 @@ public class ReceiptService {
         }
         Asset asset = found.get();
         Path copy = null;
+        Timer.Sample sample = Timer.start(meters);
+        String outcome = "error";
         try {
             copy = Files.createTempFile("scan-", ".bin");
             try (InputStream in = storage.read(asset.objectKey())) {
@@ -281,10 +289,14 @@ public class ReceiptService {
             jdbc.sql("update receipt_asset set status = ?, rejection_reason = ?, scanned_at = ?, updated_at = ? "
                             + "where asset_id = ? and status = 'quarantined'")
                     .params(status, verdict.reason(), now, now, assetId).update();
+            outcome = status;
             return status;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         } finally {
+            sample.stop(Timer.builder("finance.extraction.latency")
+                    .description("Time to extract and check a document in a server-side job, by job and outcome")
+                    .tag("job", SCAN_JOB).tag("outcome", outcome).register(meters));
             deleteQuietly(copy);
         }
     }

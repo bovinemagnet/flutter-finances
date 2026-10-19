@@ -14,6 +14,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.Map;
@@ -29,6 +30,8 @@ import org.springframework.http.MediaType;
 import com.paulsnow.finance.core.ids.Ids;
 import com.paulsnow.finance.server.jobs.JobRunner;
 import com.paulsnow.finance.server.support.IntegrationTestSupport;
+
+import software.amazon.awssdk.services.s3.S3Client;
 
 import tools.jackson.databind.JsonNode;
 
@@ -46,6 +49,9 @@ class ExportsIntegrationTest extends IntegrationTestSupport {
 
     @Autowired
     JobRunner jobs;
+
+    @Autowired
+    S3Client s3;
 
     @Test
     void producesAnArchiveWhoseManifestHashesVerify() throws Exception {
@@ -112,6 +118,19 @@ class ExportsIntegrationTest extends IntegrationTestSupport {
         mvc.perform(get("/v1/exports/" + exportId + "/download").with(user(stranger.subject()))
                         .header("X-Workspace-Id", stranger.workspaceId().toString()))
                 .andExpect(status().isNotFound());
+
+        // The archive is tagged for the bucket lifecycle, which expires it after
+        // the export retention; from then on the export cannot be downloaded.
+        assertThat(s3.getObjectTagging(r -> r.bucket("finance-test")
+                        .key("workspaces/" + actor.workspaceId() + "/exports/" + exportId + ".zip")).tagSet())
+                .anySatisfy(tag -> {
+                    assertThat(tag.key()).isEqualTo("finance-retention");
+                    assertThat(tag.value()).isEqualTo("export");
+                });
+        clock.advance(Duration.ofDays(7));
+        mvc.perform(get("/v1/exports/" + exportId + "/download").with(user(actor.subject()))
+                        .header("X-Workspace-Id", actor.workspaceId().toString()))
+                .andExpect(status().isGone()).andExpect(jsonPath("$.error").value("EXPORT_EXPIRED"));
     }
 
     private String upload(Actor actor, String receiptId, byte[] bytes) throws Exception {

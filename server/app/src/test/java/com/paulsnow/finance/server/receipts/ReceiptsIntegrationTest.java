@@ -30,6 +30,8 @@ import com.paulsnow.finance.server.jobs.JobRunner;
 import com.paulsnow.finance.server.support.IntegrationTestSupport;
 import com.paulsnow.finance.server.support.TestcontainersConfiguration;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -50,6 +52,9 @@ class ReceiptsIntegrationTest extends IntegrationTestSupport {
     @Autowired
     JdbcClient jdbc;
 
+    @Autowired
+    MeterRegistry meters;
+
     @Test
     void uploadsCompletesQuarantinesScansAndDownloads() throws Exception {
         Actor actor = newActor();
@@ -60,6 +65,8 @@ class ReceiptsIntegrationTest extends IntegrationTestSupport {
         JsonNode intent = intent(actor, receiptId, assetId, "image/png", bytes).andExpect(status().isOk())
                 .andExpect(jsonPath("$.uploadUrl").isNotEmpty())
                 .andExpect(jsonPath("$.expiresAt").isNotEmpty())
+                // Staging uploads are tagged so the bucket lifecycle expires them (SEC 06).
+                .andExpect(jsonPath("$.headers['x-amz-tagging']").value("finance-retention=staging"))
                 .andReturn().getResponse().getContentAsString().transform(this::read);
         assertThat(put(intent, bytes)).isEqualTo(200);
 
@@ -68,7 +75,11 @@ class ReceiptsIntegrationTest extends IntegrationTestSupport {
         download(actor, receiptId, assetId).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").value("ASSET_NOT_AVAILABLE"));
 
+        long scansBefore = extractions("available");
         jobs.runUntilIdle();
+        assertThat(extractions("available")).isEqualTo(scansBefore + 1);
+        assertThat(meters.get("finance.extraction.latency").tag("outcome", "available").timer().takeSnapshot()
+                .histogramCounts()).as("histogram buckets for quantiles").isNotEmpty();
 
         JsonNode link = read(download(actor, receiptId, assetId).andExpect(status().isOk())
                 .andExpect(jsonPath("$.expiresAt").isNotEmpty())
@@ -286,6 +297,13 @@ class ReceiptsIntegrationTest extends IntegrationTestSupport {
     private ResultActions download(Actor actor, String receiptId, String assetId) throws Exception {
         return mvc.perform(get("/v1/receipts/" + receiptId + "/assets/" + assetId + "/download")
                 .with(user(actor.subject())).header("X-Workspace-Id", actor.workspaceId().toString()));
+    }
+
+    /** Samples of the extraction latency timer for scan jobs with an outcome. */
+    private long extractions(String outcome) {
+        Timer timer = meters.find("finance.extraction.latency").tag("job", "receipts.scan").tag("outcome", outcome)
+                .timer();
+        return timer == null ? 0 : timer.count();
     }
 
     private int put(JsonNode intent, byte[] bytes) throws Exception {

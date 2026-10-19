@@ -25,7 +25,21 @@ public interface ObjectStorage {
      * @param contentType content type the client must send
      * @return the signed request
      */
-    PresignedRequest presignPut(String key, String contentType);
+    default PresignedRequest presignPut(String key, String contentType) {
+        return presignPut(key, contentType, null);
+    }
+
+    /**
+     * Signs a PUT of exactly one object with the given content type that
+     * tags it with a retention class; the tag header is among the headers
+     * the client must send.
+     *
+     * @param key         object key
+     * @param contentType content type the client must send
+     * @param retention   retention class, or null for none
+     * @return the signed request
+     */
+    PresignedRequest presignPut(String key, String contentType, Retention retention);
 
     /**
      * Signs a GET of one object.
@@ -58,7 +72,19 @@ public interface ObjectStorage {
      * @param file        content
      * @param contentType content type
      */
-    void put(String key, Path file, String contentType);
+    default void put(String key, Path file, String contentType) {
+        put(key, file, contentType, null);
+    }
+
+    /**
+     * Stores a file as an object tagged with a retention class.
+     *
+     * @param key         object key
+     * @param file        content
+     * @param contentType content type
+     * @param retention   retention class, or null for none
+     */
+    void put(String key, Path file, String contentType, Retention retention);
 
     /**
      * Deletes one object; absent objects are ignored.

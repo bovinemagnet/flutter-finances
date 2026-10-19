@@ -18,12 +18,17 @@ import tools.jackson.databind.json.JsonMapper;
  * OAuth2 resource server: every API call needs a JWT from the configured
  * OIDC issuer. The service holds no client secret and keeps no session; the
  * workspace a caller may act on is resolved per request from membership.
+ * Operations endpoints ({@code /v1/ops/**}) additionally need a token with
+ * the {@code finance.ops} scope.
  *
  * @author Paul Snow
  * @since 0.0.0
  */
 @Configuration(proxyBeanMethods = false)
 class SecurityConfiguration {
+
+    /** Authority that the {@code finance.ops} scope of an access token grants. */
+    static final String OPS_AUTHORITY = "SCOPE_finance.ops";
 
     @Bean
     SecurityFilterChain apiSecurity(HttpSecurity http, JsonMapper json) throws Exception {
@@ -34,6 +39,8 @@ class SecurityConfiguration {
                                 "/actuator/prometheus", "/v3/api-docs", "/v3/api-docs/**", "/swagger-ui.html",
                                 "/swagger-ui/**")
                         .permitAll()
+                        // Operations reporting needs the separate finance.ops scope.
+                        .requestMatchers("/v1/ops/**").hasAuthority(OPS_AUTHORITY)
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults())
                         .authenticationEntryPoint((request, response, e) -> write(response, json,

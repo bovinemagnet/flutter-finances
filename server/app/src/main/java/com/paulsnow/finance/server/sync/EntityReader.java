@@ -90,6 +90,24 @@ public class EntityReader {
     }
 
     /**
+     * Streams every live entity of one type in the order the server
+     * accepted them (creation time, then identifier).
+     *
+     * @param workspaceId workspace
+     * @param entityType  entity type
+     * @param consumer    receives each entity
+     */
+    public void forEachLive(UUID workspaceId, String entityType, Consumer<LiveEntity> consumer) {
+        jdbc.sql("select entity_type, entity_id, revision, data from sync_entity where workspace_id = ? "
+                        + "and entity_type = ? and not deleted order by created_at, entity_id")
+                .params(workspaceId, entityType)
+                .query(rs -> {
+                    consumer.accept(new LiveEntity(rs.getString("entity_type"), rs.getObject("entity_id", UUID.class),
+                            rs.getLong("revision"), JsonValues.parseObject(rs.getString("data"))));
+                });
+    }
+
+    /**
      * Returns the workspace's change feed position, the revision an export
      * has accepted (DATA 03).
      *

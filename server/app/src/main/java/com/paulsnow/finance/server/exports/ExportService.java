@@ -16,6 +16,7 @@ import com.paulsnow.finance.server.common.AuditEvent;
 import com.paulsnow.finance.server.jobs.JobService;
 import com.paulsnow.finance.server.storage.ObjectStorage;
 import com.paulsnow.finance.server.storage.PresignedRequest;
+import com.paulsnow.finance.server.storage.StorageProperties;
 
 import tools.jackson.databind.node.JsonNodeFactory;
 
@@ -41,10 +42,12 @@ public class ExportService {
     private final ObjectStorage storage;
     private final Clock clock;
     private final ApplicationEventPublisher events;
+    private final StorageProperties storageProperties;
 
     ExportService(JdbcClient jdbc, JobService jobs, ObjectStorage storage, Clock clock,
-            ApplicationEventPublisher events) {
+            ApplicationEventPublisher events, StorageProperties storageProperties) {
         this.events = events;
+        this.storageProperties = storageProperties;
         this.jdbc = jdbc;
         this.jobs = jobs;
         this.storage = storage;
@@ -80,6 +83,10 @@ public class ExportService {
         ExportView export = find(workspaceId, exportId);
         if (!"ready".equals(export.status())) {
             throw ApiException.conflict("EXPORT_NOT_READY", "The export is still being prepared.");
+        }
+        if (!export.completedAt().plus(storageProperties.exportRetention()).isAfter(clock.instant())) {
+            // The bucket lifecycle expires the archive after the retention (SEC 06).
+            throw ApiException.gone("EXPORT_EXPIRED", "This export has expired; start a new one.");
         }
         return storage.presignGet(objectKey(workspaceId, exportId));
     }
