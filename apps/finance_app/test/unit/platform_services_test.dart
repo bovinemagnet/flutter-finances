@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:finance_app/platform/capabilities.dart';
 import 'package:finance_app/platform/services.dart';
 import 'package:flutter/foundation.dart';

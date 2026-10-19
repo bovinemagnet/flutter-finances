@@ -14,8 +14,9 @@ Money evaluateAmountExpression(String text, Currency currency) {
   var index = 0;
   while (index < cleaned.length) {
     final match = _token.matchAsPrefix(cleaned, index);
-    if (match == null)
+    if (match == null) {
       throw FormatException('Unexpected character', text, index);
+    }
     tokens.add(match.group(1)!);
     index = match.end;
   }
