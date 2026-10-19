@@ -114,6 +114,112 @@ review, never applied automatically.
    members of the owning workspace (A17). While the asset is still uploading
    or quarantined it returns HTTP 409 `{"error": "ASSET_NOT_AVAILABLE"}`.
 
+## Households
+
+A workspace can be shared by several signed-in users (P1, SEC 05). Every
+membership has one role; every account is private to the user who created
+it until that user shares it. Endpoints take the workspace from the path and
+authenticate as described under "Server behaviour"; a caller who is not a
+member gets `404 WORKSPACE_NOT_FOUND`.
+
+**Roles.**
+
+| Action | owner | member | viewer |
+| --- | --- | --- | --- |
+| Pull the change feed and snapshot, read reports, start and download exports | yes | yes | yes |
+| Register devices, list and revoke their own devices | yes | yes | yes |
+| Submit sync commands, preview, commit and roll back imports, upload receipt documents | yes | yes | no |
+| Invite, list and revoke invitations, change roles, remove other members | yes | no | no |
+| List every member's devices and revoke any of them | yes | no | no |
+| Read audit events, delete the workspace | yes | no | no |
+| List members, leave the workspace | yes | yes | yes |
+
+A viewer's command is `permission_denied` with `errors: ["NOT_PERMITTED"]`;
+a viewer's import or receipt upload call is `403 READ_ONLY`; an owner-only
+call by anyone else is `403 OWNER_REQUIRED`. Roles never widen what a user
+can see: an owner does not see another member's private accounts either.
+
+**Invitations.** An owner creates one with
+`POST /v1/workspaces/{workspaceId}/invitations` `{"role": "member" |
+"viewer", "expiresInHours"?}` (default 72 hours, at most 30 days; `400
+INVALID_ROLE`, `400 INVALID_EXPIRY`) and receives `201 {"id",
+"workspaceId", "role", "status": "pending", "createdAt", "expiresAt",
+"acceptedAt": null, "token"}`. The token is 256 random bits, returned only in
+this response (the server keeps its SHA-256) and handed to the invitee out of
+band together with the workspace and invitation ids. `GET
+/v1/workspaces/{workspaceId}/invitations` lists invitations newest first with
+`status` `pending`, `expired`, `accepted` or `revoked` and `token: null`.
+`DELETE /v1/workspaces/{workspaceId}/invitations/{invitationId}` revokes a
+pending or expired invitation (`204`; otherwise `409
+INVITATION_NOT_PENDING`). Owners are made by changing a role, never by
+invitation.
+
+**Acceptance.** The invitee, signed in as any user,
+calls `POST /v1/workspaces/{workspaceId}/invitations/{invitationId}/accept`
+`{"token"}` and receives `200 {"workspaceId", "role"}`, then registers a
+device with `POST /v1/devices` and bootstraps from the change feed. An
+invitation is single use: an unknown invitation, a wrong token or an
+inactive workspace is `404 INVITATION_NOT_FOUND` (nothing is revealed before
+the token is proven); afterwards a used invitation is `409 INVITATION_USED`
+(the same user accepting again gets `200` with the same answer), a revoked
+one `410 INVITATION_REVOKED`, an expired one `410 INVITATION_EXPIRED`, and a
+user who is already a member `409 ALREADY_MEMBER`.
+
+**Members and removal.** `GET /v1/workspaces/{workspaceId}/members` returns
+`[{"userId", "role", "joinedAt", "you"}]`, owners first. An owner changes a
+role with `PATCH /v1/workspaces/{workspaceId}/members/{userId}` `{"role":
+"owner" | "member" | "viewer"}` (`204`; `400 INVALID_ROLE`, `404
+MEMBER_NOT_FOUND`). `DELETE /v1/workspaces/{workspaceId}/members/{userId}`
+removes a member (owners) or leaves (a member's own `userId`) and, in the
+same transaction, revokes every device that user registered in the
+workspace: their next sync call is `403 DEVICE_REVOKED` and every
+workspace call `404 WORKSPACE_NOT_FOUND`. The last owner can be neither
+demoted nor removed (`409 LAST_OWNER`). Invitations, acceptance, role
+changes, removals and device registrations are audit events
+(`GET /v1/workspaces/{workspaceId}/audit-events?limit&before`, owners).
+
+**Account sharing.** An account's `sharing` field is `"private"` (the
+default when absent) or `"shared"` (`INVALID_FIELD` otherwise). Only the
+user who created the account may change it; anyone else's command is
+`permission_denied` (`NOT_PERMITTED`). Accounts created by server work
+without a calling user, or before the server recorded creators, are visible
+to everyone.
+
+**What each member sees.** For a user, an account is *hidden* when it is
+private and another user created it. Then:
+
+- an account is visible unless hidden;
+- every category is visible;
+- a journal is hidden when any of its postings names a hidden account (a
+  transfer between a shared and a private account is hidden as a whole);
+- any other entity is hidden when one of `accountId`, `counterAccountId`,
+  `toAccountId`, `fromAccountId` or `accountIds` names a hidden account, or
+  one of `journalId` or `journalIds` names a hidden journal; all other
+  metadata (budget plans, rules, schedules without such references, and so
+  on) is visible;
+- a tombstone is never hidden: delete changes carry only `{"id"}`.
+
+The change feed applies these rules to each change, judging the entity
+data in that change against the accounts hidden at the time of the pull:
+hidden changes are skipped, so a page may hold fewer than `limit` changes
+(or none) while `hasMore` is true. When an entity leaves a member's view (the
+account becomes private, or a journal or reference is edited to point at a
+hidden account) the member receives a `delete` change for it; when it
+enters their view they receive an `upsert` with the full entity. Sharing or
+unsharing an account re-announces, in the same transaction, every journal
+posting to it and every entity referring to it or to those journals, so
+each member gains or drops them together. Clients ignore a `delete` for an
+entity they never had. The snapshot returns only visible live entities (a
+page may again be shorter than `limit`). Reports and exports are computed
+from visible entities only; a report's `complete` is `false` when some
+account was hidden. For commands, a hidden entity is `permission_denied`
+(`NOT_PERMITTED`) for upsert, delete, `journal.post` replacement and
+`journal.correct`, and a posting to a hidden account is
+`validation_failed` with `UNKNOWN_LEDGER_ACCOUNT`, exactly as for an account
+that does not exist. An import whose account is hidden is `404
+IMPORT_NOT_FOUND` (`400 UNKNOWN_ACCOUNT` on preview), and downloading an
+asset of a hidden receipt is `404 NOT_FOUND`.
+
 ## Server behaviour
 
 Decisions the server makes where the sections above are silent.
