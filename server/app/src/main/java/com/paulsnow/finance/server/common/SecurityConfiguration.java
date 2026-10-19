@@ -34,6 +34,9 @@ class SecurityConfiguration {
                                 "/actuator/prometheus", "/v3/api-docs", "/v3/api-docs/**", "/swagger-ui.html",
                                 "/swagger-ui/**")
                         .permitAll()
+                        // Provider webhooks carry an HMAC signature instead of a user token.
+                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/v1/bank-feeds/webhooks/*")
+                        .permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults())
                         .authenticationEntryPoint((request, response, e) -> write(response, json,

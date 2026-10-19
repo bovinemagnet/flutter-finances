@@ -35,3 +35,6 @@ databaseChangeLog:
   - include:
       file: extraction.sql
       relativeToChangelogFile: true
+  - include:
+      file: bankfeeds.sql
+      relativeToChangelogFile: true

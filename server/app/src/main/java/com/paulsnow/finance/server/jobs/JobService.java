@@ -68,11 +68,27 @@ public class JobService {
      * @return the job identifier
      */
     public UUID enqueue(String type, UUID workspaceId, JsonNode payload, int maxAttempts) {
+        return enqueueAt(type, workspaceId, payload, maxAttempts, clock.instant());
+    }
+
+    /**
+     * Queues a job that is not claimed before {@code runAfter}, for example
+     * a retry the handler schedules itself after a provider rate limit.
+     *
+     * @param type        handler type
+     * @param workspaceId owning workspace, or null
+     * @param payload     handler input
+     * @param maxAttempts attempts before the job fails
+     * @param runAfter    earliest time the job runs
+     * @return the job identifier
+     */
+    public UUID enqueueAt(String type, UUID workspaceId, JsonNode payload, int maxAttempts, Instant runAfter) {
         UUID id = Ids.newUuid();
         Timestamp now = Timestamp.from(clock.instant());
         jdbc.sql("insert into job (id, workspace_id, type, status, payload, attempts, max_attempts, run_after, "
                         + "created_at, updated_at) values (?, ?, ?, 'queued', ?::jsonb, 0, ?, ?, ?, ?)")
-                .params(id, workspaceId, type, json.writeValueAsString(payload), maxAttempts, now, now, now)
+                .params(id, workspaceId, type, json.writeValueAsString(payload), maxAttempts,
+                        Timestamp.from(runAfter), now, now)
                 .update();
         return id;
     }
