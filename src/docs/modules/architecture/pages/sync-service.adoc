@@ -1,0 +1,130 @@
+= Sync service
+Paul Snow
+:revnumber: 0.0.0
+
+The sync service is the optional cloud side of the product. It is a Spring Boot 4.1 application on Java 25 (`server/app`), built as a modular monolith with Spring Modulith, plus a separate Gradle subproject, `server/finance-core`, that holds the Java implementation of the shared financial rules. The service is a stateless OAuth2 resource server: every API call needs a JWT from the configured OIDC issuer, there are no sessions, and no client secret is held.
+
+== Modules
+
+.Server modules and their dependencies
+[source,mermaid]
+----
+include::example$server-modules.mmd[]
+----
+
+Each package under `com.paulsnow.finance.server` is a Spring Modulith application module with a `package-info.java` describing it. Solid arrows show compile-time use; dotted arrows show modules that implement the deletion module's `WorkspaceDataPurger` so that workspace erasure reaches their data.
+
+[cols="1,3",options="header"]
+|===
+| Module | Responsibility
+
+| `common` | Error model (`ErrorResponse`, `ApiException`), correlation identifiers (`CorrelationIdFilter`), log redaction (`Redactor`), the clock, and `SecurityConfiguration` (JWT resource server, stateless; `/actuator/health`, `/actuator/info`, `/actuator/prometheus` and the OpenAPI and Swagger paths are open, everything else needs authentication).
+| `workspace` | Users keyed by OIDC subject, workspaces (currency, timezone), memberships (`owner` or `member`) and devices. Every request resolves the caller's workspace here; possession of an identifier is never permission. Owners see every member's devices. Endpoints under `/v1/workspaces` and `/v1/devices`.
+| `sync` | Command intake with idempotency records, the entity store with per-entity and per-field revisions, the ordered change log, tombstones, and the change feed with opaque cursors. Endpoints `POST /v1/sync/commands`, `GET /v1/sync/changes` and `GET /v1/sync/snapshot`. Command types are `journal.post`, `journal.correct`, `entity.upsert` and `entity.delete`. Described in xref:sync:protocol.adoc[].
+| `ledger` | Canonical journals and postings. Validates with the `finance-core` rules plus workspace-level checks, in tables whose balance and immutability the database also enforces.
+| `receipts` | Upload intents, direct upload to private storage, completion that verifies ownership, size, checksum and content by magic bytes, quarantine until a `DocumentScanner` (`StructuralDocumentScanner`) clears the file, and workspace-scoped download links. Endpoints under `/v1/receipts`.
+| `imports` | CSV statement imports: preview with row errors, totals, duplicate, transfer and existing-entry candidates and date gaps; commit through the sync command path with idempotent re-commits; rollback. Raw rows and hashes are kept separately from the journals they create. Endpoints under `/v1/imports`.
+| `exports` | A background job writes a versioned JSON archive of every live entity and available receipt document, with a manifest of SHA-256 hashes, counts and relationships, to private storage; members download it through a short-lived signed URL. Endpoints under `/v1/exports`.
+| `jobs` | The PostgreSQL job table, the runner and the status endpoint `+GET /v1/jobs/{jobId}+`.
+| `deletion` | Workspace deletion: a request revokes every device and hides the workspace at once, records a deletion suppression entry, and queues a tracked job that erases documents and each module's metadata. Only an owner may request it. Endpoints `+DELETE /v1/workspaces/{workspaceId}+` and `+GET /v1/workspaces/{workspaceId}/deletion+`.
+| `storage` | The S3-compatible `ObjectStorage` (AWS SDK v2): presigned PUT and GET URLs, reads for verification and archive writes. Callers build workspace-scoped object keys; the module never decides who may access an object.
+|===
+
+=== finance-core
+
+`server/finance-core` (package `com.paulsnow.finance.core`: `money`, `ids`, `ledger`, `planning`, `documents`, `imports`) implements the same financial rules as the Dart `finance_core` package. Both are held to the same behaviour by the fixtures in `spec/fixtures`; see xref:architecture:shared-fixtures.adoc[].
+
+== Command processing
+
+`CommandProcessor` handles each command in a single database transaction: envelope and permission checks, then taking the workspace's write lock, consulting the idempotency record, applying the handler, and storing the result together with the domain change and change-log rows. Fields are read leniently so one malformed command fails alone rather than failing the batch. A command receives one of the statuses `applied`, `previously_applied`, `conflict`, `validation_failed` or `permission_denied`.
+
+Cursors are opaque (`CursorCodec`, version 1). Tombstones are kept for the configured horizon; a cursor older than that gets HTTP 410 and the client rebuilds from the paged snapshot.
+
+== Job worker
+
+Background work uses the `job` table in PostgreSQL. `JobRunner` claims due jobs with `FOR UPDATE SKIP LOCKED`, so several workers never run the same job, marks them `running` with a lease, and records `succeeded` or `failed`. A job whose lease has expired (the worker died) is claimed again. A failure retries with exponential backoff, `base-backoff` multiplied by two to the power of the attempt, up to `max-attempts`; a `PermanentJobFailure` (or a missing handler) fails at once. Error text is redacted and truncated to 500 characters.
+
+Registered job types: `receipts.scan`, `imports.commit`, `exports.archive` and `deletion.workspace`.
+
+The runner loop only exists where `finance.worker.enabled` is true (`@ConditionalOnProperty` on `WorkerConfiguration`). Operating detail is in xref:operations:job-worker.adoc[].
+
+== Deployment
+
+The API and the worker are two workloads from one image:
+
+[cols="1,2,2",options="header"]
+|===
+| Workload | `FINANCE_WORKER_ENABLED` | Notes
+
+| API | `false` (the production default) | Serves HTTP; enqueues jobs.
+| Worker | `true` | Polls the job table. It still runs the full application and exposes the same management endpoints, so it can be probed and scraped the same way.
+| Developer (`local` profile) | `true` | One process runs both, against local PostgreSQL and MinIO. See xref:operations:running-locally.adoc[].
+|===
+
+Virtual threads are enabled (`spring.threads.virtual.enabled`), shutdown is graceful (`server.shutdown: graceful`, 30 s per phase), and error messages and stack traces are never returned in responses. Liquibase (`classpath:db/changelog/db.changelog-master.yaml`) applies the schema on start-up. Liveness and readiness probes are enabled.
+
+== Configuration
+
+Configuration is in `server/app/src/main/resources/application.yml` (production-style defaults, with every environment-specific value read from an environment variable) and `application-local.yml` (developer profile, activated with `SPRING_PROFILES_ACTIVE=local`).
+
+.Environment variables
+[cols="2,2,3",options="header"]
+|===
+| Variable | Default | Purpose
+
+| `FINANCE_DB_URL` | `jdbc:postgresql://localhost:5432/finance` | JDBC URL
+| `FINANCE_DB_USERNAME` | `finance` | Database user
+| `FINANCE_DB_PASSWORD` | empty (`finance` in the `local` profile) | Database password
+| `FINANCE_OIDC_ISSUER_URI` | none (required; `http://localhost:8180/realms/finance` in `local`) | OIDC issuer; start-up fails without it
+| `FINANCE_S3_ENDPOINT` | empty, meaning AWS S3 (`http://localhost:9000` in `local`) | Internal object storage endpoint
+| `FINANCE_S3_PRESIGN_ENDPOINT` | empty | Endpoint clients use for presigned URLs when it differs from the internal one
+| `FINANCE_S3_REGION` | `ap-southeast-2` | Region
+| `FINANCE_S3_BUCKET` | `finance-documents` (`finance-local` in `local`) | Bucket
+| `FINANCE_S3_ACCESS_KEY` / `FINANCE_S3_SECRET_KEY` | empty (default AWS credential chain; `minioadmin` in `local`) | Static credentials, if used
+| `FINANCE_S3_PATH_STYLE` | `false` (`true` in `local`) | Path-style addressing, needed for MinIO
+| `FINANCE_WORKER_ENABLED` | `false` (`true` in `local`) | Run the job worker in this process
+|===
+
+.Properties
+[cols="2,1,3",options="header"]
+|===
+| Property | Value | Meaning
+
+| `finance.sync.tombstone-horizon` | `90d` | Tombstones are retained this long; older cursors get 410
+| `finance.sync.max-commands-per-batch` | `500` | Command batch limit
+| `finance.sync.max-page-size` | `500` | Change feed and snapshot page limit
+| `finance.storage.create-bucket` | `false` (`true` in `local`) | Create the bucket on start-up
+| `finance.storage.upload-url-ttl` | `15m` | Presigned upload URL lifetime
+| `finance.storage.download-url-ttl` | `5m` | Presigned download URL lifetime
+| `finance.receipts.max-size-bytes` | `26214400` (25 MiB) | Largest receipt file
+| `finance.receipts.max-image-dimension` | `20000` | Largest image width or height in pixels
+| `finance.imports.max-rows` | `50000` | Largest CSV import
+| `finance.imports.synchronous-row-limit` | `1000` | Imports above this commit through a job
+| `finance.worker.poll-interval` | `2s` | Job polling interval
+| `finance.worker.batch-size` | `10` | Jobs claimed per poll
+| `finance.worker.lease` | `5m` | Job lease before another worker may reclaim it
+| `finance.worker.max-attempts` | `5` | Attempts before a job fails permanently
+| `finance.worker.base-backoff` | `10s` | Retry backoff base
+|===
+
+The OpenAPI document is served at `/v3/api-docs` (springdoc).
+
+== Metrics
+
+Micrometer exposes metrics through Actuator at `/actuator/prometheus` and `/actuator/metrics`, tagged with `application=finance-sync`. The application-specific meters are:
+
+[cols="2,1,3",options="header"]
+|===
+| Meter | Type | Meaning
+
+| `finance.sync.commands` (tag `status`) | counter | Commands processed, by result status
+| `finance.sync.backlog.age` | gauge | Seconds since the oldest change not yet pulled by an active device
+| `finance.ledger.journals.rejected` (tag by rejection code) | counter | Journals rejected by validation
+| `finance.receipts.upload.failures` (tag `reason`) | counter | Receipt completion or scan failures: `OBJECT_MISSING`, `CHECKSUM_MISMATCH`, `CONTENT_TYPE_MISMATCH` and `SCAN_REJECTED`
+| `finance.imports.failures` (tag `stage`) | counter | Import rows or files that failed
+| `finance.jobs.backlog` | gauge | Jobs waiting or running
+| `finance.jobs.backlog.age` | gauge | Age of the oldest queued job
+| `finance.deletion.backlog` | gauge | Workspace deletions requested but not yet completed
+|===
+
+See xref:operations:metrics.adoc[] for the operating view and xref:operations:observability-and-security.adoc[] for logging, redaction and correlation identifiers.

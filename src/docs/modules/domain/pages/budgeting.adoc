@@ -1,0 +1,151 @@
+= Budgeting
+Paul Snow
+:revnumber: 0.0.0
+
+A budget plans how take-home income is allocated across categories, goals and loan repayments, one period at a time. The model lives in `packages/finance_core/lib/src/planning` (`periods.dart`, `budget_plan.dart`, `budget_template.dart`, `budget_arithmetic.dart`, `budget_evaluation.dart`) and is mirrored for the server in `server/finance-core/src/main/java/com/paulsnow/finance/core/planning`. Both implementations are checked against the shared cases in `spec/fixtures/planning.json`.
+
+Income is planned take-home income per period. The application never estimates tax or compulsory superannuation.
+
+NOTE: The Java mirror covers periods, plans, versions, evaluation, forecast and the discretionary estimate. Goals, reservations, debt summaries, reminders, reports and insights exist only in the Dart package.
+
+== Budget periods
+
+A `PeriodSchedule` generates contiguous, non-overlapping periods from an anchor date. Each period starts on an occurrence of a recurrence and ends (inclusively) on the day before the next one.
+
+[cols="1,3",options="header"]
+|===
+| Cycle | Period starts
+
+| `month` | Monthly from the anchor, keeping the anchor's day of month under the end-of-month rule
+| `week` | Every 7 days from the anchor
+| `fortnight` | Every 14 days from the anchor
+| `custom` | Every `lengthDays` days from the anchor; `lengthDays` is required and must be at least 1
+|===
+
+Each `BudgetPeriod` records its start, inclusive end, an IANA timezone name (which decides which local date is "today") and the rollover policy. A month is never approximated as four weeks. `periodAt(index)` addresses period 0 as the one starting on the anchor, and negative indexes step backwards.
+
+=== The end-of-month rule
+
+Month-based recurrences take an explicit `MonthEndRule`:
+
+`clamp` (the default):: Keep the start's day of month. In a shorter month use the last day of that month, then return to the intended day when a month is long enough again.
+`lastDay`:: Always fall on the last day of the month. The start must itself be a month end, and the frequency must be month based, otherwise construction fails with an `ArgumentError`.
+
+Occurrence _n_ is always computed directly from the start, never from the previous occurrence, so clamping in a short month cannot make later dates drift. A series continued from a clamped date (for example one resumed on 28 February) can carry the original `dayOfMonth` of 31 so it still returns to the 31st.
+
+=== Acceptance scenario A14
+
+_Required result: a monthly schedule starting on 31 January and spanning February applies the end-of-month rule, and subsequent intended dates remain consistent._
+
+Monthly budget periods anchored on 31 January 2027 (verified in `test/planning/periods_test.dart` and the `periods.generate` fixture cases):
+
+[cols="1,1,1",options="header"]
+|===
+| Period | Start | End (inclusive)
+
+| 0 | 2027-01-31 | 2027-02-27
+| 1 | 2027-02-28 | 2027-03-30
+| 2 | 2027-03-31 | 2027-04-29
+|===
+
+The start dates are 31 January, 28 February and 31 March: February is clamped to its last day and March returns to the 31st. In a leap year the middle date is 29 February. A recurring bill starting on 31 January follows the same dates (31 January, 28 February, 31 March, 30 April, 31 May), because bill schedules use the same `Recurrence` type.
+
+== Allocations and the 50/30/20 template
+
+A `BudgetVersion` holds the planned take-home `income`, optional `BudgetGroup` entries and a list of `BudgetAllocation` entries. A group has an id, a name, a share of income in basis points (10000 is 100%) and a `discretionary` flag (Wants is discretionary; see xref:domain:planning.adoc[Planning and forecasting]).
+
+An allocation plans an amount per period for one target, with an optional group and an optional rollover policy that overrides the plan's. The target is one of:
+
+* a `category` (spending in an expense category);
+* a `goal` (money allocated to a savings goal or sinking fund; see xref:domain:goals-and-reservations.adoc[Goals and reservations]);
+* a `loanPrincipal` (principal repaid on a loan account). Credit cards are rejected because their purchases were already counted as spending.
+
+A version rejects an allocation that names an unknown group or a target that is allocated twice. A plan in `categoryOnly` mode uses the same versions and allocations but has no groups; a `groups` plan uses Needs, Wants and Savings style groups.
+
+=== The 50/30/20 starting point
+
+`TemplateGroup.fiftyThirtyTwenty` is `needs` 5000, `wants` 3000 and `savings` 2000 basis points. It is only a starting point, and every percentage can be changed.
+
+`allocateTemplate` works exactly:
+
+. The groups together receive `income x total shares / 10000`, rounded half away from zero.
+. That total is split across the groups with a largest-remainder allocation weighted by the shares, so the parts sum exactly to the total (ties go to the lower index).
+. `unassigned` is income less the group total. It is negative when the shares exceed 100%.
+
+For a take-home income of 5,000.00 the template gives Needs 2,500.00, Wants 1,500.00 and Savings 1,000.00 with nothing unassigned. For 1,000.01 the cent is given to the group with the largest remainder: Needs 500.01, Wants 300.00 and Savings 200.00.
+
+`BudgetVersion.fromTemplate` goes one step further: each group's amount is split across its categories by integer weights, again exactly. `BudgetVersion.summary()` reports income against allocations per group and overall, showing `unassigned` and `overAllocated` as separate figures rather than netting them, so a plan over-allocated in one group and under-allocated in another stays visible.
+
+== Budget arithmetic
+
+For one target in one period the remaining budget is:
+
+----
+remaining = planned + opening rollover + approved adjustments - posted net
+remainingAfterPending = remaining - pending
+----
+
+Posted net and pending are signed so that spending is positive and refunds reduce them. Pending spending is shown separately and never changes `remaining`. Only approved adjustments count: an unapproved `BudgetAdjustment` is a proposal and is ignored by the evaluator, as are adjustments belonging to another plan. The same formula is exercised by the `budget.remaining` fixture cases.
+
+For a goal target the "posted net" is the money allocated to the goal in the period, and for a loan target it is the principal repaid.
+
+[source,mermaid]
+----
+include::example$budget-evaluation.mmd[]
+----
+
+=== Where posted and pending figures come from
+
+`CategoryActivityIndex` is built in one pass over the ledger. The posted view includes posted and reversed journals (the posted ledger); the pending view includes pending journals only, regardless of the paying account, so a pending card purchase counts in a category. Income categories are negated so earning and spending are both positive. Each line also lists the journal ids behind it for drill-through. Because totals use prefix sums, evaluating a period is a pair of binary searches, which keeps evaluation fast with 100,000 journals (see `test/planning/performance_test.dart`).
+
+Expense categories that have activity in a period but no allocation appear in `unbudgeted` with a planned amount of zero.
+
+== Rollover
+
+`RolloverPolicy` decides how a target's remaining budget carries into the next period:
+
+[cols="1,3",options="header"]
+|===
+| Policy | Opening rollover for the next period
+
+| `none` | Always zero; every period starts afresh
+| `positiveOnly` | The remaining amount if it is not negative, otherwise zero (unspent money carries, overspending does not)
+| `signed` | The remaining amount, positive or negative
+|===
+
+The policy is set on the period schedule and may be overridden per allocation. `BudgetEvaluator` starts rollover at zero in the first period of the first version and carries it forward line by line, using each line's own policy. Evaluated periods are cached, so evaluating consecutive periods is linear. A target that did not exist in the previous period opens with zero.
+
+== Budget versions
+
+A `BudgetPlan` keeps every historical `BudgetVersion`, ordered by `effectiveFrom`. `versionFor(period)` returns the latest version that took effect on or before the period's start, or nothing for a period before the first version.
+
+`withVersion` adds or replaces the version starting on a given date, with two guards:
+
+* the effective date must be the start of a period, otherwise an `ArgumentError` is thrown;
+* it must not be earlier than the start of the period containing "today", otherwise a `StateError` is thrown ("Past budget versions are retained, not rewritten").
+
+Changing a future allocation therefore never rewrites a previous budget. Re-evaluating an older period always uses the version that applied at the time.
+
+== Monthly equivalents
+
+An amount budgeted per period can be shown as a monthly figure with `monthlyEquivalent`. It uses documented annual factors, `occurrencesPerYear / (12 x interval)`:
+
+[cols="1,1",options="header"]
+|===
+| Frequency | Occurrences per year
+
+| Daily | 365
+| Weekly | 52
+| Fortnightly | 26
+| Monthly | 12
+| Quarterly | 4
+| Annually | 1
+|===
+
+The result is rounded half away from zero to a minor unit and carries the factor as text (for example `52/12`). It is flagged as an estimate unless the factor is exactly 1, so a weekly 100.00 shows as 433.33 labelled as an estimate with factor `52/12`, and only an exact monthly amount is not an estimate.
+
+== See also
+
+* xref:domain:money.adoc[Money and rounding] for the rounding and allocation primitives.
+* xref:domain:planning.adoc[Planning and forecasting] for schedules, forecasts and the discretionary estimate.
+* xref:domain:reports-and-insights.adoc[Reports and insights] for the budget-versus-actual report and over-budget insights.

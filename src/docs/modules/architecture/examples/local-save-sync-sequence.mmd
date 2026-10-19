@@ -1,0 +1,26 @@
+sequenceDiagram
+    actor U as User
+    participant A as AppState
+    participant S as FinanceStore
+    participant D as Encrypted SQLite
+    participant C as SyncClient
+    participant API as Sync API
+    participant PG as PostgreSQL
+
+    U->>A: Save a transaction
+    A->>S: post journal
+    S->>D: BEGIN IMMEDIATE
+    S->>D: Write journal, postings and search index
+    S->>D: Insert outbox command (same transaction)
+    S->>D: COMMIT (WAL, synchronous FULL)
+    S-->>A: Saved
+    A-->>U: Show entry as unsynced
+    C->>D: Read pending outbox batch (up to 500)
+    C->>API: POST /v1/sync/commands
+    API->>PG: One transaction: idempotency record, entity, change log
+    API-->>C: Per-command results
+    C->>D: Mark applied, conflict or rejected
+    C->>API: GET /v1/sync/changes?cursor=...
+    API-->>C: Changes, new cursor, hasMore
+    C->>D: Apply changes and cursor in one transaction
+    C-->>A: Refresh

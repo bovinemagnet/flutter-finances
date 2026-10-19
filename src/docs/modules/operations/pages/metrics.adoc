@@ -1,0 +1,49 @@
+= Metrics
+Paul Snow
+:revnumber: 0.0.0
+
+The sync service registers its own metrics with Micrometer, on top of the standard Spring Boot metrics. This page lists the meters found in the code (`server/app/src/main/java`). The requirements they serve are on xref:operations:observability-and-security.adoc[].
+
+== Exposure
+
+* `management.endpoints.web.exposure.include` is `health,info,prometheus,metrics`.
+* `/actuator/prometheus` is reachable without a token (`SecurityConfiguration`). `/actuator/metrics` requires a bearer token like any other route.
+* Every meter carries the tag `application=finance-sync`.
+* Micrometer names use dots. The Prometheus registry converts them by convention: dots become underscores, counters gain a `_total` suffix and a base unit is appended, so `finance.sync.commands` appears as `finance_sync_commands_total` and `finance.sync.backlog.age` as `finance_sync_backlog_age_seconds`.
+
+== Implemented meters
+
+[cols="2,1,1,3",options="header"]
+|===
+| Meter | Type | Tags | Meaning
+
+| `finance.sync.commands` | counter | `status`: `applied`, `previously_applied`, `conflict`, `validation_failed`, `permission_denied` | Sync commands processed, by result. The conflict rate is `conflict` divided by the sum of all statuses.
+| `finance.sync.backlog.age` | gauge (seconds) | none | Age of the oldest change that an active device has not yet pulled. A device counts as active if it pulled within the tombstone horizon. `0` when nothing is waiting, `NaN` if the database cannot be queried.
+| `finance.ledger.journals.rejected` | counter | `code`: `EMPTY`, `TOO_FEW_POSTINGS`, `UNBALANCED`, `MIXED_CURRENCY`, `ZERO_AMOUNT`, `OUT_OF_RANGE`, `CURRENCY_MISMATCH`, `UNKNOWN_LEDGER_ACCOUNT`, `INVALID_STATUS`, `INVALID_TYPE`, `REVERSAL_MISMATCH`, `REPLACEMENT_MISMATCH`, `INVALID_JOURNAL`, `POSTED_JOURNAL_IMMUTABLE` | Journals rejected by validation, by error code.
+| `finance.receipts.upload.failures` | counter | `reason`: `OBJECT_MISSING`, `CHECKSUM_MISMATCH`, `CONTENT_TYPE_MISMATCH`, `SCAN_REJECTED` | Receipt uploads rejected at completion or by the scan.
+| `finance.imports.failures` | counter | `stage`: `preview`, `commit` | Import rows or files that failed. Preview failures count each row error and each unreadable file.
+| `finance.jobs.backlog` | gauge | none | Jobs that are queued or running.
+| `finance.jobs.backlog.age` | gauge (seconds) | none | Age of the oldest queued job, measured from its `run_after` time. `0` when none are queued.
+| `finance.deletion.backlog` | gauge | none | Workspace deletions requested but not yet completed.
+|===
+
+A gauge reports `NaN` rather than failing the scrape when its database query errors.
+
+== Mapping to the requirement signals
+
+[cols="1,2",options="header"]
+|===
+| Requirement signal | Implemented meter
+
+| Sync backlog age | `finance.sync.backlog.age`
+| Command conflict rate | `finance.sync.commands` with `status="conflict"`
+| Rejected journals | `finance.ledger.journals.rejected`
+| Receipt upload failures | `finance.receipts.upload.failures`
+| Import failures | `finance.imports.failures`
+| Deletion backlog | `finance.deletion.backlog`
+| Queue growth | `finance.jobs.backlog`, `finance.jobs.backlog.age`
+| Extraction latency | Not implemented: there is no extraction meter or server-side extraction in the code.
+| Backup success | Not implemented: backups are made on the device (see xref:operations:backup-and-restore.adoc[]) and no server meter reports them.
+|===
+
+No meter or log field carries merchants, amounts, document contents or tokens. Tags are fixed code lists, and no meter is tagged by workspace, user or device.

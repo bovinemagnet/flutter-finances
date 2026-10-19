@@ -1,0 +1,79 @@
+= Reports and insights
+Paul Snow
+:revnumber: 0.0.0
+
+Reports present ledger and planning figures as tables with drill-through to the source entries. Insights are explainable observations derived from the same figures. The code is in `packages/finance_core/lib/src/planning` (`report.dart`, `ledger_reports.dart`, `planning_reports.dart`, `date_range.dart`, `insights.dart`). These live in the Dart package; the Java mirror in `server/finance-core` does not include them.
+
+== The report model
+
+A `Report` is a title, a label for the key column, a list of columns, a list of rows, an optional date range or as-of date, and a flag saying whether the figures include local changes that have not yet synchronised (REP 04). A column is either money or a count. Each `ReportRow` carries its amounts or counts and the journal ids behind it, so any figure can be drilled through to its source entries.
+
+Charts and the accessible table beside them render from the same rows. `toTable()` returns a header row followed by one row per entry as display strings, suitable for the accessible table beside a chart.
+
+Ledger reports use the posted ledger (posted and reversed journals plus their reversals) and the same definitions as `LedgerProjection`, so reports, the dashboard and exports agree. Journal ids are listed in effective-date order, with ties in ledger order.
+
+== Date ranges
+
+`DateRange` is an inclusive range of local dates. It offers factories for a calendar year and for the Australian financial year (1 July to 30 June), including the financial year containing a date. The label of a financial year is `FY2026-27`; other ranges are labelled `start..end`. A range can be sliced into calendar months, clipped to its ends. Custom ranges are just two dates.
+
+== Core reports
+
+[cols="2,2,3",options="header"]
+|===
+| Function | Columns | Notes
+
+| `incomeVsExpenses` | Income, Expenses, Net | One row per calendar month of the range. Income postings are negated so earnings are positive.
+| `spendingByCategory` | Spending | Net spending per expense category, refunds reducing it, largest first (ties broken by key).
+| `spendingByPayee` | Spending | Net spending per merchant, largest first. Entries without a payee share one row labelled `No payee`.
+| `accountBalances` | Balance | Each account's balance as a user reads it, all time or as of a date, with liabilities shown as positive amounts owed.
+| `netWorthHistory` | Net worth | A point at the end of each calendar month of the range (the range end for a partial last month), using the net-worth definition in xref:domain:net-worth.adoc[Net worth], including the reimbursement receivable.
+| `cashFlow` | Amount | For a chosen set of accounts: money in, money out, transfers between the accounts and net. A journal whose postings to the set net to zero is an internal transfer; otherwise its net effect crosses the boundary.
+| `receiptCoverage` | Entries (count), Amount | Posted purchases with and without a receipt.
+| `budgetVsActual` | Planned, Rollover, Adjustments, Actual, Pending, Remaining | One evaluated budget period, including unbudgeted spending.
+| `goalProgressReport` | Target, Allocated, Moved, Reserved, Funding gap | One row per goal; see xref:domain:goals-and-reservations.adoc[Goals and reservations].
+|===
+
+Receipt coverage and the missing-receipt insight consider only posted purchases, meaning expense and reimbursable-expense journals that have not been reversed.
+
+The cash-flow report distinguishes transfers within the included account set from flows crossing its boundary, so moving money between two of the chosen accounts never counts as income or spending.
+
+== Insights
+
+`generateInsights` evaluates every rule whose inputs are supplied (REP 03). Insights only describe: they never move money or change budgets, and any follow-up goes through the normal confirmed commands. Each `Insight` has a stable key, the rule, a plain-words trigger, the underlying entry ids, the relevant period and, where relevant, an amount.
+
+[cols="1,3,2",options="header"]
+|===
+| Rule | Fires when | Key
+
+| `overBudget` | A budget line, including unbudgeted spending, has a remaining amount below zero. The amount is the overspend.
+| `overBudget:<target>:<period start>`
+
+| `lowCash` | The forecast's lowest balance is below a threshold (zero by default). The entries are the outflow sources up to the lowest day.
+| `lowCash:<lowest date>`
+
+| `unreviewed` | There are journals awaiting review; one insight covers the period.
+| `unreviewed:<period>`
+
+| `missingReceipt` | A posted purchase of at least a configurable amount has no receipt.
+| `missingReceipt:<journal>`
+
+| `possibleDuplicate` | The caller supplies a candidate pair of entries; the pair is sorted so the key is stable.
+| `possibleDuplicate:<a>\|<b>`
+|===
+
+Candidate duplicates are supplied by the matching code; see xref:domain:matching-and-deduplication.adoc[Matching and deduplication].
+
+=== Dismiss, snooze and disable
+
+`visibleInsights` filters the generated list for a given day:
+
+* an `InsightState` records a dismissal, or a `snoozedUntil` date before which the insight is hidden and from which it shows again;
+* an `InsightRuleSetting` disables a rule entirely and can hold the rule's threshold (the missing-receipt amount or the low-cash balance).
+
+Because keys are stable, a dismissal or snooze stays attached to the same condition, for example one category in one budget period.
+
+== See also
+
+* xref:domain:budgeting.adoc[Budgeting] for the evaluation behind budget versus actual and over-budget insights.
+* xref:domain:planning.adoc[Planning and forecasting] for the forecast behind the low-cash insight.
+* xref:domain:exports-and-backups.adoc[Exports and backups] for how the same figures are exported.

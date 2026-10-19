@@ -1,9 +1,18 @@
 flowchart TB
-    C[Flutter native clients] <--> L[Encrypted local database and files]
-    C <--> N[Native capture and device services]
-    C -->|Commands and changes| A[Spring Boot API]
-    C -->|Authorised asset transfer| O[Private object storage]
-    A --> P[PostgreSQL]
-    A --> W[Background worker]
-    W --> P
-    W --> O
+    subgraph Client[Flutter client]
+        UI[Screens and features] --> AS[AppState]
+        AS --> ST[FinanceStore]
+        ST --> DB[(Encrypted SQLite)]
+        ST --> OB[Outbox]
+        ST --> VA[Receipt vault]
+        SC[SyncClient] --> ST
+        PA[Platform adapters] --> UI
+    end
+    SC -->|Commands, changes, snapshot| API[Spring Boot API]
+    SC -->|Presigned upload and download| OS[(Private object storage)]
+    API --> PG[(PostgreSQL)]
+    API -->|Presigned URLs| OS
+    W[Job worker] --> PG
+    W --> OS
+    API -.->|Same image, worker disabled| W
+    API --- IDP[OIDC provider]

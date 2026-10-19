@@ -1,0 +1,181 @@
+= Local store
+Paul Snow
+:revnumber: 0.0.0
+
+`packages/finance_store` provides the client's persistence: an encrypted SQLite database, a durable outbox, an encrypted receipt vault, an encrypted backup container and the sync client. It depends on `finance_core` for the domain types and exposes a single facade, `FinanceStore`.
+
+A workspace is a directory (for the application, `<application support directory>/workspace`) containing:
+
+[cols="1,3",options="header"]
+|===
+| Path | Contents
+
+| `workspace.json` | Plaintext descriptor: format `finance_store.workspace`, `formatVersion` 1, lifecycle `state` (`active` or `staged`) and the non-secret description of the key protection. Written atomically.
+| `finance.db` | The encrypted SQLite database (plus its write-ahead log files).
+| `finance.db.pre-v<n>` | Recovery copy taken before an upgrade from schema version _n_.
+| `vault/assets/<id>.bin` | Encrypted receipt originals and derivatives.
+| `vault/previews/<id>.bin` | Encrypted local thumbnails, never uploaded.
+| `vault/tmp/` | Files being written.
+|===
+
+== Encryption
+
+=== Database
+
+The database is opened with SQLite3MultipleCiphers (selected in the workspace `pubspec.yaml` through the `sqlite3` build hook, `source: sqlite3mc`). `openEncryptedDatabase` in `src/db/database.dart`:
+
+* applies a raw 256-bit key as 64 hex digits with `PRAGMA hexkey` before any other statement;
+* uses the library's default cipher, ChaCha20-Poly1305 (sqleet compatible), which authenticates every page;
+* refuses to continue if `PRAGMA cipher` is empty, throwing `EncryptionUnavailableException`, so a build without cipher support can never silently create a plaintext database;
+* maps SQLite error 26 (not a database) on the first read to `WrongDatabaseKeyException`;
+* then sets `journal_mode = WAL`, `synchronous = FULL`, `foreign_keys = ON` and `busy_timeout = 5000`.
+
+=== Key hierarchy
+
+Each workspace has one random 256-bit _data key_ (`DataKey`, 32 bytes from a secure random source). It is never written in plaintext. Independent purpose keys are derived from it with HKDF-SHA-256 (RFC 5869) using the info string `finance_store/v1/<purpose>`:
+
+* `database`: the database key, passed as hex to `PRAGMA hexkey`;
+* `asset/<assetId>`: the key for one receipt file.
+
+=== Protecting the data key
+
+`KeyProtection.select` prefers the platform key store and falls back to a password. With neither, it throws `PasswordRequiredException` rather than store a plaintext key.
+
+[cols="1,3",options="header"]
+|===
+| Protection | Behaviour
+
+| `platform` | The data key is written to the `SecureKeyStore` under a random entry name `finance_store/data-key/<id>`. The application's implementation (`PlatformSecureKeyStore`) uses `flutter_secure_storage`: Keychain on Apple platforms (`first_unlock_this_device`), Android Keystore, Windows Credential Locker and the Secret Service on Linux. `isAvailable()` performs a write, read and delete round trip because a Linux desktop without a Secret Service provider only fails on use. Biometrics may gate access to an entry but are not the encryption scheme.
+| `password` | The data key is wrapped with AES-256-GCM under a key derived from the user's password with Argon2id. The wrapped envelope (version 1) is stored in `workspace.json`.
+|===
+
+Password envelope parameters (`src/crypto/key_protection.dart`, `src/crypto/kdf.dart`):
+
+[cols="1,2",options="header"]
+|===
+| Parameter | Value
+
+| KDF | Argon2id (`DartArgon2id`), 32-byte output
+| Memory | 65536 KiB (64 MiB)
+| Iterations | 3
+| Parallelism | 4 lanes
+| Basis | RFC 9106 second recommended option; recorded beside every envelope so the cost can be raised later
+| Salt | 16 random bytes
+| Wrap cipher | AES-256-GCM, 96-bit random nonce, 128-bit tag; stored as `nonce || ciphertext || tag`
+| Associated data | `finance_store/key-envelope/v1`, so a downgraded envelope does not authenticate
+| Envelope JSON | `version`, `cipher`, `kdf` (algorithm and cost), `salt`, `wrappedKey` (base64)
+|===
+
+A wrong password fails AES-GCM authentication and raises `WrongPasswordException`. `FinanceStore.changeWorkspacePassword` rewraps the same data key under a new password, so the database and receipt files need no re-encryption.
+
+== Schema
+
+The schema is a list of forward-only migrations in `src/db/schema.dart`, tracked by SQLite `user_version`. The latest version is 3.
+
+[cols="1,1,3",options="header"]
+|===
+| Version | Description | Tables
+
+| 1 | Core ledger, generic entities, outbox and sync state | `workspace`, `accounts`, `categories`, `journals`, `postings`, `entities`, `outbox`, `outbox_keys`, `sync_state`, `rebuild_seen`, `conflicts`
+| 2 | Receipt vault assets | `assets`
+| 3 | Full-text search index | `search_docs`, `search_index` (FTS5, `unicode61 remove_diacritics 2`)
+|===
+
+Notable design points:
+
+* `workspace` is a single row (`id = 1`) holding the workspace and device identifiers, the one currency and its minor-unit exponent, the IANA timezone, locale and `sync_mode` (`local` or `synced`).
+* `journals` and `postings` are first-class tables. `postings` is a `WITHOUT ROWID` table that copies the journal's effective date and a `ledger_state` (`posted`, `pending` or `none`) so balances and period totals are covering-index scans. Amounts are integer minor units.
+* Every synchronised table carries `revision`, a `deleted` flag (soft delete, so tombstones can sync) and, where fields merge independently, `field_revisions_json`.
+* `conflicts` holds review items created when the server rejects or conflicts a command.
+
+== Generic entities
+
+Everything that is not an account, category or journal (budget plans, recurring schedules, goals, reservations, rules, insight state, transaction reviews, document metadata and so on) is stored in the single `entities` table keyed by `(entity_type, id)` with a JSON document. Adding an application entity type therefore needs no migration. `FinanceStore.upsertEntity` and `entities(type)` read and write them; an `EntityValidator` registered per type can reject invalid JSON before it is saved. The application's type names are in `apps/finance_app/lib/data/entity_types.dart`. Search text is extracted per type through a `SearchExtractor` and indexed in `search_index`.
+
+== Durable saves and the outbox
+
+`StoreContext.write` runs an action in one `BEGIN IMMEDIATE` transaction; nested calls join the enclosing transaction. With WAL and `synchronous = FULL` the data is durable when the call returns, which is when the interface may show "Saved".
+
+A user action calls `StoreContext.record`, inside `write`, which applies the command to the local tables and appends it to the `outbox` table in the same transaction. Either both are committed or neither. See the sequence in xref:architecture:overview.adoc#_data_flow[Data flow].
+
+The outbox (`src/store/outbox.dart`) keeps commands in their original order with a unique `command_id` for their whole life, so a retry is always idempotent. Each row also holds the `undo_json` image of the affected entities (which powers undo until a command has been sent), the number of send `attempts`, the last error and the server's result. An entry has one of these statuses:
+
+[cols="1,3",options="header"]
+|===
+| Status | Meaning
+
+| `pending` | Saved locally, not yet accepted by the server
+| `applied` | Accepted (`applied` or `previously_applied`)
+| `conflict` | Rejected for a revision conflict; a review item is created
+| `rejected` | Rejected by validation or permissions; a review item is created
+| `blocked` | Built on a conflicting or rejected command, held for review
+| `review` | Targets an entity deleted remotely; held for review, never resent
+| `discarded` | Dropped by the user while resolving a review item
+|===
+
+`outbox_keys` records which entities each command touched so that pending commands can be overlaid on pulled server state.
+
+=== Sync client
+
+`SyncClient` (`src/sync/sync_client.dart`) serialises its calls and offers `push`, `pull`, `sync`, `uploadAssets` and `downloadAsset`:
+
+* Pushing sends batches of at most 500 commands to `POST /v1/sync/commands` and applies the per-command results to the outbox in one transaction.
+* Pulling pages `GET /v1/sync/changes` (default page size 500) from the saved cursor and applies each page with its cursor atomically. When the server reports the cursor is too old, the client pages `GET /v1/sync/snapshot` to rebuild, then resumes the feed.
+* Transport requests time out after 30 seconds and retry transient failures (including HTTP 408 and 429) with exponential backoff: up to 5 attempts, starting at 500 ms and capped at 60 s. Other 4xx responses fail at once.
+* Enabling sync uses a bootstrap preview: an empty server workspace receives the local history, an empty device downloads the server workspace, and if both hold data the merge is refused (`WorkspaceMergeRefusedException`).
+
+== Receipt vault
+
+`ReceiptVault` (`src/vault/receipt_vault.dart`) stores receipt originals, derivatives and previews as individually encrypted files.
+
+* Each file is sealed with AES-256-GCM under its own key (`DataKey.assetKey(id)`, HKDF with `asset/<id>`); the asset id is also bound as associated data (`finance_store/asset/v1/<id>`).
+* File format: the four ASCII bytes `FSA1`, a 12-byte nonce, the ciphertext and a 16-byte tag.
+* Saving writes the encrypted file to `vault/tmp`, flushes it, atomically renames it into `vault/assets` (or `previews`), then commits the metadata row and, for non-preview assets, an outbox command in one transaction. A failure before the commit deletes the file; a crash leaves an unreferenced file that `removeOrphans()` deletes on the next open. Write errors raise `StorageWriteException`, with `lowStorage` set when the disk is full.
+* The `assets` table records kind (`source`, `derivative`, `preview`), content type, size, SHA-256, `local_state` (`present`, `evicted`, `remote`) and `upload_state` (`not_required`, `pending`, `uploading`, `uploaded`, `failed`).
+* Eviction (`evictAsset`, `evictToFree`) frees the least recently used local copies that have a confirmed cloud copy. Unsynced originals and derivatives are never evicted.
+
+Upload (`src/sync/asset_sync.dart`) runs up to two files concurrently: request an upload intent, `PUT` the bytes to the presigned URL, then complete the receipt. Restarting requests a fresh intent for the same object, and completing twice never creates a second receipt. A downloaded file is verified against its checksum before being stored encrypted. Asset metadata also travels as a `documentAsset` entity so another device can show an image as pending before its bytes arrive. The server side is described in xref:architecture:sync-service.adoc[], and the user-facing behaviour in xref:domain:receipts.adoc[].
+
+== Migrations and pre-upgrade copies
+
+`migrate` (`src/db/migrations.dart`) applies every migration above the database's `user_version`:
+
+* each step runs in its own immediate transaction together with the `user_version` update, so a crash leaves the database at the previous complete version and the step is retried on the next open;
+* a database whose version is newer than the application's latest raises `SchemaTooNewException`;
+* a failing step raises `MigrationFailedException` and rolls back;
+* released migrations are never edited; a new one is appended.
+
+`FinanceStore.open` passes a `beforeUpgrade` callback: before upgrading an existing database it runs `PRAGMA wal_checkpoint(TRUNCATE)` and copies the file to `finance.db.pre-v<n>`, where _n_ is the version being left. A new database is not copied.
+
+== Backup container
+
+[[backup-container]]
+Backups use a versioned encrypted container, `FSBACKUP` version 1 (`src/backup/archive_container.dart`):
+
+[source,text]
+----
+"FSBACKUP"                  8 ASCII bytes
+header length               uint32, big-endian
+header                      UTF-8 JSON (not secret): cipher, Argon2id parameters,
+                            salt, nonce prefix, chunk size
+chunk*                      uint32 length, then nonce || ciphertext || tag
+----
+
+* The key is Argon2id of a _recovery secret_ and a random salt, with the same standard parameters as above (64 MiB, 3 iterations, 4 lanes). The recovery secret is separate from the workspace password; an empty secret is refused.
+* Chunks are AES-256-GCM, 1 MiB of plaintext by default. Chunk _i_ uses the nonce `prefix(8) || uint32(i)` and the associated data `SHA-256(header) || final flag`, so chunks cannot be reordered, dropped, moved between archives or truncated without detection.
+* The plaintext is a sequence of entries (uint16 name length, UTF-8 name, uint64 size, bytes) ended by a zero name length in the final chunk.
+* The writer streams to a temporary file, flushes it and renames it into place on close.
+
+`exportBackup` writes `manifest.json` (format, `formatVersion` 1, sync `schemaVersion`, `databaseSchemaVersion`, creation time, accepted sync cursor, record counts, per-file SHA-256 hashes, relationships and ledger balance check), `data/workspace.json`, `data/accounts.json`, `data/categories.json`, `data/journals.json`, `data/entities.json`, `data/assets.json`, `pending_commands.json` and the receipt files that are present on the device. Evicted or never-downloaded assets are reported as unavailable rather than silently omitted.
+
+== Restore staging
+
+[[restore-staging]]
+`stageRestore` (`src/backup/backup_restore.dart`) never touches the live workspace:
+
+. It decrypts the archive and restores into an isolated `<target>.restore-staging` directory whose descriptor has `state: staged`.
+. It verifies SHA-256 hashes against the manifest, schema compatibility, that every journal balances, record counts and missing assets, and returns a `RestorePreview`.
+. The restored workspace gets a new workspace id and device id and starts local only; its outbox is rebuilt from the restored state in dependency order, so enabling sync later uploads it as a new workspace and an old backup is never replayed into a live workspace. Commands that were pending when the backup was made are kept in the preview, not replayed.
+. `StagedRestore.activate()` is refused unless `RestorePreview.canActivate` (compatible schema, no checksum failures, no missing assets, no unbalanced journals, matching counts). It renames the staging directory into place, sets the descriptor to `active` and opens the store. `discard()` deletes the staging directory.
+
+`FinanceStore.open` refuses a `staged` workspace with `WorkspaceNotActiveException`. See xref:operations:backup-and-restore.adoc[] for the operating procedure and xref:domain:exports-and-backups.adoc[] for the user-facing contents.

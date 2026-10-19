@@ -1,0 +1,138 @@
+= CSV imports
+Paul Snow
+:revnumber: 0.0.0
+
+A statement import turns a bank or card CSV file into reviewed drafts. Every row is kept as evidence in a `SourceRecord`, separate from the journals it produced, so correcting an entry never erases where it came from. The client implementation is in `packages/finance_core/lib/src/documents/imports`; the server mirror is in `server/finance-core` (`Fingerprints`) and `server/app/.../server/imports` (`ImportService`). Both compute the same fingerprints through the shared `csv.fingerprint` fixture (see xref:architecture:shared-fixtures.adoc[]).
+
+The flow is: parse with a mapping, preview against what is already recorded, commit the reviewed decisions, and optionally roll the batch back.
+
+== CSV mapping
+
+A saved `CsvMapping` template describes one bank's layout.
+
+[cols="2,3"]
+|===
+|Setting |Behaviour
+
+|`accountId` |The user account the rows belong to.
+|`dateColumn`, `dateFormat` |Format tokens `yyyy`, `yy` (2000 to 2099), `MMM` (English three-letter month, any case), `MM`/`M` and `dd`/`d`. Other characters match literally. Text after whitespace following the date, such as a time, is ignored. Default `dd/MM/yyyy`.
+|`descriptionColumn`, `referenceColumn` |Description is required; the reference (a bank or provider identifier) is optional and may be absent from the header or record.
+|`amountColumn` or `debitColumn` and `creditColumn` |Exactly one layout is required: a signed amount, or both debit and credit columns.
+|`debitSign` |`negative` (debits are negative, as most bank exports do) or `positive` (many card statements; signs are flipped).
+|`currencyCode` |Default `AUD`.
+|`delimiter` |One character, default `,`.
+|`encoding` |`utf8`, `windows1252` or `latin1`. A UTF-8 byte order mark is removed and malformed UTF-8 is rejected rather than guessed. `detectEncoding` suggests UTF-8 when valid, otherwise Windows-1252.
+|`decimalSeparator` |`.` or `,`; the other character is a grouping separator.
+|`hasHeader` |Header-name columns need a header row.
+|===
+
+A column is chosen by zero-based index or by header name, matched case-insensitively after trimming.
+
+Reading follows RFC 4180: records end at CRLF, LF or CR outside quotes, `""` inside a quoted field is one quote, and stray quotes elsewhere are kept literally. Blank lines are skipped but still counted, so row numbers match the line seen in a spreadsheet; the header is record 1. An unterminated quote reports `UNTERMINATED_QUOTE` at the record where it opened.
+
+Amount cells have `$` and spaces removed, and `(x)` or a trailing `-` mean negative. Parsed amounts are signed from the account's point of view: negative is money leaving.
+
+=== Row errors
+
+Each row reports at most one error, checked in this order. A missing header column is `COLUMN_NOT_FOUND` on record 1 and nothing is parsed.
+
+[cols="2,3"]
+|===
+|Code |Cause
+
+|`UNTERMINATED_QUOTE` |A quoted field is never closed.
+|`COLUMN_NOT_FOUND` |A mapped header name is not in the header row.
+|`MISSING_FIELD` |A required column is beyond the end of the record.
+|`BAD_DATE` |The date does not match the format or does not exist.
+|`BAD_AMOUNT` |The amount cannot be read.
+|`MISSING_AMOUNT` |The amount is empty.
+|`BOTH_DEBIT_AND_CREDIT` |Both split columns have a value.
+|`ZERO_AMOUNT` |The amount is zero.
+|===
+
+== Fingerprints
+
+A fingerprint identifies a row so that a statement can be imported again safely.
+
+. The base is `ref|<accountId>|<reference>` when the row has a non-empty trimmed reference.
+. Otherwise it is `fp|<accountId>|<YYYY-MM-DD>|<amountMinor>|<normalised description>`, using `normaliseText` (see xref:matching-and-deduplication.adoc[]).
+. The fingerprint is the base, `#`, and the 1-based occurrence of that base so far in the file, for example `...#2`.
+
+The file as a whole is identified by `sourceHash`, the lower-case SHA-256 of the raw bytes.
+
+== Preview
+
+`previewImport` classifies each row before anything is committed. A row's status is decided in this order:
+
+[cols="1,3"]
+|===
+|Status |Meaning
+
+|`duplicate` |Its fingerprint was already imported (or the whole file was). Committing creates nothing.
+|`ambiguous` |Something similar exists: another occurrence of the same fingerprint base, or a record without a reference on the same date with the same amount. The person decides.
+|`existingMatch` |An entry on the account has the same amount within 3 days (receipt-created entries first). The person decides whether the row is its evidence.
+|`newEntry` |Nothing like it exists; committing creates an entry by default.
+|===
+
+Rows are also flagged for attention.
+
+* `possibleTransfer`: transfer wording (`transfer`, `tfr`, `xfer`, `trf`, `internal`, `to savings`, `from savings`, `osko`, `payid`, `between accounts`), or an entry on another account with the opposite amount within 3 days.
+* `possibleCardRepayment`: repayment wording (`card payment`, `credit card`, `cc payment`, `visa payment`, `bpay` and similar), a credit to a card or loan with payment wording, or a counterpart on a card or loan account.
+* `receiptEntry`: a proposal is an entry created from a receipt.
+
+Rows that need a decision (`ambiguous`, `existingMatch`, or flagged as a transfer or repayment) block the commit until decided. Date gaps longer than 10 days within the file, or since the last import for the account, are listed because they may mean a missing statement. The preview also gives totals of credits, debits and net for all rows and for new rows. `checkStatementBalance` compares the imported net with a statement's opening and closing balances and reports a difference only; missing transactions are never invented.
+
+== Commit
+
+`commitImport` turns a reviewed preview into an `ImportBatch`, source records and drafts. Each row takes a `RowDecision`.
+
+[cols="1,3"]
+|===
+|Decision |Effect
+
+|`CreateEntry` |An expense for money out; income for money into an asset account; a refund for money back onto a card or loan. The category is the explicit one, else the chooser (for example the first matching categorisation rule, see xref:categorisation-rules.adoc[]), else the uncategorised expense or income category.
+|`CreateTransfer` |A transfer with another of the user's accounts, in the direction the amount shows.
+|`MatchExisting` |Evidence for an existing entry; nothing is posted. The entry must be one proposed in the preview.
+|`SkipRow` |Kept as evidence only.
+|===
+
+Duplicates are recorded as `duplicate` source records. A row that requires a decision and has none raises `UNRESOLVED_ROWS`; an invalid match is `INVALID_MATCH`; a draft that fails ledger validation is `INVALID_ENTRY`. Every draft is checked against the chart before returning, so a failure leaves nothing half committed. Drafts are posted afterwards through the normal command path.
+
+A source record keeps the raw fields exactly as read, the signed amount, the reference, an optional provider `pendingReference`, the pending or posted `SourceStatus`, the decision (`created`, `matchedExisting`, `duplicate`, `skipped`) and the journal id.
+
+== Acceptance scenarios
+
+[cols="1,2,3"]
+|===
+|Scenario |Situation |Expected result
+
+|A11 |Import two legitimate same-day purchases of equal value |Both are retained. The fingerprints end `#1` and `#2`, so similarity does not delete either.
+|A12 |Reimport the same CSV batch |No additional journals. The batch and its source provenance remain traceable.
+|===
+
+For A12 the same file hash for the same account returns the earlier batch: `commitImport` returns it with `alreadyCommitted` set and no drafts, and the preview marks every row a duplicate. The same applies to an overlapping statement, where only the rows with a new fingerprint are new.
+
+NOTE: On the server, a batch is identified by workspace, account, file hash and a settings hash, so previewing the same file again returns the same batch. A row that is a `duplicate` is skipped unless the person decides `import`, which gives that row its own fingerprint claim. The other decision is `skip`.
+
+== Rollback
+
+`planRollback` builds a reversal plan for a committed batch. Nothing is deleted.
+
+* Posted entries the batch created are voided with a linked reversal and no replacement.
+* Pending and draft entries it created never reached the posted ledger and are removed.
+* Source records stay as evidence, marked rolled back. Records that only matched an existing entry lose that provenance and the entry is kept.
+* An entry that was edited after import, has a receipt linked, or falls inside a completed reconciliation is not reversed. It is reported as a `RollbackIssue` (`editedAfterImport`, `linkedToReceipt` or `reconciled`) until the person includes it; its current version is then voided and its receipt links listed for removal (the receipt is kept).
+* The batch becomes `rolledBack` with a timestamp.
+
+On the server, only a committed batch can be rolled back (`IMPORT_NOT_COMMITTED` otherwise), and a rolled-back batch cannot be committed again (`IMPORT_ROLLED_BACK`).
+
+== Server limits and jobs
+
+[cols="2,1,3"]
+|===
+|Setting (`finance.imports`) |Default |Meaning
+
+|`max-rows` |50000 |Largest accepted statement, in records. More is rejected with `TOO_MANY_ROWS`.
+|`synchronous-row-limit` |1000 |A batch with more pending rows than this commits as a background job (see xref:operations:job-worker.adoc[]); the response says it was accepted rather than complete.
+|`preview-rows` |500 |Rows returned with a preview or batch page by default; a page request is capped at 1000.
+|===

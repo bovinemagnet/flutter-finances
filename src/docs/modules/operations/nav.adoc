@@ -1,2 +1,7 @@
 .Operations
+* xref:operations:running-locally.adoc[Running the server locally]
+* xref:operations:job-worker.adoc[Job worker]
+* xref:operations:metrics.adoc[Metrics]
+* xref:operations:backup-and-restore.adoc[Backup and restore]
+* xref:operations:data-deletion.adoc[Data deletion]
 * xref:operations:observability-and-security.adoc[Observability, security and privacy]

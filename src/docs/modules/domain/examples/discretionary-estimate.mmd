@@ -1,0 +1,14 @@
+flowchart LR
+    subgraph Budget limit
+        B1[Remaining after pending of discretionary targets] --> B3[Budget limit]
+        B2[Unposted discretionary commitments to horizon end or period end] --> B3
+    end
+    subgraph Cash limit
+        C1[Cash forecast over the horizon] --> C2[Lowest closing balance]
+        C2 --> C4[Cash limit]
+        C3[Minimum buffer] --> C4
+    end
+    B3 --> D{Smaller limit}
+    C4 --> D
+    D -->|positive| E[Estimate]
+    D -->|negative| F[Estimate zero and shortfall shown]

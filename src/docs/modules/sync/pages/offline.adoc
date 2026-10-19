@@ -15,7 +15,19 @@ A receipt and an expense entered on a disconnected phone appear immediately on t
 * *Long absence.* A device returning after tombstones expired rebases from a snapshot, preserves pending proposals and cannot resurrect deleted records (A15).
 * *Foreground resume.* Native background work is opportunistic; foreground launch reliably resumes queued work (UX 04).
 
-See xref:sync:protocol.adoc[] for the protocol and xref:platform:capabilities.adoc[] for background work by platform.
+See xref:sync:protocol.adoc[] for the protocol, xref:sync:sign-in.adoc[] for sign-in and xref:platform:capabilities.adoc[] for background work by platform.
+
+== What the client does today
+
+The behaviours above are implemented in `packages/finance_store/lib/src/sync` and covered by tests in that package.
+
+* *Outbox.* Commands are sent in order, up to 500 per request. A command for an entity that has an earlier pending command carries that command's revision, so a device never conflicts with itself.
+* *Retries.* `SyncTransport` retries timeouts, network errors, `408`, `429` and `5xx` answers up to 5 attempts with exponential backoff from 500 ms, doubling to a 60 second cap, with jitter. Each request has a 30 second timeout. Any other `4xx` answer fails at once, and a `401` raises an authentication-required error. A failed attempt leaves the commands queued.
+* *Conflicts.* A `conflict` result puts the command on a review list with the server state, revision and conflicting fields. When the server state is empty (the entity was deleted), the review is marked as deleted remotely instead.
+* *Expired cursor.* A `410` on the change feed starts a snapshot rebuild. Progress is saved, so an interrupted rebuild resumes, and entities that the server no longer has are removed locally. Pending commands for entities deleted in the meantime are held for review.
+* *Images.* Receipt uploads run separately from commands, at most 2 at a time, and can be held back on a metered connection.
+
+NOTE: The transport does not yet send the `X-Device-Id` header that the server requires on `/v1/sync/*`, so the client cannot yet complete a sync against the current server. See the note on xref:sync:protocol.adoc[the protocol page].
 
 == Receipt capture without connectivity
 

@@ -2,15 +2,48 @@
 Paul Snow
 :revnumber: 0.0.0
 
-This page summarises sync protocol version 1 (`spec/sync/protocol.md`). The client is the primary store. Every user action is saved together with a command in a local outbox in one SQLite transaction (SYNC 01). The server validates commands, commits canonical state and exposes an ordered change feed. All JSON uses camelCase. Money is integer minor units in the workspace currency, dates are `YYYY-MM-DD` and instants are ISO 8601 UTC.
+This page describes sync protocol version 1. The written contract is `spec/sync/protocol.md`; the behaviour below was checked against the server in `server/app` (Spring Boot, PostgreSQL, S3-compatible object storage) and the client transport in `packages/finance_store/lib/src/sync`.
 
-NOTE: The server is planned. This page documents the specified contract.
+The client is the primary store. Every user action is saved together with a command in a local outbox in one SQLite transaction (SYNC 01). The server validates commands, commits canonical state and exposes an ordered change feed. All JSON uses camelCase. Money is integer minor units in the workspace currency, dates are `YYYY-MM-DD` and instants are ISO 8601 UTC.
+
+[NOTE]
+====
+*Implemented:* the server endpoints below exist and behave as described. *Not yet wired in the client:* the Dart transport (`SyncTransport`) sends the `Authorization: Bearer` header only. It does not yet send `X-Device-Id` or `X-Workspace-Id`, and the client contains no calls to the setup endpoints (`/v1/workspaces`, `/v1/devices`), to imports or to exports. The sync and receipt calls need those headers added on the client before they can work against this server. See xref:sync:sign-in.adoc[] for how the access token is obtained.
+====
 
 .Command flow
 [source,mermaid]
 ----
 include::example$sync-sequence.mmd[]
 ----
+
+== Authentication and scope
+
+Every route except health, info, Prometheus and API documentation requires an OIDC access token (`Authorization: Bearer`). The server is an OAuth 2 resource server (`SecurityConfiguration`): it validates the JWT against the issuer configured in `FINANCE_OIDC_ISSUER_URI`, holds no client secret and keeps no session. Users are keyed by the token's `sub` claim and are created on first use. A missing or invalid token is `401` with `{"error": "UNAUTHENTICATED"}`.
+
+[cols="1,3",options="header"]
+|===
+| Header | Meaning
+
+| `X-Device-Id` | A registered, unrevoked device of the caller. Required by `/v1/sync/*`, and it also selects the workspace. Missing: `400 DEVICE_REQUIRED`. Unknown to the caller: `403 DEVICE_NOT_AUTHORISED`. Revoked: `403 DEVICE_REVOKED`.
+| `X-Workspace-Id` | The workspace for other endpoints. When absent, the workspace of `X-Device-Id` is used; with neither, `400 WORKSPACE_REQUIRED`. A workspace the caller is not a member of is `404 WORKSPACE_NOT_FOUND`.
+| `X-Correlation-Id` | Optional on requests. The server echoes it, or generates a UUID when it is absent or not a valid identifier, on every response.
+|===
+
+Another workspace's receipt, asset, job, import or export is reported as `404`, never `403`, so an identifier reveals nothing (A17). A command whose `workspaceId` or `deviceId` differs from the calling device's is answered with `permission_denied`.
+
+== Setup
+
+[cols="1,3",options="header"]
+|===
+| Endpoint | Behaviour
+
+| `POST /v1/workspaces` | Body `+{"id"?, "name", "currency", "timezone"}+`. Creates a workspace owned by the caller. The `id` may be generated offline. The id of a deleted workspace is refused with `409 WORKSPACE_DELETED`, so a restore always creates a new workspace (DATA 03).
+| `GET /v1/workspaces` | Lists the caller's workspaces.
+| `+GET /v1/workspaces/{id}+` | Bootstrap settings: currency and exponent, timezone, `schemaVersion`, `tombstoneHorizonDays`, `maxCommandsPerBatch` and `serverTime`.
+| `POST /v1/devices` | Body `+{"deviceId", "workspaceId", "name", "platform"}+`. Registers a device; repeating it is harmless.
+| `+DELETE /v1/devices/{id}+` | Revokes a device for good. Allowed for the device's owner or a workspace owner.
+|===
 
 == Command envelope
 
@@ -25,7 +58,7 @@ include::example$sync-sequence.mmd[]
 }
 ----
 
-`POST /v1/sync/commands` accepts `+{"commands": [...]}+` (at most 500) and returns `+{"results": [...]}+` in the same order. Each command is committed in its own database transaction together with its idempotency record and change records (SYNC 02).
+`POST /v1/sync/commands` accepts `+{"commands": [...]}+` (at most 500, `finance.sync.max-commands-per-batch`) and returns `+{"results": [...]}+` in the same order. Each command is committed in its own database transaction together with its idempotency record and change records (SYNC 02). The Dart client sends batches of up to 500 commands.
 
 == Results
 
@@ -42,45 +75,149 @@ include::example$sync-sequence.mmd[]
 
 Replaying a `commandId` returns the stored original result with status `previously_applied` and never applies twice (A09). A `commandId` reused with a different payload hash is `validation_failed` with `IDEMPOTENCY_KEY_REUSED`.
 
+The hash covers `type`, `entityType`, `entityId` and `payload` only. Clients rewrite `baseRevision`, `workspaceId` and `deviceId` of unsent commands (rebase, bootstrap) while keeping the `commandId`. Only applied commands are recorded. A `conflict` or `validation_failed` command changed nothing and is evaluated again if it is retried.
+
 == Revisions and conflicts
 
 Each entity has an integer `revision`, starting at 1 on creation and incremented on every accepted change. `baseRevision` is the revision the client last saw (0 for a new entity).
 
-`journal.post`:: Creates a journal, or replaces one whose stored status is `draft` or `pending`. Replacing requires `baseRevision` to equal the stored revision, otherwise the result is `conflict`. A posted or reversed journal can only be changed with `journal.correct`.
-`journal.correct`:: Payload `+{"originalId", "reversal": Journal, "replacement": Journal | null}+`. `entityId` is the original and its stored revision must equal `baseRevision`, otherwise `conflict` (A10). The original becomes `reversed` atomically with inserting the reversal and replacement.
-`entity.upsert`:: Payload `+{"fields": {...}}+` with only the changed fields.
+`journal.post`:: Payload `+{"journal": Journal}+`. Creates a journal, or replaces one whose stored status is `draft` or `pending`. Replacing requires `baseRevision` to equal the stored revision, otherwise the result is `conflict`. A posted or reversed journal can only be changed with `journal.correct`.
+`journal.correct`:: Payload `+{"originalId", "reversal": Journal, "replacement": Journal | null}+`. `entityId` is the original and its stored revision must equal `baseRevision`, otherwise `conflict` (A10: two devices correcting the same amount produce one accepted correction and one conflict). The original becomes `reversed` atomically with inserting the reversal and replacement.
+`entity.upsert`:: Payload `+{"fields": {...}}+` with only the changed fields. The server keeps a revision per field.
 `entity.delete`:: Writes a tombstone. Deleting a posted journal is rejected (`POSTED_JOURNAL_IMMUTABLE`); void it with `journal.correct` and a null replacement.
 
-== Field merge
+=== Field merge
 
-For `entity.upsert` the server keeps a revision per field. A field changed on the server after `baseRevision` with a different value is a conflict and nothing is applied; otherwise the fields merge (SYNC 03). Competing money amounts, split lines, reconciliation changes and deletions are never resolved by last write wins. On conflict the local proposal and server state are preserved, the difference is shown, and the user chooses or combines them through a fresh validated command.
+For `entity.upsert`, a field changed on the server after `baseRevision` with a different value is a conflict and nothing is applied. Otherwise the fields merge (SYNC 03). The server never resolves competing edits by last write wins. On conflict the client keeps its local proposal and the server state, shows the difference, and the user chooses or combines them through a fresh validated command (see xref:sync:offline.adoc[]).
 
-== Server journal validation
+=== Absent and deleted entities
+
+A command against a tombstone is a `conflict` with `errors: ["ENTITY_DELETED"]` and `serverState: null`. A command with `baseRevision > 0` for an entity the server never had is a `conflict` with `errors: ["ENTITY_NOT_FOUND"]`. This includes deleting an entity twice. Tombstoned rows are kept without data after the horizon, so no pending command can resurrect them (A15).
+
+== Journal rules on the server
 
 Postings are validated with the rules in xref:domain:ledger.adoc[]. In addition:
 
 * `CURRENCY_MISMATCH`: currency must equal the workspace currency.
-* `UNKNOWN_LEDGER_ACCOUNT`: every posting account is an existing, non-deleted account or category entity in the workspace, or a `system:` account.
-* `INVALID_STATUS`: the status must not be `reversed`.
-* `REVERSAL_MISMATCH`: reversal journals must negate their original exactly.
+* `UNKNOWN_LEDGER_ACCOUNT`: every posting account is an existing, non-deleted account or category entity in the workspace, or a known `system:` account (`opening-equity`, `balance-adjustments`, `transfer-clearing`, `reimbursement-receivable`).
+* `INVALID_STATUS`: the status must not be `reversed`. Correcting a draft or pending original is also `INVALID_STATUS`; correcting an already reversed original is a `conflict`.
+* `REVERSAL_MISMATCH`: a reversal must be type `reversal`, status `posted`, dated on the original's effective date, with `reversalOf` set and postings that cancel the original per account.
+* `REPLACEMENT_MISMATCH`: a replacement's `replaces` must be the original's id.
+
+Journals change only through `journal.post` and `journal.correct`. An `entity.upsert` of a journal is `USE_JOURNAL_COMMANDS`; clients annotate payee, notes and tags through a `journalAnnotation` entity. An account or category used by any posting cannot be deleted (`ENTITY_IN_USE`); archive it instead. The database also enforces balanced journals and immutable posted journals, and a command it rejects is `LEDGER_CONSTRAINT`.
+
+Other validation codes are `INVALID_COMMAND` (malformed envelope or unknown type), `UNSUPPORTED_SCHEMA_VERSION`, `INVALID_JOURNAL`, `ENTITY_ID_MISMATCH`, `ENTITY_TYPE_MISMATCH`, `INVALID_TYPE` (a reversal posted directly), `DUPLICATE_ENTITY`, and for accounts and categories `MISSING_FIELD`, `INVALID_FIELD` and `IMMUTABLE_FIELD`. Every other entity type, such as `receipt`, `documentAsset` and `journalAnnotation`, is opaque JSON with field-level merge. Unknown envelope and entity fields are ignored and preserved (NFR 12). Rejected journals are counted by code in the `finance.ledger.journals.rejected` metric (see xref:operations:metrics.adoc[]).
 
 == Change feed
 
-`GET /v1/sync/changes?cursor=<opaque>&limit=500` returns `+{"changes": [...], "cursor": "opaque", "hasMore": bool}+`. Each change is `+{"entityType", "entityId", "revision", "op": "upsert | delete", "data": {}}+`, where `data` is the full current entity. An empty cursor starts from the beginning. The client applies changes transactionally and keeps pending commands as overlays (SYNC 04).
+`GET /v1/sync/changes?cursor=<opaque>&limit=500` returns `+{"changes": [...], "cursor": "opaque", "hasMore": bool}+`. Each change is `+{"entityType", "entityId", "revision", "op": "upsert | delete", "data": {}}+`, where `data` is the full current entity. A delete change carries `data: {"id"}`. An empty cursor starts from the beginning. `limit` is capped at 500 (`finance.sync.max-page-size`). The client applies changes transactionally and keeps pending commands as overlays (SYNC 04).
 
 === Cursor expiry and snapshot rebase
 
-Tombstones are retained for a proposed 90 days (SYNC 06). A cursor older than that horizon returns HTTP 410 with `+{"error": "CURSOR_EXPIRED"}+`. The client then pages `GET /v1/sync/snapshot?after=<entityKey>` and rebases its pending commands (A15). Pending commands for entities deleted in the meantime are surfaced for review and never applied automatically.
+Tombstones are retained for 90 days (`finance.sync.tombstone-horizon`, SYNC 06). A non-empty cursor expires, and the call returns HTTP 410 with `+{"error": "CURSOR_EXPIRED"}+`, in two cases:
+
+* it was issued more than the horizon ago; or
+* a tombstone purge that ran after it was issued removed a delete beyond its position.
+
+An empty cursor never expires, and the compacted log still holds the latest change of every live entity. The purge runs daily on the worker workload (03:17 UTC by default, `finance.sync.purge-cron`); see xref:operations:job-worker.adoc[].
+
+After a 410 the client pages `GET /v1/sync/snapshot?after=<entityKey>&limit=500` and rebases its pending commands (A15). A snapshot page is `+{"changes": [...], "after": "entityKey", "hasMore": bool, "cursor": "opaque"}+`:
+
+* `changes` uses the change feed item shape for every live entity, ordered by entity key (`entityType/entityId`);
+* `after` is the key to pass for the next page; and
+* `cursor` is the change feed position captured when the page was produced. The client keeps the first page's cursor and resumes `GET /v1/sync/changes` from it after the last page.
+
+Pending commands for entities deleted in the meantime are surfaced for review and never applied automatically.
 
 == Receipt documents (SYNC 05)
 
-. `POST /v1/receipts/upload-intents` with `+{"receiptId", "assetId", "kind": "source | derivative", "contentType", "sizeBytes", "sha256"}+` returns `+{"uploadUrl", "headers", "expiresAt"}+` for a short-lived presigned PUT. Requesting an intent again for the same `assetId` and checksum returns a fresh URL for the same object.
-. The client PUTs the bytes, then calls `+POST /v1/receipts/{receiptId}/complete+` with `+{"assetId"}+`. The server verifies ownership, size, checksum and content type by magic bytes, then marks the asset `quarantined` until the scan job marks it `available` or `rejected`. Completing twice is a no-op and never creates a second receipt.
-. `+GET /v1/receipts/{receiptId}/assets/{assetId}/download+` returns a short-lived presigned GET only for members of the owning workspace (A17).
+. `POST /v1/receipts/upload-intents` with `+{"receiptId", "assetId", "kind": "source | derivative", "contentType", "sizeBytes", "sha256"}+` returns `+{"uploadUrl", "headers", "expiresAt"}+` for a presigned PUT valid for 15 minutes. Requesting an intent again for the same `assetId` and checksum returns a fresh URL for the same object.
+. The client PUTs the bytes to the upload URL, then calls `+POST /v1/receipts/{receiptId}/complete+` with `+{"assetId"}+`. The server verifies ownership, size, checksum and content type by magic bytes, then marks the asset `quarantined` until the scan job marks it `available` or `rejected`. Completing twice is a no-op and never creates a second receipt.
+. `+GET /v1/receipts/{receiptId}/assets/{assetId}/download+` returns `+{"downloadUrl", "expiresAt"}+`, a presigned GET valid for 5 minutes, only for members of the owning workspace (A17).
 
 Metadata may arrive before an image, in which case other devices show "Image pending".
 
-== Endpoints
+.Checks and errors
+[cols="1,3",options="header"]
+|===
+| Rule | Outcome
+
+| An intent needs a live `receipt` entity in the workspace | `404 RECEIPT_NOT_FOUND`. The first intent binds the receipt to that workspace.
+| Content type recognised by the content sniffer (JPEG, PNG, HEIC, HEIF, PDF) | otherwise `400 UNSUPPORTED_CONTENT_TYPE`
+| Size up to 25 MiB (`finance.receipts.max-size-bytes`) | otherwise `400 TOO_LARGE`
+| Lower-case hexadecimal `sha256` | otherwise `400 INVALID_CHECKSUM`
+| A new intent with a different checksum for a completed asset | `409 ASSET_ALREADY_COMPLETE`
+| Completion | `200` with status `quarantined`, `available` or `rejected`; `404 UNKNOWN_ASSET`; `409 OBJECT_MISSING` when nothing was uploaded; `422 CHECKSUM_MISMATCH` (size or checksum); `422 CONTENT_TYPE_MISMATCH`. After a 422 the client may upload again.
+| Download while the asset is uploading or quarantined, or after rejection | `409 ASSET_NOT_AVAILABLE`
+| Download of another workspace's asset | `404 NOT_FOUND`
+|===
+
+Uploads go to a staging key. Completion copies verified bytes to the asset's permanent key, so a late or repeated upload cannot replace them. The scan job (`receipts.scan`) runs a structural check by default: it rejects truncated files, images larger than 20,000 pixels in either dimension (`finance.receipts.max-image-dimension`), malformed structures and PDFs containing scripts, launch actions, embedded files, XFA forms or rich media. It is not a malware scanner, and a deployment that needs one supplies its own `DocumentScanner` bean.
+
+== CSV imports (IMP 01 to IMP 03)
+
+`POST /v1/imports/preview` takes `+{"fileName", "contentBase64", "mapping", "outflowCategoryId", "inflowCategoryId"}+`. It parses the file with the shared `csv.parse` mapping (which names `accountId` and `encoding`), keeps the raw rows and their hashes, and returns the batch:
+
+[source,json]
+----
+{
+  "batchId": "uuid",
+  "status": "previewed | committing | committed | rolled_back",
+  "rowCount": 0, "errorCount": 0, "newCount": 0, "duplicateCount": 0,
+  "totals": {}, "dateGap": {},
+  "rows": [{"rowNumber": 1, "date": "", "description": "", "amountMinor": 0,
+            "status": "", "errorCode": null, "fingerprint": "",
+            "journalId": null, "matches": []}]
+}
+----
+
+* Rows are keyed by the shared `csv.fingerprint`. A fingerprint already committed in the workspace is `duplicate` (an overlapping statement), while identical same-day rows keep distinct occurrence numbers (A11).
+* Possible transfers and existing entries are listed as `matches` for review and are never applied.
+* The same file with the same settings for the same account is the same batch.
+* A batch is limited to 50,000 rows (`finance.imports.max-rows`).
+* `+POST /v1/imports/{batchId}/commit+` takes `+{"decisions"?: {"<row>": "import" | "skip"}}+` and posts each new row as a `journal.post` through the command path (`expense` to the outflow category, `income` to the inflow category, status `posted`). Journal and command ids are derived from the batch and row, so committing again creates nothing new (A12). Up to 1,000 new rows (`finance.imports.synchronous-row-limit`) commit within the request. Larger batches answer `202` with a job (`imports.commit`) to poll.
+* `+POST /v1/imports/{batchId}/rollback+` voids the batch's untouched journals with `journal.correct` and lists edited ones for review.
+* `+GET /v1/imports/{batchId}?offset&limit+` pages the rows.
+
+== Jobs, exports and deletion
+
+`+GET /v1/jobs/{id}+` returns `+{"id", "type", "status": "queued | running | succeeded | failed", "attempts", "result", "error", "createdAt", "updatedAt", "completedAt"}+`. The `error` is present only once failed. Jobs are run by the worker described in xref:operations:job-worker.adoc[].
+
+`POST /v1/exports` (optional body `{"format": "json"}`, the only format) returns `202` with `+{"exportId", "jobId", "status"}+`. The `exports.archive` job writes a ZIP archive containing:
+
+* `entities/<entityType>.json`, an array of `+{entityType, entityId, revision, data}+` for every live entity;
+* `receipts/<receiptId>/<assetId>`, the original bytes of every available receipt document; and
+* `manifest.json`, which holds the format (`flutter-finances-export`), schema version, workspace id, name, currency, exponent and timezone, the effective date semantics, `acceptedSequence`, counts, relationships (`reversalOf`, `replaces`, `refundOf`, `assetOf`), and the path, size and SHA-256 of every other file.
+
+`+GET /v1/exports/{id}+` reports the export, and `+GET /v1/exports/{id}/download+` returns `+{"downloadUrl", "expiresAt"}+` or `409 EXPORT_NOT_READY`. Exports are available to every workspace member.
+
+`+DELETE /v1/workspaces/{id}+` (owner only) revokes every device at once and returns `202` with a deletion whose progress `+GET /v1/workspaces/{id}/deletion+` reports to the requester. See xref:operations:data-deletion.adoc[].
+
+== Errors
+
+Non-2xx responses are `+{"error", "message", "correlationId"}+`, and every response carries `X-Correlation-Id`. The server does not include stack traces or exception messages in framework error bodies.
+
+== Entity JSON
+
+Journal:
+
+[source,json]
+----
+{
+  "id": "uuid", "type": "expense", "status": "posted",
+  "effectiveDate": "2026-07-01", "enteredAt": "2026-07-01T02:03:04Z",
+  "currency": "AUD",
+  "postings": [{"account": "groceries", "amountMinor": 1000},
+               {"account": "bank", "amountMinor": -1000}],
+  "accountId": "bank", "counterAccountId": null, "amountMinor": 1000,
+  "payee": "Grocer", "notes": null, "tags": [],
+  "refundOf": null, "reversalOf": null, "replaces": null
+}
+----
+
+Account: `+{"id", "name", "type", "includeInBudget", "includeInForecast", "includeInNetWorth", "archived", "dataSource", "lastReconciledOn"}+`. Category: `+{"id", "name", "kind", "parentId", "archived"}+`. Other entity types are opaque JSON objects to the server and are defined by the `finance_core` codecs.
+
+== Endpoint summary
 
 [cols="1,3",options="header"]
 |===
@@ -90,9 +227,12 @@ Metadata may arrive before an image, in which case other devices show "Image pen
 | `GET /v1/sync/changes` | Pull the change feed
 | `GET /v1/sync/snapshot` | Page a snapshot for rebase
 | `POST /v1/receipts/upload-intents` | Request an upload URL
-| `+POST /v1/receipts/{id}/complete+` | Complete an upload
-| `+GET /v1/receipts/{id}/download+` | Scoped download (see above for the asset path)
-| `POST /v1/imports/preview`, `+POST /v1/imports/{id}/commit+` | Import preview and commit
-| `POST /v1/exports`, `+GET /v1/jobs/{id}+` | Export and job status
-| `POST /v1/devices`, `+DELETE /v1/devices/{id}+` | Register and revoke devices
+| `+POST /v1/receipts/{receiptId}/complete+` | Complete an upload
+| `+GET /v1/receipts/{receiptId}/assets/{assetId}/download+` | Scoped download
+| `+POST /v1/imports/preview+`, `+POST /v1/imports/{batchId}/commit+`, `+POST /v1/imports/{batchId}/rollback+`, `+GET /v1/imports/{batchId}+` | Import preview, commit, rollback and review
+| `+POST /v1/exports+`, `+GET /v1/exports/{id}+`, `+GET /v1/exports/{id}/download+` | Export
+| `+GET /v1/jobs/{id}+` | Job status
+| `+POST /v1/workspaces+`, `+GET /v1/workspaces+`, `+GET /v1/workspaces/{id}+` | Workspace setup
+| `+DELETE /v1/workspaces/{id}+`, `+GET /v1/workspaces/{id}/deletion+` | Workspace deletion
+| `+POST /v1/devices+`, `+DELETE /v1/devices/{id}+` | Register and revoke devices
 |===

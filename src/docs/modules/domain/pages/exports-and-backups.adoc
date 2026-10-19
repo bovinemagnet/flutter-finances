@@ -1,0 +1,69 @@
+= Exports and backups
+Paul Snow
+:revnumber: 0.0.0
+
+Two things leave the app: CSV exports for use in spreadsheets, and the portable archive that is a real backup. CSV alone is not a backup. The core code is in `packages/finance_core/lib/src/documents/exports`; the encrypted archive writer and reader are in `packages/finance_store/lib/src/backup`. For the operational procedure see xref:operations:backup-and-restore.adoc[].
+
+== CSV export
+
+`encodeCsv` writes RFC 4180 CSV with CRLF line endings, each row ending in CRLF. A field is quoted when it contains the delimiter, a quote or a line break, and embedded quotes are doubled.
+
+=== Formula sanitisation
+
+Spreadsheet applications treat a cell that starts with certain characters as a formula. `sanitiseCsvValue` prefixes an apostrophe when a text value starts with `=`, `+`, `-`, `@`, a tab or a carriage return. It is applied to every text field (account, payee, category, type, status, notes, tags, journal id and report headers) and not to amounts, which are written as plain decimals so they stay numbers.
+
+=== Transaction export
+
+`exportTransactionsCsv` uses the columns `Date`, `Account`, `Payee`, `Category`, `Amount`, `Currency`, `Type`, `Status`, `Notes`, `Tags`, `Journal ID`.
+
+* One row per category line, so split entries sum correctly. Entries without categories, such as transfers, give one row per account line, the entry's own account first.
+* Amounts are signed from the account's point of view (negative is money out).
+* Rows are ordered by effective date, entered time and id.
+* `TransactionExportFilter` selects a date range, accounts, whether to include pending entries and whether to include corrections. By default only posted entries are exported; corrected originals and their reversals cancel out and are left out unless corrections are requested.
+
+`exportReportCsv` exports report rows. Money becomes a plain decimal, numbers, dates and booleans are written as they are, null is empty, and anything else is sanitised.
+
+== Archive manifest
+
+`ArchiveManifest` describes a portable archive (version constants `archiveFormatVersion` 1 and `archiveSchemaVersion` 1, the latter matching the sync schema version).
+
+[cols="2,3"]
+|===
+|Field |Content
+
+|`formatVersion`, `schemaVersion` |Layout and entity JSON versions.
+|`createdAt` |UTC instant.
+|`workspaceId`, `currency`, `timezone` |Workspace identity, currency with exponent, and IANA timezone such as `Australia/Sydney`.
+|`effectiveDateSemantics` |States that effective dates are calendar dates (`YYYY-MM-DD`) in the workspace timezone, and technical timestamps are UTC ISO 8601.
+|`acceptedRevision`, `acceptedCursor` |Last server revision and change feed cursor, for synced workspaces.
+|`pendingLocalChanges` |Commands not yet accepted by the server, recorded apart from the accepted state.
+|`files` |Each file's path, SHA-256, size, role (`data`, `receiptSource`, `receiptDerivative`, `csvView`), content type and asset id.
+|`entityCounts` |Record count per entity type, written in sorted key order.
+|`relationships` |For each receipt, its asset ids and linked journal ids, sorted by id.
+|===
+
+`archiveManifestToJson` and `archiveManifestFromJson` convert to and from JSON. Encryption of the archive itself belongs to the store.
+
+=== Store archive layout
+
+The store's `exportBackup` writes the entries in this order: `data/workspace.json`, `data/accounts.json`, `data/categories.json`, `data/journals.json`, `data/entities.json`, `data/assets.json`, `pending_commands.json`, `files/<assetId>` for each receipt file present on the device, `csv/transactions.csv` and `csv/accounts.csv` (optional), and `manifest.json` last. Its manifest records the format, format and schema versions, the database schema version, the accepted cursor, pending command count, record counts, a SHA-256 and size for every file, relationships and the number of unbalanced journals. Assets whose bytes were not on the device (evicted or never downloaded) are not in the archive and are reported as unavailable in the export summary.
+
+NOTE: The store's `manifest.json` (`packages/finance_store/lib/src/backup`) and the core `ArchiveManifest` model are two related shapes of the same idea. The store manifest keys files in a map and groups counts under `counts`, while the core model lists files in an array with roles. Restore verification exists in both layers and checks the same properties.
+
+=== Encrypted container
+
+The whole archive is wrapped in the `FSBACKUP` container: AES-256-GCM chunks with a key derived by Argon2id from the recovery secret. The container layout, key derivation and tamper detection are described in xref:architecture:local-store.adoc[].
+
+== Restore verification
+
+Restore is verified before anything is applied, into an isolated workspace, and the person sees a preview. `verifyArchive` (acceptance scenario A16: restore a full encrypted export on a fresh device) checks in order:
+
+. Format and schema compatibility (`FORMAT_UNSUPPORTED`, `SCHEMA_UNSUPPORTED`).
+. Every manifest file is present with the recorded size and SHA-256 (`MISSING_FILE`, `SIZE_MISMATCH`, `HASH_MISMATCH`). Extra files are a warning, `UNEXPECTED_FILE`, and are ignored.
+. Every journal balances (`UNBALANCED_JOURNAL`) and is in the manifest currency (`CURRENCY_MISMATCH`).
+. Record counts equal the manifest (`COUNT_MISMATCH`).
+. Every receipt relationship points at a verified stored asset (`MISSING_ASSET`) and a restored journal (`DANGLING_RELATIONSHIP`).
+
+The `RestorePreview` carries the manifest, the issues, expected and actual counts per entity type, the number of verified files and the number of pending local changes. `canRestore` is true only when no issue has error severity. Pending local changes are shown separately and are never replayed into a live workspace.
+
+The store's `stageRestore` produces a `RestorePreview` (a separate class from the core one of the same name) with expected and restored counts, checksum failures, missing and unavailable assets, unbalanced journals, pending commands and the accepted cursor. The restored workspace is staged beside the current one with a new workspace id and device id, starts local only, and nothing touches the target until it is activated. `canActivate` requires a compatible schema, no checksum failures, no missing assets, no unbalanced journals and matching counts.

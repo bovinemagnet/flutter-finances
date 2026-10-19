@@ -4,7 +4,7 @@ Paul Snow
 
 [cols="1,3"]
 |===
-| Status | Proposed
+| Status | Accepted; implemented for the local client and the sync service
 | Source | Product requirements, section 10, subject to the decision register in section 18
 |===
 
@@ -27,11 +27,17 @@ The product must run on iPhone, iPad, Android, Windows, macOS and Linux, work of
 
 == Decision
 
-Use Flutter for the native clients, an encrypted local SQLite database, and optional synchronisation through a Java and Spring Boot modular monolith with PostgreSQL and private object storage. Quarkus is a viable substitution if it better fits the team; supporting both frameworks is to be avoided.
+Use Flutter for the native clients, an encrypted local SQLite database, and optional synchronisation through a Java and Spring Boot modular monolith with PostgreSQL and private object storage. Quarkus was a viable substitution; supporting both frameworks is to be avoided, and Spring Boot was chosen.
+
+As implemented:
+
+* Client: Flutter with a pub workspace of `finance_core`, `finance_store` and `finance_app`. The database is SQLite3MultipleCiphers (ChaCha20-Poly1305) through the `sqlite3` package build hook; there is no ORM or Drift layer. See xref:architecture:local-store.adoc[].
+* State management: a `ChangeNotifier` shared with an `InheritedNotifier`, not Riverpod (see xref:architecture:client-application.adoc[]).
+* Server: Spring Boot 4.1 on Java 25, Spring Modulith module boundaries, PostgreSQL with Liquibase, S3-compatible object storage through the AWS SDK, and an OAuth2 resource server. See xref:architecture:sync-service.adoc[].
 
 == Consequences
 
 * Flutter does not guarantee that a particular scanner, database encryption, key store or notification plugin works across every target. A platform capability matrix is maintained (see xref:platform:capabilities.adoc[]) and native dependencies must be validated before committing to launch versions.
-* Platform conditionals are kept out of finance code behind interfaces: `ReceiptScanner`, `TextRecognizer`, `SecureKeyStore`, `FileImporter`, `ShareInbox`, `Notifications` and `BackgroundScheduler`.
+* Platform conditionals are kept out of finance code behind interfaces: `ReceiptScanner`, `TextRecogniser`, `SecureKeyStore`, `FileImporter`, `ShareInbox`, `Notifications` and `BackgroundScheduler`.
 * A decision prototype is a delivery prerequisite. It must prove an offline receipt capture, database encryption and key retrieval, a PDF import, share target handoff on both mobile systems, a two-device conflict, and signed builds on the five operating system families, plus a screen reader check of a basic workflow.
 * Dart and Java implement the finance rules separately and are held to the same behaviour by shared fixtures (see xref:architecture:shared-fixtures.adoc[]).

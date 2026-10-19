@@ -1,0 +1,92 @@
+= Running the server locally
+Paul Snow
+:revnumber: 0.0.0
+
+This page describes how to run the sync service (`server/app`) on a developer machine. Everything here reflects `application.yml` and `application-local.yml` in `server/app/src/main/resources`.
+
+NOTE: There is no Docker Compose file, container image definition or identity provider configuration in the repository. You supply PostgreSQL, an S3-compatible store and an OIDC provider yourself; the `local` profile only sets defaults that match a typical developer set-up.
+
+== What the service needs
+
+[cols="1,3",options="header"]
+|===
+| Dependency | Local default (profile `local`)
+
+| PostgreSQL | `jdbc:postgresql://localhost:5432/finance`, user `finance`, password `finance`
+| S3-compatible object storage (for example MinIO) | `+http://localhost:9000+`, access key and secret `minioadmin`, bucket `finance-local`, path-style access, bucket created at start-up
+| OIDC provider | issuer `+http://localhost:8180/realms/finance+`
+|===
+
+The schema is managed by Liquibase (`db/changelog/db.changelog-master.yaml`) and is applied when the service starts. The service uses Java 25 and virtual threads.
+
+== Start the service
+
+Run from the repository root:
+
+[source,shell]
+----
+SPRING_PROFILES_ACTIVE=local gradle25w :server:app:bootRun
+----
+
+The `local` profile runs the API and the background worker in one process (`FINANCE_WORKER_ENABLED` defaults to `true`). Start-up fails if no issuer is configured, which cannot happen under the `local` profile because of its default.
+
+Useful endpoints once running:
+
+* `/actuator/health`, `/actuator/health/liveness` and `/actuator/health/readiness` (health probes are enabled);
+* `/actuator/prometheus` and `/actuator/metrics` (see xref:operations:metrics.adoc[]);
+* `/v3/api-docs` and `/swagger-ui.html` (generated API documentation).
+
+Health, info, Prometheus and API documentation are reachable without a token. Every other route needs a bearer token from the configured issuer.
+
+== Profiles
+
+[cols="1,3",options="header"]
+|===
+| Profile | Purpose
+
+| none (default) | Production-style defaults. Every environment-specific value comes from an environment variable, the worker is off, and the bucket is not created.
+| `local` | Developer defaults: local PostgreSQL and MinIO, the OIDC issuer on port 8180, the bucket created at start-up, and the worker on.
+| `test` | Used by the server tests (`src/test/resources/application-test.yml`). Not for running the service.
+|===
+
+== Environment variables
+
+[cols="2,2,3",options="header"]
+|===
+| Variable | Default | Meaning
+
+| `FINANCE_DB_URL` | `jdbc:postgresql://localhost:5432/finance` | JDBC URL
+| `FINANCE_DB_USERNAME` | `finance` | Database user
+| `FINANCE_DB_PASSWORD` | empty (`finance` under `local`) | Database password
+| `FINANCE_OIDC_ISSUER_URI` | none (required; `+http://localhost:8180/realms/finance+` under `local`) | Issuer whose access tokens are accepted
+| `FINANCE_S3_ENDPOINT` | empty (AWS S3; `+http://localhost:9000+` under `local`) | Storage endpoint
+| `FINANCE_S3_PRESIGN_ENDPOINT` | empty | Endpoint written into presigned URLs when clients reach storage by a different address
+| `FINANCE_S3_REGION` | `ap-southeast-2` | Storage region
+| `FINANCE_S3_BUCKET` | `finance-documents` (`finance-local` under `local`) | Bucket for receipts and export archives
+| `FINANCE_S3_ACCESS_KEY`, `FINANCE_S3_SECRET_KEY` | empty (`minioadmin` under `local`) | Static credentials. When empty the default AWS credential chain (a service identity) is used.
+| `FINANCE_S3_PATH_STYLE` | `false` (`true` under `local`) | Path-style bucket addressing, needed by MinIO
+| `FINANCE_WORKER_ENABLED` | `false` (`true` under `local`) | Run the job worker in this process
+|===
+
+== Other settings
+
+These properties have no environment variable. Override them with the usual Spring mechanisms (for example `FINANCE_SYNC_MAX_PAGE_SIZE` through relaxed binding, or command-line arguments).
+
+[cols="2,1,3",options="header"]
+|===
+| Property | Default | Meaning
+
+| `finance.sync.tombstone-horizon` | `90d` | How long tombstones and cursors stay valid
+| `finance.sync.max-commands-per-batch` | `500` | Largest command batch
+| `finance.sync.max-page-size` | `500` | Largest change feed or snapshot page
+| `finance.sync.purge-cron` | `0 17 3 * * *` (UTC) | Tombstone purge schedule, run by the worker only
+| `finance.storage.upload-url-ttl` | `15m` | Lifetime of presigned upload URLs
+| `finance.storage.download-url-ttl` | `5m` | Lifetime of presigned download URLs
+| `finance.receipts.max-size-bytes` | `26214400` | Largest receipt document (25 MiB)
+| `finance.receipts.max-image-dimension` | `20000` | Largest image width or height, in pixels
+| `finance.imports.max-rows` | `50000` | Largest CSV import
+| `finance.imports.synchronous-row-limit` | `1000` | Imports above this many new rows commit as a job
+| `finance.worker.*` | see xref:operations:job-worker.adoc[] | Worker polling, lease and retry settings
+|===
+
+The service shuts down gracefully, allowing 30 seconds for in-flight work. Error responses never include exception messages or stack traces, and log lines pass through redacting converters; see xref:operations:observability-and-security.adoc[].

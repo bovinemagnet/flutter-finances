@@ -1,0 +1,95 @@
+= Receipt capture
+Paul Snow
+:revnumber: 0.0.0
+
+A receipt enters the application through one of several routes. Whatever the route, the file is validated, written to the encrypted vault and committed before the application reports it saved, and reading the text is a separate step that can fail without losing the document. This page describes what the client does today; see xref:domain:receipts.adoc[] for the receipt model and xref:platform:capabilities.adoc[] for which capabilities each platform reports.
+
+== Capture routes
+
+[cols="2,3,2",options="header"]
+|===
+| Route | Behaviour | Platforms
+
+| Scan receipt | `scanReceipt` opens the native document scanner, falling back to a basic camera capture | Mobile (scanner); desktop uses an image picker
+| Import file | File picker for `jpg`, `jpeg`, `png`, `heic`, `heif` and `pdf` files, multiple selection allowed | All
+| Paste | `Ctrl+V` or the *Paste* chip on the Receipts page; an image on the clipboard is saved as `pasted.png`, otherwise copied files are read | All (shown when the paste capability is true)
+| Drag and drop | Dropping images or PDFs on the Receipts page; a "Drop to save as a receipt" overlay is shown | Desktop (the drag and drop capability)
+| Share target | Files shared from another application into the app | Android; iOS only once the share extension target is added
+|===
+
+Importing a file is always available and does not need camera or photo access, so a refused permission never blocks capture (UX 04).
+
+== Scanner with camera fallback
+
+`FallbackReceiptScanner` (`apps/finance_app/lib/platform/services.dart`) wraps a preferred scanner and a fallback. `main.dart` builds it from `NativeDocumentScanner` and `BasicCameraScanner`.
+
+. If the native scanner is available, it is tried first. It captures up to 10 pages (`noOfPages: 10`) with edge detection and perspective correction supplied by the platform scanner.
+. If it fails because the scanner module, its downloaded resources or Google Play services are missing, the failure is reported as `unavailable` and the basic camera capture runs instead. The fallback scanner needs no downloaded resources.
+. A user cancelling, or a denied camera permission, is not retried. These are reported to the caller.
+. `usedFallback` records whether the last capture had to use the fallback.
+
+On desktop `BasicCameraScanner` is created with `fromLibrary: true`, so *Scan receipt* picks images from disk rather than opening a camera. If no scanner reports itself available, `scanReceipt` goes directly to the file picker.
+
+When capture fails, the interface explains why instead of failing silently: a denied permission offers an *Import* action ("Camera access was not allowed. You can still import a photo or PDF."), and other failures show the reason from the platform.
+
+=== Acceptance scenario A05
+
+A05 is "Capture a receipt in flight mode on first launch". The expected result is that a readable image is saved, and that an absent scanner or missing OCR resources lead to a clear fallback. In the code this relies on three behaviours:
+
+* the fallback scanner above, which needs no downloaded resources;
+* saving the image before any text reading, so the document is kept whatever happens next; and
+* a message after saving: "Receipt saved on this device", followed by either "Receipt read; ready to review" or "The receipt could not be read; enter the details when reviewing".
+
+Saving a receipt never posts an expense. See xref:sync:offline.adoc[].
+
+== Validation and storage
+
+`ReceiptService.capture` (`apps/finance_app/lib/data/receipt_service.dart`) validates every file with the shared content checks in `finance_core`, using the default `ContentLimits`:
+
+[cols="2,1",options="header"]
+|===
+| Limit | Default
+
+| File size | 20 MiB
+| Pages per receipt | 10
+| Longest image edge | 16,384 pixels
+| Decoded image area | 50,000,000 pixels
+|===
+
+If any file is rejected, or the page total is over the limit, nothing is saved and the messages are shown. Otherwise each file is saved as a source asset in the vault, one receipt page record is created per page, and then the receipt record is written. Only after that does the application report the receipt as saved (REC 03).
+
+== Metadata stripping
+
+New copies made by the application lose metadata that can reveal location (REC 02). Files whose source is `camera`, `documentScanner` or `paste` pass through `stripImageMetadata` (`apps/finance_app/lib/platform/image_metadata.dart`). Files that were imported, dropped or shared are preserved exactly as received.
+
+* *JPEG:* the EXIF and XMP segment (APP1), the IPTC segments (APP12 and APP13), the other APP3 to APP11 and APP15 segments, and comments are dropped. JFIF (APP0), the ICC profile (APP2) and the Adobe colour transform (APP14) are kept so the image renders identically.
+* *PNG:* the `eXIf`, `tEXt`, `zTXt` and `iTXt` chunks are dropped.
+* Other content is returned unchanged. A malformed JPEG or PNG is also returned unchanged rather than partly stripped.
+
+== Reading the text
+
+After saving, `saveCapturedReceipt` asks the configured `TextRecogniser` whether it is available and, if so, runs `ReceiptService.extract`. The engine is chosen in `main.dart` from the capabilities.
+
+[cols="1,2,2",options="header"]
+|===
+| Engine | Used when | Notes
+
+| `MlKitTextRecogniser` | Android and iOS | ML Kit Text Recognition v2, Latin script; reported as engine `mlkit-text-v2`
+| `TesseractTextRecogniser` | Desktop, when Tesseract is installed with English data | Runs the `tesseract` command line with `-l eng --psm 4`; reported as engine `tesseract` with its version string
+| `UnavailableTextRecogniser` | No engine on the device | Receipts are kept and the fields are entered by hand
+|===
+
+On desktop, `PlatformCapabilities.detect` runs `tesseract --list-langs` at start-up. The on-device OCR capability is true only if the output includes `eng`. If Tesseract is not installed, or has no English data, the receipt is saved without reading and the person enters the details.
+
+Both engines produce an `OcrResult`, which the shared parser in `finance_core` turns into suggested fields. Extraction behaves as follows:
+
+* PDF receipts are not read on the device. If a receipt has only PDF pages, extraction fails with "Text is not read from PDF receipts on this device; enter the details".
+* Any exception during extraction moves the receipt to the "Could not be read" state. The document is kept, and retry and manual entry remain available (REC 04).
+* Extraction never creates an expense by itself. The person reviews the suggested fields and chooses to create an expense or attach the receipt to an existing transaction (REC 06, OCR 04, A07).
+
+The Receipts page lists receipts with their state ("Saved, waiting to be read", "Reading", "Needs review", "Reviewed" or "Could not be read"), whether they are matched, and whether they are saved on this device only. It can be filtered to unmatched receipts and to receipts that could not be read.
+
+== Not yet implemented
+
+* The iOS share extension target (see xref:building-and-releasing.adoc[]).
+* Reading text from PDF receipts on the device.

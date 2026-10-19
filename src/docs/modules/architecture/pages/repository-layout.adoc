@@ -2,19 +2,22 @@
 Paul Snow
 :revnumber: 0.0.0
 
-The repository is organised as follows. The server and `finance_store` packages are planned; the Dart domain package, the Flutter shell and the shared specification are the current foundation.
+The repository holds the Flutter client, two Dart packages, the Spring Boot service, the shared specification and this documentation. Dart code is a pub workspace (`pubspec.yaml` at the root lists `packages/finance_core`, `packages/finance_store` and `apps/finance_app`); Java code is a Gradle build (`settings.gradle.kts` includes `server:finance-core` and `server:app`).
 
 [source,text]
 ----
-pubspec.yaml                      Dart pub workspace root
+pubspec.yaml                      Dart pub workspace root (sqlite3 build hook: sqlite3mc)
+build.gradle.kts                  Root Gradle build (documentation tasks)
+settings.gradle.kts               Includes server:finance-core and server:app
 spec/fixtures/*.json              Shared golden fixtures (schemaVersion 1)
 spec/sync/protocol.md             Sync protocol, version 1
 packages/finance_core/            Pure Dart domain, no Flutter, no IO
-packages/finance_store/           Encrypted SQLite persistence, outbox, file vault, sync client
+packages/finance_store/           Encrypted SQLite persistence, outbox, receipt vault, backup, sync client
 apps/finance_app/                 Flutter client (Linux, Windows, macOS, iOS, Android)
-server/                           Spring Boot modular monolith (Gradle subproject)
+server/                           Spring Boot modular monolith (Gradle subprojects)
   finance-core/                   Java parity of shared financial rules (runs spec fixtures)
-  app/                            API and worker
+  app/                            API and worker (Spring Boot, Liquibase, S3)
+docs/prd/initial.md               Product requirements document
 src/docs/                         This Antora component
 ----
 
@@ -22,11 +25,13 @@ src/docs/                         This Antora component
 |===
 | Path | Purpose
 
-| `packages/finance_core` | Financial rules: money, journals, drafts, projection, corrections, reconciliation, codecs
-| `packages/finance_store` | Planned: encrypted database, outbox, receipt vault and sync client
-| `apps/finance_app` | Adaptive UI (`lib/app`), platform services and adapters (`lib/platform`)
-| `server` | Planned: workspace, sync, ledger, receipts, imports, exports and jobs modules
+| `packages/finance_core` | Financial rules: money, journals, drafts, projection, corrections, reconciliation, budgets, planning, documents and sync command codecs
+| `packages/finance_store` | Encrypted database, outbox, receipt vault, backup container and sync client; see xref:architecture:local-store.adoc[]
+| `apps/finance_app` | Flutter client: `lib/app` (shell, theme, breakpoints), `lib/data` (application state and services), `lib/features`, `lib/screens`, `lib/platform` (interfaces and adapters), `lib/widgets`, `lib/format`; see xref:architecture:client-application.adoc[]
+| `server/app` | Sync service: `common`, `workspace`, `sync`, `ledger`, `receipts`, `imports`, `exports`, `jobs`, `deletion` and `storage` modules, with Liquibase changelogs in `src/main/resources/db/changelog`; see xref:architecture:sync-service.adoc[]
+| `server/finance-core` | Java implementation of the shared rules (`money`, `ids`, `ledger`, `planning`, `documents`, `imports`)
 | `spec` | Executable contract shared by the Dart and Java implementations
+| `src/docs` | Antora documentation, built by the Gradle `antora` task
 |===
 
 The technology stack is recorded in xref:architecture:adr-001-technology-stack.adoc[]; the fixture contract in xref:architecture:shared-fixtures.adoc[].
