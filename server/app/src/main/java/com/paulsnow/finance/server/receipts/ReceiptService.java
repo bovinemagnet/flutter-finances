@@ -18,6 +18,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -71,10 +72,13 @@ public class ReceiptService {
     private final Clock clock;
     private final MeterRegistry meters;
     private final VisibilityService visibility;
+    private final ApplicationEventPublisher events;
 
     ReceiptService(JdbcClient jdbc, ObjectStorage storage, EntityReader entities, JobService jobs,
-            ReceiptProperties properties, Clock clock, MeterRegistry meters, VisibilityService visibility) {
+            ReceiptProperties properties, Clock clock, MeterRegistry meters, VisibilityService visibility,
+            ApplicationEventPublisher events) {
         this.visibility = visibility;
+        this.events = events;
         this.jdbc = jdbc;
         this.storage = storage;
         this.entities = entities;
@@ -286,10 +290,14 @@ public class ReceiptService {
             if (!verdict.clean()) {
                 failureCounter("SCAN_REJECTED").increment();
             }
-            jdbc.sql("update receipt_asset set status = ?, rejection_reason = ?, scanned_at = ?, updated_at = ? "
-                            + "where asset_id = ? and status = 'quarantined'")
+            int updated = jdbc.sql("update receipt_asset set status = ?, rejection_reason = ?, scanned_at = ?, "
+                            + "updated_at = ? where asset_id = ? and status = 'quarantined'")
                     .params(status, verdict.reason(), now, now, assetId).update();
             outcome = status;
+            if (updated > 0 && verdict.clean()) {
+                events.publishEvent(new ReceiptAssetAvailable(asset.workspaceId(), asset.receiptId(), assetId,
+                        asset.kind(), asset.contentType()));
+            }
             return status;
         } catch (IOException e) {
             throw new UncheckedIOException(e);

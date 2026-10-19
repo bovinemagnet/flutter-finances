@@ -83,6 +83,20 @@ finance:
     max-pages-per-receipt: 10
     max-image-side: 16384
     max-image-pixels: 50000000
+  bank-feeds:
+    # Base64 AES key (256 bits recommended) that encrypts provider tokens at
+    # rest; bank feeds are unavailable without it. Keep it in a secret store.
+    token-key: ${FINANCE_BANK_FEEDS_TOKEN_KEY:}
+    webhook-tolerance: 5m
+    refresh-base-backoff: 1m
+    refresh-max-backoff: 6h
+    max-rate-limit-retries: 8
+    stale-after: 36h
+    # The deterministic sandbox institution, for development and tests only.
+    # No real provider is wired: the Consumer Data Right provider and
+    # participation model are a pending business decision (BANK 01).
+    sandbox:
+      enabled: false
   imports:
     max-rows: 50000
     synchronous-row-limit: 1000

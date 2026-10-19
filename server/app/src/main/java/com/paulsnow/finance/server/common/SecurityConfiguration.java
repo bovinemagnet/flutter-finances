@@ -41,6 +41,9 @@ class SecurityConfiguration {
                         .permitAll()
                         // Operations reporting needs the separate finance.ops scope.
                         .requestMatchers("/v1/ops/**").hasAuthority(OPS_AUTHORITY)
+                        // Provider webhooks carry an HMAC signature instead of a user token.
+                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/v1/bank-feeds/webhooks/*")
+                        .permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults())
                         .authenticationEntryPoint((request, response, e) -> write(response, json,

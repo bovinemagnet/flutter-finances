@@ -9,6 +9,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import com.paulsnow.finance.core.ledger.Journal;
@@ -43,10 +44,12 @@ class CommandHandlers {
 
     private final EntityStore store;
     private final LedgerService ledger;
+    private final ApplicationEventPublisher events;
 
-    CommandHandlers(EntityStore store, LedgerService ledger) {
+    CommandHandlers(EntityStore store, LedgerService ledger, ApplicationEventPublisher events) {
         this.store = store;
         this.ledger = ledger;
+        this.events = events;
     }
 
     /**
@@ -311,8 +314,9 @@ class CommandHandlers {
         if (journal) {
             ledger.deleteUnposted(ctx.workspaceId(), entity.id().toString());
         }
-        return new Outcome.Applied(entity.revision() + 1,
-                store.delete(ctx.workspaceId(), entity, ctx.commandId(), ctx.deviceId()));
+        long sequence = store.delete(ctx.workspaceId(), entity, ctx.commandId(), ctx.deviceId());
+        events.publishEvent(new EntityDeleted(ctx.workspaceId(), entity.type(), entity.id()));
+        return new Outcome.Applied(entity.revision() + 1, sequence);
     }
 
     private Outcome blockedJournal(StoredEntity entity, long baseRevision) {
