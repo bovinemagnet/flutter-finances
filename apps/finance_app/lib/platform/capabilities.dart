@@ -33,7 +33,7 @@ class PlatformCapabilities {
       dragAndDrop: !mobile,
       paste: true,
       fileCapture: true,
-      backgroundWork: mobile || platform == TargetPlatform.macOS,
+      backgroundWork: mobile,
       // Linux availability depends on a Secret Service provider; the key
       // store adapter checks at runtime and falls back to a password.
       platformKeyStore: true,
