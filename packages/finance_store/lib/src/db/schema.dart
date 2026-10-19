@@ -87,14 +87,23 @@ void _v1(Database db) {
     CREATE INDEX journals_reversal_of ON journals (reversal_of);
     CREATE INDEX journals_replaces ON journals (replaces);
 
+    -- ledger_state and effective_date copy the journal's so that balances
+    -- and period totals are covering-index scans: 'posted' (posted or
+    -- reversed), 'pending', or 'none' (draft or deleted).
     CREATE TABLE postings (
       journal_id TEXT NOT NULL REFERENCES journals (id) ON DELETE CASCADE,
       seq INTEGER NOT NULL,
       account_id TEXT NOT NULL,
       amount_minor INTEGER NOT NULL,
+      ledger_state TEXT NOT NULL
+        CHECK (ledger_state IN ('posted', 'pending', 'none')),
+      effective_date TEXT NOT NULL,
       PRIMARY KEY (journal_id, seq)
     ) WITHOUT ROWID;
-    CREATE INDEX postings_account ON postings (account_id, journal_id);
+    CREATE INDEX postings_balance
+      ON postings (account_id, ledger_state, effective_date, amount_minor);
+    CREATE INDEX postings_period
+      ON postings (ledger_state, effective_date, account_id, amount_minor);
 
     CREATE TABLE entities (
       entity_type TEXT NOT NULL,

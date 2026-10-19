@@ -92,8 +92,10 @@ void main() {
         VALUES ('j1', 'expense', 'posted', '2026-07-01',
           '2026-07-01T00:00:00.000Z', 'AUD', 'bank', 1000, 'Corner Grocer',
           'weekly shop', '["food"]', '2026-07-01T00:00:00.000Z');
-        INSERT INTO postings VALUES ('j1', 0, 'groceries', 1000);
-        INSERT INTO postings VALUES ('j1', 1, 'bank', -1000);
+        INSERT INTO postings VALUES ('j1', 0, 'groceries', 1000, 'posted',
+          '2026-07-01');
+        INSERT INTO postings VALUES ('j1', 1, 'bank', -1000, 'posted',
+          '2026-07-01');
         INSERT INTO entities (entity_type, id, json, updated_at)
         VALUES ('receipt', 'r1', '{"merchant":"Corner Grocer","text":"milk"}',
           '2026-07-01T00:00:00.000Z');
@@ -153,7 +155,10 @@ void main() {
       migrate(db, financeMigrations);
       expect(userVersion(db), latestSchemaVersion);
       expect(
-        db.select("SELECT value FROM sync_state WHERE key = 'cursor'").first[0],
+        db
+            .select("SELECT value FROM sync_state WHERE key = 'cursor'")
+            .first
+            .columnAt(0),
         'c-1',
       );
       db.close();

@@ -15,4 +15,21 @@ export 'src/db/database.dart'
 export 'src/db/migrations.dart';
 export 'src/db/schema.dart' show financeMigrations, latestSchemaVersion;
 export 'src/db/search_index.dart'
-    show SearchDocument, SearchExtractor, defaultSearchDocument;
+    show
+        SearchDocument,
+        SearchExtractor,
+        defaultSearchDocument,
+        journalAnnotationType;
+export 'src/store/entity_ref.dart';
+export 'src/store/finance_store.dart' hide changedFields;
+export 'src/store/local_state.dart' show EntitySnapshot;
+export 'src/store/outbox.dart' show OutboxEntry, OutboxStatus;
+export 'src/store/review.dart' show ReviewItem, ReviewKind, ReviewStatus;
+export 'src/store/store_context.dart' show EntityValidator;
+export 'src/store/workspace.dart'
+    show
+        SyncMode,
+        WorkspaceExistsException,
+        WorkspaceNotActiveException,
+        WorkspaceNotFoundException,
+        WorkspaceSettings;
