@@ -109,6 +109,13 @@ const _journalAnnotationNamespace = '1babbe32-2e00-4fe3-9244-01533ea53450';
 String journalAnnotationId(String journalId) =>
     nameBasedId(_journalAnnotationNamespace, journalId);
 
+/// The id of the single [entityType] entity that belongs to [ownerId], such
+/// as an entry's review state. Entity ids are unique across entity types,
+/// so such an entity never reuses its owner's id; every device derives the
+/// same one offline, so concurrent edits merge field by field.
+String ownedEntityId(String entityType, String ownerId) =>
+    nameBasedId(_journalAnnotationNamespace, '$entityType:$ownerId');
+
 /// Recomputes the indexed text of a journal, overlaying its annotation.
 void reindexJournal(Database db, String journalId) {
   final rows = db.select(

@@ -210,14 +210,14 @@ class SettingsPage extends StatelessWidget {
     if (value == null) return;
     final existing = state.store.entity(
       AppEntityTypes.appPreferences,
-      'preferences',
+      AppEntityTypes.appPreferencesId,
     );
     await state.store.upsertEntity(
       AppEntityTypes.appPreferences,
-      'preferences',
+      AppEntityTypes.appPreferencesId,
       {
         ...?existing?.json,
-        'id': 'preferences',
+        'id': AppEntityTypes.appPreferencesId,
         'minimumBufferMinor': value.minor,
       },
     );
@@ -231,7 +231,7 @@ class SettingsPage extends StatelessWidget {
     final settings = state.settings;
     final buffer =
         state.store
-                .entity(AppEntityTypes.appPreferences, 'preferences')
+                .entity(AppEntityTypes.appPreferences, AppEntityTypes.appPreferencesId)
                 ?.json['minimumBufferMinor']
             as int?;
     final passwordProtected =

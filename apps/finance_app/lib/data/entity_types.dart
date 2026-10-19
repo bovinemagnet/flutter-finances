@@ -14,4 +14,8 @@ abstract final class AppEntityTypes {
   static const transactionReview = 'transactionReview';
   static const appPreferences = 'appPreferences';
   static const categorisationRule = 'categorisationRule';
+
+  /// The workspace's single `appPreferences` entity. Synchronised entity
+  /// ids must be UUIDs.
+  static const appPreferencesId = '3dadac2a-0869-488b-a88b-f280642c4fc1';
 }

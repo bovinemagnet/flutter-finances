@@ -29,7 +29,8 @@ export 'src/db/search_index.dart'
         SearchExtractor,
         defaultSearchDocument,
         journalAnnotationId,
-        journalAnnotationType;
+        journalAnnotationType,
+        ownedEntityId;
 export 'src/store/entity_ref.dart';
 export 'src/store/finance_store.dart' hide changedFields;
 export 'src/store/local_state.dart' show EntitySnapshot;

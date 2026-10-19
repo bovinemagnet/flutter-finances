@@ -599,6 +599,31 @@ void main() {
     expect(server.entity('journal', j.id)!.data['payee'], 'Shop');
   });
 
+  test(
+    'entity ids are unique across types; owned entities derive theirs',
+    () async {
+      await bothSynced();
+      final j = await a.store.postTransaction(expense('9.00'));
+      await a.sync();
+      await a.store.upsertEntity('transactionReview', j.id, {'reviewed': true});
+      final clash = await a.sync();
+      expect(clash.push.rejected, 1);
+      expect(
+        a.store.openReviewItems().single.errors,
+        contains('ENTITY_TYPE_MISMATCH'),
+      );
+
+      final id = ownedEntityId('transactionReview', j.id);
+      expect(id, ownedEntityId('transactionReview', j.id));
+      expect(id, isNot(ownedEntityId('otherType', j.id)));
+      await a.store.upsertEntity('transactionReview', id, {
+        'journalId': j.id,
+        'reviewed': true,
+      });
+      expect((await a.sync()).push.accepted, 1);
+    },
+  );
+
   group('remote workspaces and devices', () {
     test('a workspace is created with the local currency and timezone '
         'and listed only for its members', () async {
