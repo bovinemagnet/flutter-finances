@@ -40,6 +40,7 @@ class ReceiptTransactionLink {
 enum LinkError {
   nonPositiveAllocation('NON_POSITIVE_ALLOCATION'),
   currencyMismatch('CURRENCY_MISMATCH'),
+  amountMismatch('AMOUNT_MISMATCH'),
   duplicateLink('DUPLICATE_LINK'),
   journalNotLinkable('JOURNAL_NOT_LINKABLE'),
   exceedsTransactionAmount('EXCEEDS_TRANSACTION_AMOUNT'),
