@@ -44,6 +44,13 @@ class PlatformFileImporter implements FileImporter {
   }
 
   @override
+  Future<String?> pickBackupPath() async => (await openFile(
+    acceptedTypeGroups: const [
+      XTypeGroup(label: 'Finance backups', extensions: ['fsbackup']),
+    ],
+  ))?.path;
+
+  @override
   Future<String?> chooseSaveLocation(String suggestedName) async =>
       (await getSaveLocation(suggestedName: suggestedName))?.path;
 }

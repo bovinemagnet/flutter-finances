@@ -46,6 +46,7 @@ abstract interface class ReceiptScanner {
 abstract interface class FileImporter {
   Future<List<CapturedFile>> pickReceipts();
   Future<CapturedFile?> pickStatement();
+  Future<String?> pickBackupPath();
   Future<String?> chooseSaveLocation(String suggestedName);
 }
 
@@ -65,6 +66,7 @@ class Reminder {
     required this.title,
     required this.privateBody,
     required this.detailedBody,
+    this.showDetails = false,
   });
 
   final int id;
@@ -72,6 +74,9 @@ class Reminder {
   final String title;
   final String privateBody;
   final String detailedBody;
+
+  /// Whether the user opted in to amounts and merchants in the text.
+  final bool showDetails;
 }
 
 abstract interface class Notifications {

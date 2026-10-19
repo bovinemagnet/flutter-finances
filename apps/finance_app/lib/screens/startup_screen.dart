@@ -6,6 +6,7 @@ import '../data/app_state.dart';
 import '../data/workspace_gate.dart';
 import '../features/onboarding/onboarding_flow.dart';
 import '../features/onboarding/onboarding_model.dart';
+import 'restore_screen.dart';
 
 /// Opens the local workspace, or runs first-time setup when there is none.
 class StartupScreen extends StatefulWidget {
@@ -96,7 +97,7 @@ class _StartupScreenState extends State<StartupScreen> {
           },
         );
       case _Phase.onboarding:
-        return OnboardingFlow(
+        final onboarding = OnboardingFlow(
           model: OnboardingModel(today: _today()),
           onFinish: (result) async {
             String? password;
@@ -118,6 +119,31 @@ class _StartupScreenState extends State<StartupScreen> {
             }
             await _finishOnboarding(result, password);
           },
+        );
+        return Stack(
+          children: [
+            onboarding,
+            Positioned(
+              right: 16,
+              top: MediaQuery.paddingOf(context).top + 8,
+              child: TextButton.icon(
+                icon: const Icon(Icons.restore),
+                label: const Text('Restore from a backup'),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => RestoreScreen(
+                      gate: widget.gate,
+                      needsPassword: _needsPassword,
+                      onRestored: (store) {
+                        Navigator.of(context).pop();
+                        widget.onReady(AppState(store, today: _today));
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         );
     }
   }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../app/app_scope.dart';
 import '../app/shell.dart';
+import '../data/reminders.dart';
 import '../features/receipts/receipt_capture.dart';
 import '../features/receipts/receipts_page.dart';
 import 'editors.dart';
@@ -29,6 +30,27 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   var _selected = Destination.overview;
   StreamSubscription<Object>? _shares;
+  String? _reminderSignature;
+
+  /// Reschedules reminders only when schedules or their overrides change.
+  void _refreshReminders() {
+    final state = AppScope.of(context);
+    final signature = [
+      for (final s in state.schedules) s.id,
+      for (final s in state.store.entities('recurringSchedule')) s.revision,
+      for (final o in state.overrides)
+        '${o.id}${o.skipped}${o.dueDate}${o.amount}',
+    ].join('|');
+    if (signature == _reminderSignature) return;
+    _reminderSignature = signature;
+    final services = AppScope.servicesOf(context);
+    syncReminders(
+      services.notifications,
+      state.schedules,
+      state.overrides,
+      now: DateTime.now(),
+    ).catchError((Object _) {});
+  }
 
   @override
   void didChangeDependencies() {
@@ -83,6 +105,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _refreshReminders();
+    });
     final receiptIds = state.receipts.receiptJournalIds;
     final body = switch (_selected) {
       Destination.overview => OverviewPage(

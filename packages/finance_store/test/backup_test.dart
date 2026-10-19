@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:finance_core/finance_core.dart' hide AssetKind;
+import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
 import 'package:test/test.dart';
 
@@ -63,21 +63,21 @@ void main() {
     sourceId = (await source.vault.saveAsset(
       ownerType: 'receipt',
       ownerId: 'r1',
-      kind: AssetKind.source,
+      kind: VaultAssetKind.source,
       contentType: 'image/jpeg',
       bytes: jpeg(30000),
     )).id;
     derivativeId = (await source.vault.saveAsset(
       ownerType: 'receipt',
       ownerId: 'r1',
-      kind: AssetKind.derivative,
+      kind: VaultAssetKind.derivative,
       contentType: 'image/jpeg',
       bytes: jpeg(9000, seed: 5),
     )).id;
     await source.vault.saveAsset(
       ownerType: 'receipt',
       ownerId: 'r1',
-      kind: AssetKind.preview,
+      kind: VaultAssetKind.preview,
       contentType: 'image/jpeg',
       bytes: jpeg(500, seed: 7),
     );

@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as hash;
-import 'package:finance_core/finance_core.dart' hide AssetKind;
+import 'package:finance_core/finance_core.dart';
 import 'package:meta/meta.dart';
 
 import '../crypto/aead.dart';
@@ -50,8 +50,8 @@ class ReceiptVault {
 
   File fileFor(AssetRecord record) => _file(record.id, record.kind);
 
-  File _file(String id, AssetKind kind) => File(
-    '${kind == AssetKind.preview ? previewsDir.path : assetsDir.path}/$id.bin',
+  File _file(String id, VaultAssetKind kind) => File(
+    '${kind == VaultAssetKind.preview ? previewsDir.path : assetsDir.path}/$id.bin',
   );
 
   List<int> _aad(String id) => utf8.encode('finance_store/asset/v1/$id');
@@ -74,7 +74,7 @@ class ReceiptVault {
   Future<AssetRecord> saveAsset({
     required String ownerType,
     required String ownerId,
-    required AssetKind kind,
+    required VaultAssetKind kind,
     required String contentType,
     required List<int> bytes,
     String? assetId,
@@ -91,7 +91,7 @@ class ReceiptVault {
       sha256: hash.sha256.convert(bytes).toString(),
       storedBytes: 0,
       localState: AssetLocalState.present,
-      uploadState: kind == AssetKind.preview
+      uploadState: kind == VaultAssetKind.preview
           ? AssetUploadState.notRequired
           : AssetUploadState.pending,
       uploadAttempts: 0,
@@ -103,7 +103,7 @@ class ReceiptVault {
       debugBeforeCommit?.call();
       _ctx.write(() {
         _insert(record, storedBytes: stored);
-        if (kind != AssetKind.preview) {
+        if (kind != VaultAssetKind.preview) {
           _ctx.record(
             _ctx.newCommand(
               type: CommandType.entityUpsert,
@@ -255,7 +255,7 @@ class ReceiptVault {
         id: id,
         ownerType: json['ownerType'] as String,
         ownerId: json['ownerId'] as String,
-        kind: AssetKind.values.byName(json['kind'] as String),
+        kind: VaultAssetKind.values.byName(json['kind'] as String),
         contentType: json['contentType'] as String,
         sizeBytes: json['sizeBytes'] as int,
         sha256: json['sha256'] as String,
@@ -278,7 +278,7 @@ class ReceiptVault {
     List<int> bytes,
   ) async {
     final id = metadata['id'] as String;
-    final kind = AssetKind.values.byName(metadata['kind'] as String);
+    final kind = VaultAssetKind.values.byName(metadata['kind'] as String);
     final sha = hash.sha256.convert(bytes).toString();
     if (sha != metadata['sha256'] || bytes.length != metadata['sizeBytes']) {
       throw AssetCorruptException(id, 'restored bytes do not match');
@@ -293,7 +293,7 @@ class ReceiptVault {
       sha256: sha,
       storedBytes: 0,
       localState: AssetLocalState.present,
-      uploadState: kind == AssetKind.preview
+      uploadState: kind == VaultAssetKind.preview
           ? AssetUploadState.notRequired
           : AssetUploadState.pending,
       uploadAttempts: 0,
@@ -331,7 +331,7 @@ class ReceiptVault {
     _ctx.write(() {
       _ctx.db.execute('DELETE FROM assets WHERE id = ?', [id]);
       final ref = EntityRef(documentAssetType, id);
-      if (record.kind != AssetKind.preview && _ctx.state.json(ref) != null) {
+      if (record.kind != VaultAssetKind.preview && _ctx.state.json(ref) != null) {
         _ctx.record(
           _ctx.newCommand(
             type: CommandType.entityDelete,
@@ -386,7 +386,7 @@ class ReceiptVault {
   Future<void> evictAsset(String id) async {
     final record = asset(id);
     if (record == null) throw StateError('No asset $id');
-    if (record.kind == AssetKind.preview) {
+    if (record.kind == VaultAssetKind.preview) {
       throw EvictionRefusedException(id, 'previews stay on the device');
     }
     if (record.localState != AssetLocalState.present) return;

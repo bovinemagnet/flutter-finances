@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as hash;
-import 'package:finance_core/finance_core.dart' hide AssetKind;
+import 'package:finance_core/finance_core.dart';
 import 'package:meta/meta.dart';
 
 import '../crypto/key_protection.dart';
@@ -341,7 +341,7 @@ List<String> _applyData(
     }
     for (final MapEntry(key: id, value: meta) in assetMeta.entries) {
       if (!restoredFiles.contains(id) &&
-          meta['kind'] != AssetKind.preview.name) {
+          meta['kind'] != VaultAssetKind.preview.name) {
         // Known but absent: shown as "Image pending", never fabricated.
         ctx.db.execute(
           'INSERT OR IGNORE INTO assets (id, owner_type, owner_id, kind, '

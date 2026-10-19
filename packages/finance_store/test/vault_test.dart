@@ -38,7 +38,7 @@ void main() {
       vault.saveAsset(
         ownerType: 'receipt',
         ownerId: 'r1',
-        kind: AssetKind.source,
+        kind: VaultAssetKind.source,
         contentType: 'image/jpeg',
         bytes: jpeg(size, seed: seed),
       );
@@ -95,7 +95,7 @@ void main() {
     final preview = await vault.saveAsset(
       ownerType: 'receipt',
       ownerId: 'r1',
-      kind: AssetKind.preview,
+      kind: VaultAssetKind.preview,
       contentType: 'image/jpeg',
       bytes: jpeg(300),
     );
@@ -214,7 +214,7 @@ void main() {
     await vault.saveAsset(
       ownerType: 'receipt',
       ownerId: 'r1',
-      kind: AssetKind.derivative,
+      kind: VaultAssetKind.derivative,
       contentType: 'image/jpeg',
       bytes: jpeg(500),
     );

@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:finance_core/finance_core.dart' hide AssetKind;
+import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
 import 'package:test/test.dart';
 
@@ -55,7 +55,7 @@ void main() {
     final asset = await d.store.vault.saveAsset(
       ownerType: 'receipt',
       ownerId: id,
-      kind: AssetKind.source,
+      kind: VaultAssetKind.source,
       contentType: 'image/jpeg',
       bytes: jpeg(size),
     );
@@ -442,7 +442,7 @@ void main() {
         await a.store.vault.saveAsset(
           ownerType: 'receipt',
           ownerId: 'r1',
-          kind: AssetKind.source,
+          kind: VaultAssetKind.source,
           contentType: 'image/jpeg',
           bytes: jpeg(1000, seed: i + 1),
         );
@@ -466,7 +466,7 @@ void main() {
       final small = (await a.store.vault.saveAsset(
         ownerType: 'receipt',
         ownerId: 'r2',
-        kind: AssetKind.derivative,
+        kind: VaultAssetKind.derivative,
         contentType: 'image/jpeg',
         bytes: jpeg(2000),
       )).id;

@@ -118,7 +118,7 @@ class ReceiptService {
       final asset = await _store.vault.saveAsset(
         ownerType: ReceiptEntityTypes.receipt,
         ownerId: receiptId,
-        kind: store.AssetKind.source,
+        kind: store.VaultAssetKind.source,
         contentType: result.contentType!.mimeType,
         bytes: bytes,
       );
@@ -315,7 +315,7 @@ class ReceiptService {
                 DocumentAsset(
                   id: a.id,
                   receiptId: r.id,
-                  kind: a.kind == store.AssetKind.source
+                  kind: a.kind == store.VaultAssetKind.source
                       ? AssetKind.source
                       : AssetKind.readableDerivative,
                   contentType: DocumentContentType.fromMimeType(a.contentType),

@@ -7,7 +7,7 @@ const documentAssetType = 'documentAsset';
 
 /// `source` is the imported original, `derivative` the confirmed readable
 /// copy, and `preview` a small local thumbnail that is never uploaded.
-enum AssetKind { source, derivative, preview }
+enum VaultAssetKind { source, derivative, preview }
 
 /// Whether the encrypted bytes are on this device.
 enum AssetLocalState {
@@ -57,7 +57,7 @@ class AssetRecord {
     id: row['id'] as String,
     ownerType: row['owner_type'] as String,
     ownerId: row['owner_id'] as String,
-    kind: AssetKind.values.byName(row['kind'] as String),
+    kind: VaultAssetKind.values.byName(row['kind'] as String),
     contentType: row['content_type'] as String,
     sizeBytes: row['size_bytes'] as int,
     sha256: row['sha256'] as String,
@@ -80,7 +80,7 @@ class AssetRecord {
   /// The entity the file belongs to, usually a `receipt`.
   final String ownerType;
   final String ownerId;
-  final AssetKind kind;
+  final VaultAssetKind kind;
   final String contentType;
 
   /// Plaintext size and SHA-256 (hex), verified on read and download.
@@ -103,7 +103,7 @@ class AssetRecord {
   bool get imagePending => localState != AssetLocalState.present;
 
   /// Uploadable and not yet confirmed in the cloud.
-  bool get unsynced => kind != AssetKind.preview && cloudConfirmedAt == null;
+  bool get unsynced => kind != VaultAssetKind.preview && cloudConfirmedAt == null;
 
   /// Metadata synchronised to other devices.
   Map<String, Object?> toEntityJson() => {

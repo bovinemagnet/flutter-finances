@@ -58,4 +58,24 @@ class WorkspaceGate {
         : KeyProtection.password(password, kdf: kdf);
     return FinanceStore.open(directory, keyProtection: protection);
   }
+
+  /// Stages a backup into this (empty) workspace location for verification
+  /// before it becomes active (DATA 03, A16).
+  Future<StagedRestore> stageBackup(
+    File archive, {
+    required String recoverySecret,
+    String? password,
+  }) async {
+    final protection = await KeyProtection.select(
+      platformStore: keyStore,
+      password: password,
+      kdf: kdf,
+    );
+    return stageRestore(
+      archive,
+      recoverySecret: recoverySecret,
+      target: directory,
+      keyProtection: protection,
+    );
+  }
 }
