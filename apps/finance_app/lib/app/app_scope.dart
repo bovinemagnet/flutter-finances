@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/widgets.dart';
 
 import '../data/app_state.dart';
@@ -14,6 +16,7 @@ class AppServices {
     required this.shareInbox,
     required this.notifications,
     required this.textRecogniser,
+    required this.workspaceDirectory,
   });
 
   final PlatformCapabilities capabilities;
@@ -22,14 +25,16 @@ class AppServices {
   final ShareInbox shareInbox;
   final Notifications notifications;
   final TextRecogniser textRecogniser;
+  final Directory workspaceDirectory;
 }
 
 /// Makes [AppState] and [AppServices] available below the root, rebuilding
-/// dependants when the state changes.
+/// dependants when the state changes. The state is null until a workspace
+/// is open; only the startup screens run before that.
 class AppScope extends InheritedNotifier<AppState> {
   const AppScope({
     super.key,
-    required AppState state,
+    required AppState? state,
     required this.services,
     required super.child,
   }) : super(notifier: state);

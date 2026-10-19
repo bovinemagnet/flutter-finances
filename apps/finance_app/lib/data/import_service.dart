@@ -105,6 +105,7 @@ class ImportService {
       uncategorisedExpenseId: UncategorisedIds.expense,
       uncategorisedIncomeId: UncategorisedIds.income,
       decisions: decisions,
+      chooseCategory: ruleCategoryChooser(state.rules, mapping.accountId),
       mappingId: mapping.id,
       fileName: fileName,
     );

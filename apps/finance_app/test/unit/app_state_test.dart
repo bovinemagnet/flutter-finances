@@ -170,4 +170,49 @@ void main() {
       isEmpty,
     );
   });
+
+  test(
+    'rules recategorise only entries the user did not choose, with undo',
+    () async {
+      await onboard();
+      Future<Journal> buy(String payee) => state.post(
+        TransactionDraft(
+          type: TransactionType.expense,
+          accountId: 'bank',
+          amount: Money(900, aud),
+          effectiveDate: today,
+          payee: payee,
+          splits: [Split(categoryId('Shopping'), Money(900, aud))],
+        ),
+      );
+      await buy('Corner Cafe');
+      final chosen = await buy('Corner Cafe Annex');
+      await state.categorise([chosen.id], categoryId('Groceries'));
+      await state.saveRule(
+        CategorisationRule(
+          id: 'r1',
+          name: 'Cafes',
+          categoryId: categoryId('Dining out'),
+          merchant: 'corner cafe',
+        ),
+      );
+      final preview = state.previewRules();
+      expect(preview.changes, hasLength(1));
+      final undo = await state.applyRules(preview);
+      final from = LocalDate(2026, 10, 1);
+      expect(
+        state.ledger.categoryNet(categoryId('Dining out'), from, today),
+        Money(900, aud),
+      );
+      expect(
+        state.ledger.categoryNet(categoryId('Groceries'), from, today),
+        Money(900, aud),
+      );
+      await state.undoRules(undo);
+      expect(
+        state.ledger.categoryNet(categoryId('Dining out'), from, today),
+        Money.zero(aud),
+      );
+    },
+  );
 }
