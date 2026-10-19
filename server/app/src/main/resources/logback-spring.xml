@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Operational logging. Messages and stack traces pass through the redacting
+  converters, and every line carries the opaque correlation identifier.
+  Never log merchants, amounts, document contents, tokens or account numbers.
+-->
+<configuration>
+    <conversionRule conversionWord="redactedMessage"
+                    class="com.paulsnow.finance.server.common.RedactingMessageConverter"/>
+    <conversionRule conversionWord="redactedException"
+                    class="com.paulsnow.finance.server.common.RedactingThrowableConverter"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX,UTC} %-5level [%thread] [%X{correlationId:-}] %logger{36} - %redactedMessage%n%redactedException</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="org.testcontainers" level="WARN"/>
+    <logger name="tc" level="WARN"/>
+    <logger name="com.github.dockerjava" level="WARN"/>
+    <logger name="liquibase" level="WARN"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

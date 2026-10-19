@@ -38,6 +38,11 @@ Result:
 Replaying a `commandId` returns the stored original result with status
 `previously_applied` and never applies twice (A09). A `commandId` reused with
 a different payload hash is `validation_failed` with `IDEMPOTENCY_KEY_REUSED`.
+The hash covers `type`, `entityType`, `entityId` and `payload` only, because
+clients rewrite `baseRevision`, `workspaceId` and `deviceId` of unsent
+commands (rebase, bootstrap) while keeping the `commandId`. Only applied
+commands are recorded: a `conflict` or `validation_failed` command changed
+nothing and is evaluated again if it is retried.
 
 ## Revisions and conflicts
 
@@ -105,6 +110,123 @@ review, never applied automatically.
    `{"downloadUrl", "expiresAt"}`, a short-lived presigned GET, only for
    members of the owning workspace (A17). While the asset is still uploading
    or quarantined it returns HTTP 409 `{"error": "ASSET_NOT_AVAILABLE"}`.
+
+## Server behaviour
+
+Decisions the server makes where the sections above are silent.
+
+**Authentication and scope.** Every call carries an OIDC access token
+(`Authorization: Bearer`); users are keyed by the token's `sub`. The
+`/v1/sync/*` endpoints require `X-Device-Id`, a registered, unrevoked device
+of the caller, which also selects the workspace (`400 DEVICE_REQUIRED`,
+`403 DEVICE_NOT_AUTHORISED`, `403 DEVICE_REVOKED`). Other workspace endpoints
+take `X-Workspace-Id`, or fall back to the workspace of `X-Device-Id`. A
+workspace the caller is not a member of is `404 WORKSPACE_NOT_FOUND`;
+another workspace's receipt, asset, job or export is `404`, never `403`, so
+an identifier reveals nothing (A17). A command whose `workspaceId` or
+`deviceId` differs from the calling device's is `permission_denied`.
+
+**Setup.** `POST /v1/workspaces` `{"id"?, "name", "currency", "timezone"}`
+creates a workspace owned by the caller (`id` may be generated offline; a
+deleted workspace's id is refused with `409 WORKSPACE_DELETED`, so a restore
+always creates a new workspace, DATA 03). `GET /v1/workspaces` lists the
+caller's workspaces and `GET /v1/workspaces/{id}` returns the bootstrap
+settings (currency and exponent, timezone, `schemaVersion`,
+`tombstoneHorizonDays`, `maxCommandsPerBatch`, `serverTime`).
+`POST /v1/devices` `{"deviceId", "workspaceId", "name", "platform"}`
+registers a device (repeating it is harmless); `DELETE /v1/devices/{id}`
+revokes it for good (its owner or a workspace owner).
+
+**Absent and deleted entities.** A command against a tombstone is a
+`conflict` with `errors: ["ENTITY_DELETED"]` and `serverState: null`; one
+with `baseRevision > 0` for an entity the server never had is a `conflict`
+with `errors: ["ENTITY_NOT_FOUND"]`. This includes deleting an entity twice.
+Tombstoned rows are kept without data after the horizon, so no pending
+command can resurrect them (A15).
+
+**Journals.** Journals change only through `journal.post` and
+`journal.correct`; `entity.upsert` of a journal is `USE_JOURNAL_COMMANDS`
+(clients annotate payee, notes and tags through a `journalAnnotation`
+entity). A reversal must be type `reversal`, status `posted`, dated on the
+original's effective date, with `reversalOf` set and postings that cancel
+the original per account (`REVERSAL_MISMATCH`). A replacement's `replaces`
+must be the original's id (`REPLACEMENT_MISMATCH`). Correcting a reversed
+original is a `conflict`; a draft or pending one is `INVALID_STATUS`. Only
+the known `system:` accounts (`opening-equity`, `balance-adjustments`,
+`transfer-clearing`, `reimbursement-receivable`) are accepted. An account or
+category used by any posting cannot be deleted (`ENTITY_IN_USE`); archive it
+instead. The database also enforces balanced journals and immutable posted
+journals; a command it rejects is `LEDGER_CONSTRAINT`.
+
+**Other validation codes.** `INVALID_COMMAND` (malformed envelope or
+unknown type), `UNSUPPORTED_SCHEMA_VERSION`, `INVALID_JOURNAL` (malformed
+journal JSON), `ENTITY_ID_MISMATCH`, `ENTITY_TYPE_MISMATCH`, `INVALID_TYPE`
+(a reversal posted directly), `DUPLICATE_ENTITY`, and for accounts and
+categories `MISSING_FIELD` (name and type or kind on creation),
+`INVALID_FIELD` and `IMMUTABLE_FIELD` (account type, category kind). Every
+other entity type, such as `receipt`, `documentAsset` and
+`journalAnnotation`, is opaque JSON with field-level merge. Unknown
+envelope and entity fields are ignored and preserved (NFR 12).
+
+**Feed and snapshot.** A delete change carries `data: {"id"}`. `limit` is
+capped at 500. A non-empty cursor expires (410) when it was issued more than
+the horizon ago, or when a tombstone purge that ran after it was issued
+removed a delete beyond its position; an empty cursor never expires, and
+the compacted log still holds the latest change of every live entity.
+Every snapshot page returns the feed position when it was produced; the
+client keeps the first page's.
+
+**Receipts.** An intent needs a live `receipt` entity in the workspace
+(`404 RECEIPT_NOT_FOUND`); the first intent binds the receipt to that
+workspace. Accepted types are those `content.sniff` recognises (JPEG, PNG,
+HEIC, HEIF, PDF; `400 UNSUPPORTED_CONTENT_TYPE`), up to 25 MiB
+(`400 TOO_LARGE`), with a lower-case hex `sha256` (`400 INVALID_CHECKSUM`).
+Uploads go to a staging key; completion copies verified bytes to the
+asset's permanent key, so a late or repeated upload cannot replace them.
+Completion answers `200 {"status": "quarantined" | "available" |
+"rejected"}`, `404 UNKNOWN_ASSET`, `409 OBJECT_MISSING` (nothing uploaded),
+or `422 CHECKSUM_MISMATCH` (size or checksum) and `422
+CONTENT_TYPE_MISMATCH`; after a 422 the client may upload again. A new
+intent with a different checksum for a completed asset is
+`409 ASSET_ALREADY_COMPLETE`. Download of another workspace's asset is
+`404 NOT_FOUND`; a rejected asset stays `409 ASSET_NOT_AVAILABLE`.
+
+**CSV imports (IMP 01-03).** `POST /v1/imports/preview` `{"fileName",
+"contentBase64", "mapping", "outflowCategoryId", "inflowCategoryId"}`
+parses with the shared `csv.parse` mapping (which names `accountId` and
+`encoding`), keeps raw rows and their hashes, and returns the batch:
+`{"batchId", "status": "previewed | committing | committed | rolled_back",
+"rowCount", "errorCount", "newCount", "duplicateCount", "totals",
+"dateGap", "rows": [{"rowNumber", "date", "description", "amountMinor",
+"status", "errorCode", "fingerprint", "journalId", "matches"}]}`. Rows are
+keyed by the shared `csv.fingerprint`; a fingerprint already committed in
+the workspace is `duplicate` (an overlapping statement), while identical
+same-day rows keep distinct occurrence numbers (A11). Possible transfers
+and existing entries are listed as `matches` for review, never applied.
+The same file with the same settings for the same account is the same
+batch. `POST /v1/imports/{batchId}/commit` `{"decisions"?: {"<row>":
+"import | skip"}}` posts each new row as a `journal.post` through the
+command path (`expense` to the outflow category, `income` to the inflow
+category, `posted`), with journal and command ids derived from the batch
+and row, so committing again creates nothing new (A12); large batches
+answer `202` with a `jobId`. `POST /v1/imports/{batchId}/rollback` voids
+the batch's untouched journals with `journal.correct` and lists edited
+ones for review. `GET /v1/imports/{batchId}?offset&limit` pages the rows.
+
+**Jobs, exports and deletion.** `GET /v1/jobs/{id}` returns `{"id", "type",
+"status": "queued | running | succeeded | failed", "attempts", "result",
+"error"}`. `POST /v1/exports` returns `202 {"exportId", "jobId"}`; the job
+writes a ZIP with `entities/<entityType>.json`, original receipt documents
+under `receipts/<receiptId>/<assetId>` and `manifest.json` (schema version,
+workspace currency and timezone, effective date semantics,
+`acceptedSequence`, counts, relationships, and the path, size and SHA-256
+of every file); `GET /v1/exports/{id}/download` returns `{"downloadUrl",
+"expiresAt"}` or `409 EXPORT_NOT_READY`. `DELETE /v1/workspaces/{id}`
+(owner) revokes every device at once and returns `202` with a deletion
+whose progress `GET /v1/workspaces/{id}/deletion` reports to the requester.
+
+**Errors.** Non-2xx responses are `{"error", "message", "correlationId"}`;
+every response carries `X-Correlation-Id`.
 
 ## Entity JSON
 

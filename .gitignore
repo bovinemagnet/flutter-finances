@@ -10,3 +10,8 @@ server/**/build/
 node_modules/
 src/docs/build/
 .claude/worktrees/
+# Eclipse / language server metadata
+.project
+.classpath
+.settings/
+server/**/bin/
