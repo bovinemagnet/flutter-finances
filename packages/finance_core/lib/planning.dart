@@ -1,6 +1,7 @@
 /// Budgeting, goals, schedules, forecasts, reports and insights.
 library;
 
+export 'src/planning/anomalies.dart';
 export 'src/planning/budget_arithmetic.dart';
 export 'src/planning/budget_evaluation.dart';
 export 'src/planning/budget_plan.dart';
@@ -26,3 +27,4 @@ export 'src/planning/rounding.dart';
 export 'src/planning/savings_allocation.dart';
 export 'src/planning/scenario.dart';
 export 'src/planning/schedules.dart';
+export 'src/planning/subscriptions.dart';

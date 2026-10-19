@@ -3,18 +3,32 @@ import 'package:meta/meta.dart';
 import '../ledger/projection.dart';
 import '../money/money.dart';
 import '../time/local_date.dart';
+import 'anomalies.dart';
 import 'budget_evaluation.dart';
 import 'date_range.dart';
 import 'forecast.dart';
 import 'ledger_reports.dart';
+import 'subscriptions.dart';
 
-/// The initial explainable insight rules (REP 03).
+/// The explainable insight rules (REP 03): the initial five, then the P1
+/// detection rules.
 enum InsightRule {
   overBudget,
   lowCash,
   unreviewed,
   missingReceipt,
   possibleDuplicate,
+
+  /// A merchant charging regularly; see `detectSubscriptions`.
+  possibleSubscription,
+
+  /// A purchase far above its merchant or category history; see
+  /// `detectUnusualTransactions`.
+  unusualTransaction,
+
+  /// A category's month far above its recent months; see
+  /// `detectSpendingSpikes`.
+  spendingSpike,
 }
 
 /// An explanation the user may act on. Insights only describe; they never
@@ -92,7 +106,11 @@ class InsightRuleSetting {
 /// * unreviewed: [unreviewedJournalIds], one insight for [period];
 /// * missing receipt: posted purchases in [period] of at least
 ///   [missingReceiptThreshold] without a receipt;
-/// * possible duplicates: caller-supplied candidate pairs.
+/// * possible duplicates: caller-supplied candidate pairs;
+/// * possible subscriptions: [subscriptions], one insight each, over the
+///   dates of the payments, offering a schedule the user may confirm;
+/// * unusual transactions: [unusualTransactions], over the period checked;
+/// * spending spikes: [spendingSpikes], over the spike's month.
 List<Insight> generateInsights({
   required DateRange period,
   BudgetPeriodEvaluation? budget,
@@ -103,6 +121,9 @@ List<Insight> generateInsights({
   Set<String> receiptJournalIds = const {},
   Money? missingReceiptThreshold,
   List<(String, String)> duplicateCandidates = const [],
+  List<SubscriptionProposal> subscriptions = const [],
+  List<UnusualTransaction> unusualTransactions = const [],
+  List<SpendingSpike> spendingSpikes = const [],
 }) {
   final insights = <Insight>[];
   if (budget != null) {
@@ -187,6 +208,54 @@ List<Insight> generateInsights({
         trigger: 'These entries may be duplicates',
         entryIds: pair,
         period: period,
+      ),
+    );
+  }
+  for (final proposal in subscriptions) {
+    insights.add(
+      Insight(
+        key: proposal.key,
+        rule: InsightRule.possibleSubscription,
+        trigger:
+            '${proposal.payee} looks like a ${proposal.frequency.name} '
+            'subscription of ${proposal.amount.toDecimalString()} '
+            '(${proposal.journalIds.length} payments)',
+        entryIds: proposal.journalIds,
+        period: DateRange(proposal.firstDate, proposal.lastDate),
+        amount: proposal.amount,
+      ),
+    );
+  }
+  for (final unusual in unusualTransactions) {
+    insights.add(
+      Insight(
+        key: unusual.key,
+        rule: InsightRule.unusualTransaction,
+        trigger:
+            'A purchase of ${unusual.amount.toDecimalString()} is well above '
+            'the usual ${unusual.median.toDecimalString()} for '
+            '${unusual.basisLabel} (${unusual.historyJournalIds.length} '
+            'earlier purchases)',
+        entryIds: [unusual.journalId],
+        period: period,
+        amount: unusual.amount,
+      ),
+    );
+  }
+  for (final spike in spendingSpikes) {
+    insights.add(
+      Insight(
+        key: spike.key,
+        rule: InsightRule.spendingSpike,
+        trigger: spike.firstSpending
+            ? '${spike.categoryName} has ${spike.spending.toDecimalString()} '
+                  'of spending after ${spike.historyMonths} months with none'
+            : '${spike.categoryName} spending of '
+                  '${spike.spending.toDecimalString()} is well above the '
+                  'usual ${spike.median.toDecimalString()} a month',
+        entryIds: spike.journalIds,
+        period: spike.month,
+        amount: spike.spending,
       ),
     );
   }
