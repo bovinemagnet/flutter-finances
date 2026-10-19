@@ -3,7 +3,6 @@ package com.paulsnow.finance.server.sync;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -25,8 +24,9 @@ import tools.jackson.databind.node.ObjectNode;
 /**
  * Processes one command: envelope and permission checks, then a single
  * database transaction that takes the workspace's write lock, consults the
- * idempotency record, applies the handler and stores the result together
- * with the domain change and change records (SYNC 02).
+ * idempotency record, applies the handler and stores the result of an
+ * applied command together with the domain change and change records
+ * (SYNC 02).
  *
  * @author Paul Snow
  * @since 0.0.0
@@ -109,7 +109,14 @@ class CommandProcessor {
                 Outcome outcome = command.schemaVersion() != 1 ? Outcome.invalid("UNSUPPORTED_SCHEMA_VERSION")
                         : dispatch(type, ctx);
                 CommandResult result = toResult(rawId, workspace.id(), outcome);
-                store(workspace.id(), commandId, hash, result);
+                if (result.accepted()) {
+                    // Only applied commands changed state, so only they are
+                    // recorded; a rejected command is re-evaluated on retry,
+                    // for example after the client rebases it.
+                    store(workspace.id(), commandId, hash, result);
+                } else {
+                    status.setRollbackOnly();
+                }
                 return result;
             });
         } catch (DataIntegrityViolationException | TransactionSystemException e) {
@@ -204,13 +211,17 @@ class CommandProcessor {
                 json.has("cursor") ? json.path("cursor").asString() : null, errors, conflict);
     }
 
+    /**
+     * What a command means: its type, target and payload. The base revision,
+     * workspace and device are excluded because the client legitimately
+     * rewrites them for unsent commands (rebase, bootstrap) while keeping
+     * the commandId.
+     */
     private static JsonNode envelopeForHash(SyncCommand command, JsonNode payload) {
         ObjectNode envelope = JsonNodeFactory.instance.objectNode();
-        Map.of("workspaceId", nullToEmpty(command.workspaceId()), "deviceId", nullToEmpty(command.deviceId()),
-                "type", command.type(), "entityType", command.entityType(), "entityId", command.entityId())
-                .forEach(envelope::put);
-        envelope.put("baseRevision", command.baseRevision());
-        envelope.put("schemaVersion", command.schemaVersion());
+        envelope.put("type", command.type());
+        envelope.put("entityType", command.entityType());
+        envelope.put("entityId", command.entityId().toLowerCase(java.util.Locale.ROOT));
         envelope.set("payload", payload);
         return envelope;
     }
@@ -220,10 +231,6 @@ class CommandProcessor {
             case "journal.post", "journal.correct", "entity.upsert", "entity.delete" -> true;
             default -> false;
         };
-    }
-
-    private static String nullToEmpty(String value) {
-        return value == null ? "" : value.toLowerCase(java.util.Locale.ROOT);
     }
 
     private static UUID uuid(String value) {

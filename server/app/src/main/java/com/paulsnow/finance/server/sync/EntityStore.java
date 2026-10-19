@@ -157,7 +157,8 @@ class EntityStore {
                         + "where workspace_id = ? and entity_id = ?")
                 .params(revision, now, now, workspaceId, entity.id())
                 .update();
-        return append(workspaceId, entity.type(), entity.id(), revision, "delete", null, commandId, deviceId);
+        ObjectNode tombstone = JsonNodeFactory.instance.objectNode().put("id", entity.id().toString());
+        return append(workspaceId, entity.type(), entity.id(), revision, "delete", tombstone, commandId, deviceId);
     }
 
     /**

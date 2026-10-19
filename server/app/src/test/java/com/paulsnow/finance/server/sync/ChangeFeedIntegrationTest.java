@@ -15,7 +15,6 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import com.paulsnow.finance.core.ids.Ids;
 import com.paulsnow.finance.server.support.IntegrationTestSupport;
 
 import tools.jackson.databind.JsonNode;
@@ -114,9 +113,12 @@ class ChangeFeedIntegrationTest extends IntegrationTestSupport {
             if (snapshotCursor == null) {
                 snapshotCursor = page.path("cursor").asString();
             }
-            for (JsonNode entity : page.path("entities")) {
+            for (JsonNode entity : page.path("changes")) {
                 snapshotIds.add(entity.path("entityId").asString());
+                assertThat(entity.path("op").asString()).isEqualTo("upsert");
                 assertThat(entity.path("data").isObject()).isTrue();
+                assertThat(page.path("after").asString())
+                        .isEqualTo(entity.path("entityType").asString() + "/" + entity.path("entityId").asString());
             }
             more = page.path("hasMore").asBoolean();
             after = page.path("after").asString();
@@ -180,7 +182,7 @@ class ChangeFeedIntegrationTest extends IntegrationTestSupport {
         assertThat(feed.path("changes").get(0).path("op").asString()).isEqualTo("delete");
         assertThat(feed.path("changes").get(0).path("revision").asLong()).isEqualTo(2);
         assertThat(feed.path("changes").get(0).path("entityId").asString()).isEqualTo(id);
-        Ids.newId();
+        assertThat(feed.path("changes").get(0).path("data").path("id").asString()).isEqualTo(id);
     }
 
     private JsonNode changes(Actor actor, String cursor, int limit) throws Exception {

@@ -123,8 +123,7 @@ class SyncCommandsIntegrationTest extends IntegrationTestSupport {
         assertThat(errorsOf(submitOne(actor, postJournal(actor, huge, 0)))).containsExactly("OUT_OF_RANGE");
 
         ObjectNode malformed = json.createObjectNode().put("id", Ids.newId());
-        JsonNode result = submitOne(actor, command(actor, "journal.post", "journal",
-                malformed.path("id").asString(), 0, malformed));
+        JsonNode result = submitOne(actor, postJournal(actor, malformed, 0));
         assertThat(errorsOf(result)).containsExactly("INVALID_JOURNAL");
 
         assertThat(journalCount(actor)).isZero();
@@ -312,6 +311,44 @@ class SyncCommandsIntegrationTest extends IntegrationTestSupport {
                 .path("revision").asLong()).isEqualTo(2);
         assertThat(errorsOf(submitOne(actor, upsert(actor, "account", id, 2, Map.of("name", "x")))))
                 .containsExactly("ENTITY_TYPE_MISMATCH");
+    }
+
+    @Test
+    void acceptsTheClientsDocumentAssetAndJournalAnnotationEntities() throws Exception {
+        Actor actor = newActor();
+        String journalId = Ids.newId();
+        assertThat(submitOne(actor, upsert(actor, "journalAnnotation", journalId, 0,
+                Map.of("payee", "Corner shop", "tags", List.of("weekly")))).path("status").asString())
+                .isEqualTo("applied");
+        assertThat(submitOne(actor, upsert(actor, "documentAsset", Ids.newId(), 0,
+                Map.of("ownerId", Ids.newId(), "kind", "source", "contentType", "image/jpeg")))
+                .path("status").asString()).isEqualTo("applied");
+        assertThat(errorsOf(submitOne(actor, upsert(actor, "journal", Ids.newId(), 0, Map.of("payee", "x")))))
+                .containsExactly("USE_JOURNAL_COMMANDS");
+    }
+
+    @Test
+    void reevaluatesARejectedCommandWhenItIsRetriedWithANewBase() throws Exception {
+        Actor phone = newActor();
+        Actor tablet = secondDevice(phone);
+        String id = Ids.newId();
+        submitOne(phone, upsert(phone, "account", id, 0, Map.of("name", "A", "type", "cash")));
+        submitOne(phone, upsert(phone, "account", id, 1, Map.of("name", "B")));
+        ObjectNode stale = upsert(tablet, "account", id, 1, Map.of("name", "C"));
+        assertThat(submitOne(tablet, stale).path("status").asString()).isEqualTo("conflict");
+        stale.put("baseRevision", 2);
+        assertThat(submitOne(tablet, stale).path("status").asString()).isEqualTo("applied");
+        assertThat(submitOne(tablet, stale).path("status").asString()).isEqualTo("previously_applied");
+    }
+
+    @Test
+    void reportsDeletingAnAlreadyDeletedEntityAsAConflict() throws Exception {
+        Actor actor = newActor();
+        String id = createAccount(actor, "cash");
+        submitOne(actor, command(actor, "entity.delete", "account", id, 1, json.createObjectNode()));
+        JsonNode again = submitOne(actor, command(actor, "entity.delete", "account", id, 1, json.createObjectNode()));
+        assertThat(again.path("status").asString()).isEqualTo("conflict");
+        assertThat(again.path("conflict").path("serverState").isNull()).isTrue();
     }
 
     @Test

@@ -34,15 +34,15 @@ class ChangeFeedService {
     record ChangePage(List<ChangeView> changes, String cursor, boolean hasMore) {
     }
 
-    /** One live entity in a snapshot. */
-    record SnapshotEntity(String entityType, UUID entityId, long revision, JsonNode data) {
-    }
-
     /**
-     * A page of a snapshot. Keep the {@code cursor} of the first page and
-     * continue the feed from it after the last page.
+     * A page of a snapshot: every live entity as a change feed item
+     * ({@code op} is {@code upsert}), ordered by entity key
+     * {@code entityType/entityId}. {@code after} is the key to send for the
+     * next page. The cursor is the feed position when the page was produced;
+     * the client keeps the first page's cursor and resumes the feed from it
+     * after the last page, so changes made while paging are re-delivered.
      */
-    record SnapshotPage(List<SnapshotEntity> entities, String after, boolean hasMore, String cursor) {
+    record SnapshotPage(List<ChangeView> changes, String after, boolean hasMore, String cursor) {
     }
 
     private final JdbcClient jdbc;
@@ -96,7 +96,7 @@ class ChangeFeedService {
         String afterType = "";
         UUID afterId = new UUID(Long.MIN_VALUE, Long.MIN_VALUE);
         if (after != null && !after.isBlank()) {
-            int separator = after.indexOf(':');
+            int separator = after.indexOf('/');
             try {
                 afterType = after.substring(0, separator);
                 afterId = UUID.fromString(after.substring(separator + 1));
@@ -104,18 +104,18 @@ class ChangeFeedService {
                 throw ApiException.badRequest("INVALID_REQUEST", "after must be an entity key from a snapshot.");
             }
         }
-        List<SnapshotEntity> rows = jdbc.sql("select entity_type, entity_id, revision, data from sync_entity "
+        List<ChangeView> rows = jdbc.sql("select entity_type, entity_id, revision, data from sync_entity "
                         + "where workspace_id = ? and not deleted and (entity_type, entity_id) > (?, ?) "
                         + "order by entity_type, entity_id limit ?")
                 .params(workspaceId, afterType, afterId, pageSize + 1)
-                .query((rs, row) -> new SnapshotEntity(rs.getString("entity_type"),
-                        rs.getObject("entity_id", UUID.class), rs.getLong("revision"),
+                .query((rs, row) -> new ChangeView(rs.getString("entity_type"),
+                        rs.getObject("entity_id", UUID.class), rs.getLong("revision"), "upsert",
                         JsonValues.parseObject(rs.getString("data"))))
                 .list();
         boolean hasMore = rows.size() > pageSize;
-        List<SnapshotEntity> page = rows.subList(0, Math.min(pageSize, rows.size()));
+        List<ChangeView> page = rows.subList(0, Math.min(pageSize, rows.size()));
         String next = page.isEmpty() ? (after == null ? "" : after)
-                : page.getLast().entityType() + ":" + page.getLast().entityId();
+                : page.getLast().entityType() + "/" + page.getLast().entityId();
         return new SnapshotPage(List.copyOf(page), next, hasMore,
                 CursorCodec.encode(workspaceId, head, clock.instant()));
     }

@@ -4,7 +4,6 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import com.paulsnow.finance.core.ledger.AccountType;
 import com.paulsnow.finance.core.ledger.CategoryKind;
@@ -21,9 +20,6 @@ import tools.jackson.databind.node.ObjectNode;
  * @since 0.0.0
  */
 final class EntityRules {
-
-    /** Journal fields that are metadata, editable with {@code entity.upsert}. */
-    static final Set<String> JOURNAL_METADATA = Set.of("payee", "notes", "tags");
 
     private enum Kind { STRING, BOOLEAN, DATE, ACCOUNT_TYPE, CATEGORY_KIND, OPTIONAL_STRING }
 

@@ -46,12 +46,16 @@ class CommandHandlers {
         this.ledger = ledger;
     }
 
-    /** {@code journal.post}: create a journal or replace a draft or pending one. */
+    /**
+     * {@code journal.post} with payload {@code {"journal": Journal}}: create a
+     * journal or replace a draft or pending one.
+     */
     Outcome journalPost(Outcome.Context ctx) {
         if (!JOURNAL.equals(ctx.entityType())) {
             return Outcome.invalid("INVALID_ENTITY_TYPE");
         }
-        JournalJson.Parsed parsed = JournalJson.parse(ctx.payload(), ctx.workspace().currency());
+        JsonNode journalJson = ctx.payload().path("journal");
+        JournalJson.Parsed parsed = JournalJson.parse(journalJson, ctx.workspace().currency());
         if (parsed.malformed()) {
             return rejected(List.of("INVALID_JOURNAL"));
         }
@@ -76,7 +80,7 @@ class CommandHandlers {
         if (!errors.isEmpty()) {
             return rejected(errors);
         }
-        ObjectNode data = ((ObjectNode) ctx.payload()).deepCopy();
+        ObjectNode data = ((ObjectNode) journalJson).deepCopy();
         data.put("id", journal.id());
         if (existing.isPresent()) {
             ledger.replace(ctx.workspaceId(), journal);
@@ -115,6 +119,9 @@ class CommandHandlers {
             return stale(originalEntity, ctx.baseRevision());
         }
         Journal original = JournalJson.parse(originalEntity.data(), ctx.workspace().currency()).journal();
+        if (original.status() == JournalStatus.REVERSED) {
+            return stale(originalEntity, ctx.baseRevision());
+        }
         if (original.status() != JournalStatus.POSTED) {
             return rejected(List.of("INVALID_STATUS"));
         }
@@ -185,13 +192,14 @@ class CommandHandlers {
         if (id != null && !id.isNull() && !id.asString("").equalsIgnoreCase(ctx.entityId().toString())) {
             return Outcome.invalid("ENTITY_ID_MISMATCH");
         }
-        Optional<StoredEntity> existing = store.lock(ctx.workspaceId(), ctx.entityId());
-        boolean journal = JOURNAL.equals(ctx.entityType());
-        if (journal && !EntityRules.JOURNAL_METADATA.containsAll(fields.propertyNames())) {
-            return Outcome.invalid("JOURNAL_FIELD_NOT_EDITABLE");
+        if (JOURNAL.equals(ctx.entityType())) {
+            // Journals change only through journal commands; their payee,
+            // notes and tags are annotated through a separate entity.
+            return Outcome.invalid("USE_JOURNAL_COMMANDS");
         }
+        Optional<StoredEntity> existing = store.lock(ctx.workspaceId(), ctx.entityId());
         if (existing.isEmpty()) {
-            if (ctx.baseRevision() != 0 || journal) {
+            if (ctx.baseRevision() != 0) {
                 return notFound();
             }
             String error = EntityRules.check(ctx.entityType(), fields, null);
@@ -248,7 +256,7 @@ class CommandHandlers {
         }
         StoredEntity entity = existing.get();
         if (entity.deleted()) {
-            return new Outcome.Applied(entity.revision(), 0);
+            return deleted(entity);
         }
         if (!entity.type().equals(ctx.entityType())) {
             return Outcome.invalid("ENTITY_TYPE_MISMATCH");

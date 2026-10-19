@@ -201,8 +201,10 @@ public abstract class IntegrationTestSupport {
         return journal;
     }
 
-    /** A {@code journal.post} command for {@code journal}. */
+    /** A {@code journal.post} command, payload {@code {"journal": Journal}}. */
     protected ObjectNode postJournal(Actor actor, ObjectNode journal, long baseRevision) {
-        return command(actor, "journal.post", "journal", journal.path("id").asString(), baseRevision, journal);
+        ObjectNode payload = json.createObjectNode();
+        payload.set("journal", journal);
+        return command(actor, "journal.post", "journal", journal.path("id").asString(), baseRevision, payload);
     }
 }
