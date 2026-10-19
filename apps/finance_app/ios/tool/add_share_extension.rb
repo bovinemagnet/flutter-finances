@@ -26,6 +26,7 @@
 #   ruby ios/tool/add_share_extension.rb [path/to/Runner.xcodeproj]
 
 require 'xcodeproj'
+require 'yaml'
 
 IOS_DIR = File.expand_path('..', __dir__)
 PROJECT_PATH = ARGV[0] || File.join(IOS_DIR, 'Runner.xcodeproj')
@@ -35,10 +36,21 @@ EXTENSION_NAME = 'ShareExtension'
 EXTENSION_BUNDLE_ID = "#{APP_BUNDLE_ID}.#{EXTENSION_NAME}"
 APP_GROUP = 'group.com.paulsnow.finance.app'
 EMBED_PHASE_NAME = 'Embed Foundation Extensions'
-# Flutter symlinks Swift package plugins here (relative to ios/) during
-# `flutter build ios` / `flutter pub get` on macOS.
-RSI_PACKAGE_PATH = 'Flutter/ephemeral/Packages/.packages/receive_sharing_intent'
+# Flutter symlinks each Swift package plugin here (relative to ios/) during
+# `flutter build ios`, naming the link after the plugin's versioned pub cache
+# directory, for example `receive_sharing_intent-1.9.0`.
+RSI_PACKAGES_DIR = 'Flutter/ephemeral/Packages/.packages'
+RSI_PLUGIN = 'receive_sharing_intent'
 RSI_PRODUCT = 'receive-sharing-intent'
+
+# The resolved plugin version, from the workspace lock file (or the app's own
+# lock file outside a workspace).
+lock_path = [File.join(IOS_DIR, '..', '..', '..', 'pubspec.lock'), File.join(IOS_DIR, '..', 'pubspec.lock')]
+            .map { |p| File.expand_path(p) }.find { |p| File.exist?(p) } or
+  abort 'pubspec.lock not found; run `flutter pub get` first'
+rsi_version = YAML.safe_load_file(lock_path).dig('packages', RSI_PLUGIN, 'version') or
+  abort "#{RSI_PLUGIN} is not in #{lock_path}"
+RSI_PACKAGE_PATH = "#{RSI_PACKAGES_DIR}/#{RSI_PLUGIN}-#{rsi_version}"
 
 unless Xcodeproj::Project::Object.const_defined?(:XCLocalSwiftPackageReference)
   abort "xcodeproj #{Xcodeproj::VERSION} lacks local Swift package support; install 1.24 or later"
@@ -128,13 +140,17 @@ end
 
 # Link the plugin's Swift package product (it provides RSIShareViewController).
 root = project.root_object
-package = root.package_references.find { |r| r.respond_to?(:relative_path) && r.relative_path == RSI_PACKAGE_PATH }
+# A reference left by an earlier plugin version is repointed, not duplicated.
+package = root.package_references.find do |r|
+  r.respond_to?(:relative_path) && r.relative_path.to_s.start_with?("#{RSI_PACKAGES_DIR}/#{RSI_PLUGIN}")
+end
 unless package
   package = project.new(Xcodeproj::Project::Object::XCLocalSwiftPackageReference)
-  package.relative_path = RSI_PACKAGE_PATH
   root.package_references << package
 end
-unless extension.package_product_dependencies.any? { |d| d.product_name == RSI_PRODUCT }
+package.relative_path = RSI_PACKAGE_PATH
+dependency = extension.package_product_dependencies.find { |d| d.product_name == RSI_PRODUCT }
+unless dependency
   dependency = project.new(Xcodeproj::Project::Object::XCSwiftPackageProductDependency)
   dependency.product_name = RSI_PRODUCT
   extension.package_product_dependencies << dependency
@@ -142,6 +158,8 @@ unless extension.package_product_dependencies.any? { |d| d.product_name == RSI_P
   build_file.product_ref = dependency
   extension.frameworks_build_phase.files << build_file
 end
+# Xcode resolves a product only through the package that provides it.
+dependency.package = package
 
 # Embed the extension in Runner, before "Thin Binary".
 embed = runner.copy_files_build_phases.find { |p| p.symbol_dst_subfolder_spec == :plug_ins }
