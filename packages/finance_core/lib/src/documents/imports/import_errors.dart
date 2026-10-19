@@ -9,7 +9,11 @@ enum ImportErrorCode {
   badAmount('BAD_AMOUNT'),
   missingAmount('MISSING_AMOUNT'),
   bothDebitAndCredit('BOTH_DEBIT_AND_CREDIT'),
-  zeroAmount('ZERO_AMOUNT');
+  zeroAmount('ZERO_AMOUNT'),
+
+  /// The file is not in the expected format (OFX or QIF); reported on
+  /// row 0, the file as a whole.
+  unrecognisedFormat('UNRECOGNISED_FORMAT');
 
   const ImportErrorCode(this.code);
   final String code;

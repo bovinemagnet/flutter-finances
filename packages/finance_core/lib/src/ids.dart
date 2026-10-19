@@ -47,7 +47,8 @@ String nameBasedId(String namespace, String name) {
     throw FormatException('Namespace is not a UUID', namespace);
   }
   final digest = sha1.convert([
-    for (var i = 0; i < 32; i += 2) int.parse(hex.substring(i, i + 2), radix: 16),
+    for (var i = 0; i < 32; i += 2)
+      int.parse(hex.substring(i, i + 2), radix: 16),
     ...utf8.encode(name),
   ]);
   final bytes = digest.bytes.sublist(0, 16);

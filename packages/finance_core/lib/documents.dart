@@ -23,6 +23,8 @@ export 'src/documents/imports/import_errors.dart';
 export 'src/documents/imports/import_json_codec.dart';
 export 'src/documents/imports/import_preview.dart';
 export 'src/documents/imports/import_rollback.dart';
+export 'src/documents/imports/ofx_parse.dart' hide joinNameAndMemo;
+export 'src/documents/imports/qif_parse.dart';
 export 'src/documents/imports/source_record.dart';
 export 'src/documents/imports/text_decoding.dart';
 export 'src/documents/matching/candidate_matching.dart';
