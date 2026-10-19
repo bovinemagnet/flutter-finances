@@ -650,7 +650,14 @@ class AppState extends ChangeNotifier {
         ? DateRange(LocalDate(now.year, now.month, 1), now)
         : DateRange(evaluation.period.start, evaluation.period.end);
     final settingsByRule = {for (final s in ruleSettings) s.rule: s};
+    final monthStart = LocalDate(now.year, now.month, 1);
     final all = generateInsights(
+      subscriptions: subscriptionProposals(),
+      unusualTransactions: detectUnusualTransactions(
+        ledger: ledger,
+        period: period,
+      ),
+      spendingSpikes: detectSpendingSpikes(ledger: ledger, month: monthStart),
       period: period,
       budget: evaluation,
       forecast: forecast(),
@@ -670,6 +677,22 @@ class AppState extends ChangeNotifier {
       states: insightStates,
       settings: ruleSettings,
     );
+  }
+
+  /// Merchants charging regularly that no schedule covers yet (P1).
+  List<SubscriptionProposal> subscriptionProposals() => detectSubscriptions(
+    ledger: ledger,
+    today: today(),
+    existingSchedules: schedules,
+  );
+
+  /// Confirms a detected subscription as a recurring bill.
+  Future<RecurringSchedule> confirmSubscription(
+    SubscriptionProposal proposal,
+  ) async {
+    final schedule = proposal.toSchedule(id: newId());
+    await saveSchedule(schedule);
+    return schedule;
   }
 
   Future<void> dismissInsight(Insight insight) async {

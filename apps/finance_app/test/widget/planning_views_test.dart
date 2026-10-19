@@ -89,4 +89,23 @@ void main() {
     await tester.tap(find.text('Turn off').first);
     expect(disabled, isNotEmpty);
   });
+
+  testWidgets('every insight rule has a title', (tester) async {
+    final period = DateRange(LocalDate(2026, 10, 1), LocalDate(2026, 10, 31));
+    await pump(
+        tester,
+        InsightList(
+          insights: [
+            for (final rule in InsightRule.values)
+              Insight(key: rule.name, rule: rule, trigger: 't', entryIds: const [], period: period),
+          ],
+          onOpen: (_) {},
+          onDismiss: (_) {},
+          onSnooze: (_) {},
+          onDisableRule: (_) {},
+        ));
+    expect(find.text('Possible subscription'), findsOneWidget);
+    expect(find.text('Unusual purchase'), findsOneWidget);
+    expect(find.text('Spending spike'), findsOneWidget);
+  });
 }

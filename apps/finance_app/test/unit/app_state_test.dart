@@ -267,4 +267,24 @@ void main() {
       contains('days'),
     );
   });
+
+  test('regular charges are suggested as a bill the user can confirm', () async {
+    await onboard();
+    for (final month in [7, 8, 9, 10]) {
+      await state.post(TransactionDraft(
+        type: TransactionType.expense,
+        accountId: 'card',
+        amount: Money(1699, aud),
+        effectiveDate: LocalDate(2026, month, 5),
+        payee: 'StreamFlix',
+        splits: [Split(categoryId('Subscriptions'), Money(1699, aud))],
+      ));
+    }
+    final proposal = state.subscriptionProposals().single;
+    expect(proposal.payee, 'StreamFlix');
+    expect(state.insights().map((i) => i.rule), contains(InsightRule.possibleSubscription));
+    await state.confirmSubscription(proposal);
+    expect(state.schedules.where((s) => s.name == 'StreamFlix'), hasLength(1));
+    expect(state.subscriptionProposals(), isEmpty);
+  });
 }

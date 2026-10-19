@@ -9,6 +9,9 @@ const insightTitles = {
   InsightRule.unreviewed: 'Transactions to review',
   InsightRule.missingReceipt: 'Missing receipts',
   InsightRule.possibleDuplicate: 'Possible duplicate',
+  InsightRule.possibleSubscription: 'Possible subscription',
+  InsightRule.unusualTransaction: 'Unusual purchase',
+  InsightRule.spendingSpike: 'Spending spike',
 };
 
 /// Explainable insights (REP 03): each shows its trigger and period, opens
@@ -22,6 +25,7 @@ class InsightList extends StatelessWidget {
     required this.onDismiss,
     required this.onSnooze,
     required this.onDisableRule,
+    this.onAddAsBill,
   });
 
   final List<Insight> insights;
@@ -29,6 +33,9 @@ class InsightList extends StatelessWidget {
   final ValueChanged<Insight> onDismiss;
   final ValueChanged<Insight> onSnooze;
   final ValueChanged<InsightRule> onDisableRule;
+
+  /// Turns a possible subscription into a confirmed bill.
+  final ValueChanged<Insight>? onAddAsBill;
 
   @override
   Widget build(BuildContext context) {
@@ -60,6 +67,12 @@ class InsightList extends StatelessWidget {
                   OverflowBar(
                     alignment: MainAxisAlignment.end,
                     children: [
+                      if (insight.rule == InsightRule.possibleSubscription &&
+                          onAddAsBill != null)
+                        TextButton(
+                          onPressed: () => onAddAsBill!(insight),
+                          child: const Text('Add as bill'),
+                        ),
                       TextButton(
                         onPressed: () => onOpen(insight),
                         child: const Text('View entries'),

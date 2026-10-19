@@ -98,6 +98,13 @@ class OverviewPage extends StatelessWidget {
           onDismiss: state.dismissInsight,
           onSnooze: state.snoozeInsight,
           onDisableRule: (rule) => state.setRuleEnabled(rule, false),
+          onAddAsBill: (insight) async {
+            final proposal = state
+                .subscriptionProposals()
+                .where((p) => p.journalIds.any(insight.entryIds.contains))
+                .firstOrNull;
+            if (proposal != null) await state.confirmSubscription(proposal);
+          },
         ),
         const SizedBox(height: 8),
         Wrap(
