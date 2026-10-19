@@ -9,6 +9,7 @@ export 'src/planning/budget_template.dart';
 export 'src/planning/category_activity.dart';
 export 'src/planning/date_range.dart';
 export 'src/planning/debt.dart';
+export 'src/planning/debt_payoff.dart';
 export 'src/planning/discretionary.dart';
 export 'src/planning/forecast.dart';
 export 'src/planning/goals.dart';

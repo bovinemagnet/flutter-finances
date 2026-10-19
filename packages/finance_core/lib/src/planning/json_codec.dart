@@ -1,6 +1,7 @@
 import '../money/money.dart';
 import '../time/local_date.dart';
 import 'budget_plan.dart';
+import 'debt_payoff.dart';
 import 'goals.dart';
 import 'insights.dart';
 import 'payments.dart';
@@ -366,3 +367,18 @@ InsightRuleSetting insightRuleSettingFromJson(
   enabled: json['enabled'] as bool? ?? true,
   threshold: _money(json['thresholdMinor'], currency),
 );
+
+Map<String, Object?> debtTermsToJson(DebtTerms t) => {
+  'id': t.id,
+  'accountId': t.accountId,
+  'annualRateBasisPoints': t.annualRateBasisPoints,
+  'minimumPaymentMinor': t.minimumPayment.minor,
+};
+
+DebtTerms debtTermsFromJson(Map<String, Object?> json, Currency currency) =>
+    DebtTerms(
+      id: json['id'] as String,
+      accountId: json['accountId'] as String,
+      annualRateBasisPoints: json['annualRateBasisPoints'] as int,
+      minimumPayment: Money(json['minimumPaymentMinor'] as int, currency),
+    );
