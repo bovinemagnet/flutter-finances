@@ -115,6 +115,6 @@ Endpoints: `POST /v1/sync/commands`, `GET /v1/sync/changes?cursor=`, `GET /v1/sy
 - [x] 6.5 Imports UI, reconciliation, rules, insights, sync and backup settings (Journeys D, E)
 
 ### Plan 7 — Documentation
-- [~] 7.1 Antora component in `src/docs`, Gradle `antora` task, architecture, domain rules, sync protocol, platform capability matrix, operations
+- [x] 7.1 Antora component in `src/docs`, Gradle `antora` task, architecture, domain rules, sync protocol, platform capability matrix, operations
 
 Each sub-plan is executed TDD: failing test, minimal implementation, passing test, commit.
