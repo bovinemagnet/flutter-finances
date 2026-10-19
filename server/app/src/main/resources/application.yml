@@ -1,0 +1,84 @@
+# Production-style defaults: every environment-specific value comes from an
+# environment variable. See application-local.yml for a developer setup.
+spring:
+  application:
+    name: finance-sync
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: ${FINANCE_DB_URL:jdbc:postgresql://localhost:5432/finance}
+    username: ${FINANCE_DB_USERNAME:finance}
+    password: ${FINANCE_DB_PASSWORD:}
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # The OIDC provider that issues access tokens (authorisation code
+          # flow with PKCE on the client). Required: startup fails without it.
+          issuer-uri: ${FINANCE_OIDC_ISSUER_URI}
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+server:
+  shutdown: graceful
+  error:
+    include-message: never
+    include-stacktrace: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  packages-to-scan: com.paulsnow.finance.server
+
+finance:
+  sync:
+    # SYNC 06: tombstones are retained for this long; older cursors get 410.
+    tombstone-horizon: 90d
+    max-commands-per-batch: 500
+    max-page-size: 500
+  storage:
+    # Leave the endpoint empty to use AWS S3 in the configured region.
+    endpoint: ${FINANCE_S3_ENDPOINT:}
+    # Endpoint clients use for presigned URLs when it differs from the
+    # internal one (for example MinIO behind a proxy).
+    presign-endpoint: ${FINANCE_S3_PRESIGN_ENDPOINT:}
+    region: ${FINANCE_S3_REGION:ap-southeast-2}
+    bucket: ${FINANCE_S3_BUCKET:finance-documents}
+    # Empty keys use the default AWS credential chain (service identity).
+    access-key: ${FINANCE_S3_ACCESS_KEY:}
+    secret-key: ${FINANCE_S3_SECRET_KEY:}
+    path-style-access: ${FINANCE_S3_PATH_STYLE:false}
+    create-bucket: false
+    upload-url-ttl: 15m
+    download-url-ttl: 5m
+  receipts:
+    max-size-bytes: 26214400
+    max-image-dimension: 20000
+  imports:
+    max-rows: 50000
+    synchronous-row-limit: 1000
+  worker:
+    # Run the background worker in this process. Deploy the API with false
+    # and a worker workload with true from the same image.
+    enabled: ${FINANCE_WORKER_ENABLED:false}
+    poll-interval: 2s
+    batch-size: 10
+    lease: 5m
+    max-attempts: 5
+    base-backoff: 10s

@@ -1,0 +1,15 @@
+# Integration tests: Testcontainers supplies the datasource and storage
+# endpoint; JWTs come from spring-security-test, so the issuer is never
+# contacted. The worker loop is off and tests drive jobs explicitly.
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://issuer.test.invalid/
+
+finance:
+  storage:
+    path-style-access: true
+  worker:
+    enabled: false

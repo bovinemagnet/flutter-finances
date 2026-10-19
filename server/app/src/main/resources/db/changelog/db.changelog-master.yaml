@@ -1,0 +1,28 @@
+# Each module owns its tables and changelog. Tables reference other
+# modules' rows by identifier only (no cross-module foreign keys), so the
+# deletion job can remove a workspace module by module.
+databaseChangeLog:
+  - include:
+      file: workspace.sql
+      relativeToChangelogFile: true
+  - include:
+      file: jobs.sql
+      relativeToChangelogFile: true
+  - include:
+      file: sync.sql
+      relativeToChangelogFile: true
+  - include:
+      file: ledger.sql
+      relativeToChangelogFile: true
+  - include:
+      file: receipts.sql
+      relativeToChangelogFile: true
+  - include:
+      file: imports.sql
+      relativeToChangelogFile: true
+  - include:
+      file: exports.sql
+      relativeToChangelogFile: true
+  - include:
+      file: deletion.sql
+      relativeToChangelogFile: true
