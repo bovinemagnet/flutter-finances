@@ -33,6 +33,11 @@ class ImportScreen extends StatefulWidget {
 }
 
 class _ImportScreenState extends State<ImportScreen> {
+  late final StatementFormat _format = detectStatementFormat(
+    widget.bytes,
+    widget.fileName,
+  );
+  bool get _isCsv => _format == StatementFormat.csv;
   late final List<String> _headers;
   late TextEncoding _encoding = detectEncoding(widget.bytes);
   String? _accountId;
@@ -142,113 +147,124 @@ class _ImportScreenState extends State<ImportScreen> {
               _preview = null;
             }),
           ),
-          const SizedBox(height: 8),
-          _column('Date column', _dateColumn, (v) => _dateColumn = v),
-          const SizedBox(height: 8),
-          _column(
-            'Description column',
-            _descriptionColumn,
-            (v) => _descriptionColumn = v,
-          ),
-          SwitchListTile(
-            value: _splitColumns,
-            title: const Text('Separate debit and credit columns'),
-            onChanged: (v) => setState(() {
-              _splitColumns = v;
-              _preview = null;
-            }),
-          ),
-          if (_splitColumns) ...[
-            _column('Debit column', _debitColumn, (v) => _debitColumn = v),
+          if (_isCsv) ...[
             const SizedBox(height: 8),
-            _column('Credit column', _creditColumn, (v) => _creditColumn = v),
-          ] else ...[
-            _column('Amount column', _amountColumn, (v) => _amountColumn = v),
-            DropdownButtonFormField<DebitSign>(
-              initialValue: _debitSign,
-              decoration: const InputDecoration(
-                labelText: 'Money going out is shown as',
-              ),
-              items: const [
-                DropdownMenuItem(
-                  value: DebitSign.negative,
-                  child: Text('Negative (-12.50)'),
-                ),
-                DropdownMenuItem(
-                  value: DebitSign.positive,
-                  child: Text('Positive (12.50)'),
-                ),
-              ],
+            _column('Date column', _dateColumn, (v) => _dateColumn = v),
+            const SizedBox(height: 8),
+            _column(
+              'Description column',
+              _descriptionColumn,
+              (v) => _descriptionColumn = v,
+            ),
+            SwitchListTile(
+              value: _splitColumns,
+              title: const Text('Separate debit and credit columns'),
               onChanged: (v) => setState(() {
-                _debitSign = v!;
+                _splitColumns = v;
                 _preview = null;
               }),
             ),
-          ],
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 16,
-            runSpacing: 8,
-            children: [
-              DropdownMenu<String>(
-                initialSelection: _dateFormat,
-                label: const Text('Date format'),
-                dropdownMenuEntries: const [
-                  DropdownMenuEntry(value: 'dd/MM/yyyy', label: '31/12/2026'),
-                  DropdownMenuEntry(value: 'd/M/yyyy', label: '1/2/2026'),
-                  DropdownMenuEntry(value: 'yyyy-MM-dd', label: '2026-12-31'),
-                  DropdownMenuEntry(value: 'dd MMM yyyy', label: '31 Dec 2026'),
-                  DropdownMenuEntry(value: 'MM/dd/yyyy', label: '12/31/2026'),
-                ],
-                onSelected: (v) => setState(() {
-                  _dateFormat = v ?? _dateFormat;
-                  _preview = null;
-                }),
-              ),
-              DropdownMenu<String>(
-                initialSelection: _decimalSeparator,
-                label: const Text('Decimal mark'),
-                dropdownMenuEntries: const [
-                  DropdownMenuEntry(value: '.', label: '12.50'),
-                  DropdownMenuEntry(value: ',', label: '12,50'),
-                ],
-                onSelected: (v) => setState(() {
-                  _decimalSeparator = v ?? _decimalSeparator;
-                  _preview = null;
-                }),
-              ),
-              DropdownMenu<TextEncoding>(
-                initialSelection: _encoding,
-                label: const Text('Text encoding'),
-                dropdownMenuEntries: const [
-                  DropdownMenuEntry(value: TextEncoding.utf8, label: 'UTF-8'),
-                  DropdownMenuEntry(
-                    value: TextEncoding.windows1252,
-                    label: 'Windows-1252',
+            if (_splitColumns) ...[
+              _column('Debit column', _debitColumn, (v) => _debitColumn = v),
+              const SizedBox(height: 8),
+              _column('Credit column', _creditColumn, (v) => _creditColumn = v),
+            ] else ...[
+              _column('Amount column', _amountColumn, (v) => _amountColumn = v),
+              DropdownButtonFormField<DebitSign>(
+                initialValue: _debitSign,
+                decoration: const InputDecoration(
+                  labelText: 'Money going out is shown as',
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: DebitSign.negative,
+                    child: Text('Negative (-12.50)'),
                   ),
-                  DropdownMenuEntry(
-                    value: TextEncoding.latin1,
-                    label: 'Latin-1',
+                  DropdownMenuItem(
+                    value: DebitSign.positive,
+                    child: Text('Positive (12.50)'),
                   ),
                 ],
-                onSelected: (v) => setState(() {
-                  _encoding = v ?? _encoding;
+                onChanged: (v) => setState(() {
+                  _debitSign = v!;
                   _preview = null;
                 }),
               ),
             ],
-          ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              children: [
+                DropdownMenu<String>(
+                  initialSelection: _dateFormat,
+                  label: const Text('Date format'),
+                  dropdownMenuEntries: const [
+                    DropdownMenuEntry(value: 'dd/MM/yyyy', label: '31/12/2026'),
+                    DropdownMenuEntry(value: 'd/M/yyyy', label: '1/2/2026'),
+                    DropdownMenuEntry(value: 'yyyy-MM-dd', label: '2026-12-31'),
+                    DropdownMenuEntry(
+                      value: 'dd MMM yyyy',
+                      label: '31 Dec 2026',
+                    ),
+                    DropdownMenuEntry(value: 'MM/dd/yyyy', label: '12/31/2026'),
+                  ],
+                  onSelected: (v) => setState(() {
+                    _dateFormat = v ?? _dateFormat;
+                    _preview = null;
+                  }),
+                ),
+                DropdownMenu<String>(
+                  initialSelection: _decimalSeparator,
+                  label: const Text('Decimal mark'),
+                  dropdownMenuEntries: const [
+                    DropdownMenuEntry(value: '.', label: '12.50'),
+                    DropdownMenuEntry(value: ',', label: '12,50'),
+                  ],
+                  onSelected: (v) => setState(() {
+                    _decimalSeparator = v ?? _decimalSeparator;
+                    _preview = null;
+                  }),
+                ),
+                DropdownMenu<TextEncoding>(
+                  initialSelection: _encoding,
+                  label: const Text('Text encoding'),
+                  dropdownMenuEntries: const [
+                    DropdownMenuEntry(value: TextEncoding.utf8, label: 'UTF-8'),
+                    DropdownMenuEntry(
+                      value: TextEncoding.windows1252,
+                      label: 'Windows-1252',
+                    ),
+                    DropdownMenuEntry(
+                      value: TextEncoding.latin1,
+                      label: 'Latin-1',
+                    ),
+                  ],
+                  onSelected: (v) => setState(() {
+                    _encoding = v ?? _encoding;
+                    _preview = null;
+                  }),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 16),
           FilledButton.tonal(
-            onPressed: mapping == null
+            onPressed: (_isCsv ? mapping == null : _accountId == null)
                 ? null
                 : () => setState(
-                    () => _preview = imports.preview(widget.bytes, mapping),
+                    () => _preview = _isCsv
+                        ? imports.preview(widget.bytes, mapping!)
+                        : imports.previewStatement(
+                            widget.bytes,
+                            _format,
+                            accountId: _accountId!,
+                          ),
                   ),
             child: const Text('Preview'),
           ),
           if (preview != null) ..._previewWidgets(state.chart, preview),
-          if (preview != null && mapping != null)
+          if (preview != null && (mapping != null || !_isCsv))
             Padding(
               padding: const EdgeInsets.only(top: 16),
               child: FilledButton(
@@ -258,13 +274,23 @@ class _ImportScreenState extends State<ImportScreen> {
                         setState(() => _busy = true);
                         final messenger = ScaffoldMessenger.of(context);
                         final navigator = Navigator.of(context);
-                        await imports.saveMapping(mapping);
-                        final outcome = await imports.commit(
-                          preview,
-                          mapping,
-                          decisions: _decisions,
-                          fileName: widget.fileName,
-                        );
+                        final ImportOutcome outcome;
+                        if (_isCsv) {
+                          await imports.saveMapping(mapping!);
+                          outcome = await imports.commit(
+                            preview,
+                            mapping,
+                            decisions: _decisions,
+                            fileName: widget.fileName,
+                          );
+                        } else {
+                          outcome = await imports.commitStatement(
+                            preview,
+                            accountId: _accountId!,
+                            decisions: _decisions,
+                            fileName: widget.fileName,
+                          );
+                        }
                         messenger.showSnackBar(
                           SnackBar(
                             content: Text(

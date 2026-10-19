@@ -90,4 +90,31 @@ void main() {
     await imports.saveMapping(mapping());
     expect(imports.mappings.single.name, 'Everyday bank');
   });
+
+  test('OFX and QIF statements import without a column mapping', () async {
+    final ofx = Uint8List.fromList(utf8.encode('''OFXHEADER:100
+DATA:OFXSGML
+VERSION:102
+
+<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>AUD
+<BANKACCTFROM><BANKID>062000<ACCTID>12345678<ACCTTYPE>CHECKING</BANKACCTFROM>
+<BANKTRANLIST><DTSTART>20261001<DTEND>20261031
+<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261003<TRNAMT>-4.50<FITID>A1<NAME>COFFEE CART</STMTTRN>
+<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261005<TRNAMT>3123.45<FITID>A2<NAME>SALARY ACME</STMTTRN>
+</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>
+'''));
+    expect(detectStatementFormat(ofx, 'oct.ofx'), StatementFormat.ofx);
+    final preview = imports.previewStatement(ofx, StatementFormat.ofx, accountId: 'bank');
+    expect(preview.rows, hasLength(2));
+    final outcome = await imports.commitStatement(preview, accountId: 'bank', fileName: 'oct.ofx');
+    expect(outcome.posted, 2);
+    final again = imports.previewStatement(ofx, StatementFormat.ofx, accountId: 'bank');
+    expect(again.alreadyImportedBatch, isNotNull);
+
+    final qif = Uint8List.fromList(utf8.encode('!Type:Bank\nD03/10/2026\nT-12.00\nPCORNER STORE\n^\n'));
+    expect(detectStatementFormat(qif, 'x.qif'), StatementFormat.qif);
+    expect(imports.previewStatement(qif, StatementFormat.qif, accountId: 'bank').rows,
+        hasLength(1));
+    expect(detectStatementFormat(csv, 'oct.csv'), StatementFormat.csv);
+  });
 }

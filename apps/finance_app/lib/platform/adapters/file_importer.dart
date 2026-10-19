@@ -16,8 +16,8 @@ const _receiptTypes = XTypeGroup(
 
 const _statementTypes = XTypeGroup(
   label: 'Bank statements',
-  extensions: ['csv', 'txt'],
-  mimeTypes: ['text/csv', 'text/plain'],
+  extensions: ['csv', 'txt', 'ofx', 'qfx', 'qif'],
+  mimeTypes: ['text/csv', 'text/plain', 'application/x-ofx', 'application/qif'],
   uniformTypeIdentifiers: [
     'public.comma-separated-values-text',
     'public.plain-text',

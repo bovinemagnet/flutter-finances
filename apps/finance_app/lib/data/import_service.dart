@@ -16,6 +16,27 @@ abstract final class UncategorisedIds {
   static const income = 'uncategorised-income';
 }
 
+enum StatementFormat { csv, ofx, qif }
+
+/// Recognises OFX (`OFXHEADER` or an `<OFX>` element) and QIF (`!Type:`)
+/// by content first and file name second; anything else is CSV.
+StatementFormat detectStatementFormat(Uint8List bytes, String? fileName) {
+  var head = String.fromCharCodes(bytes.take(512)).trimLeft().toUpperCase();
+  if (head.startsWith('\u{FEFF}')) head = head.substring(1);
+  if (head.startsWith('OFXHEADER') ||
+      head.contains('<OFX>') ||
+      (head.startsWith('<?XML') && head.contains('<OFX'))) {
+    return StatementFormat.ofx;
+  }
+  if (head.startsWith('!TYPE:')) return StatementFormat.qif;
+  final name = fileName?.toLowerCase() ?? '';
+  if (name.endsWith('.ofx') || name.endsWith('.qfx')) {
+    return StatementFormat.ofx;
+  }
+  if (name.endsWith('.qif')) return StatementFormat.qif;
+  return StatementFormat.csv;
+}
+
 class ImportOutcome {
   const ImportOutcome(
     this.batch,
@@ -90,9 +111,66 @@ class ImportService {
     state.refresh();
   }
 
+  /// Previews an OFX or QIF statement, which needs no column mapping.
+  ImportPreview previewStatement(
+    Uint8List bytes,
+    StatementFormat format, {
+    required String accountId,
+  }) {
+    final CsvParseResult parsed = switch (format) {
+      StatementFormat.ofx => parseOfxBytes(
+        bytes,
+        state.currency,
+        accountId: accountId,
+      ),
+      StatementFormat.qif => parseQifBytes(
+        bytes,
+        state.currency,
+        dateConvention: state.dateConvention,
+      ),
+      StatementFormat.csv => throw ArgumentError('CSV needs a column mapping'),
+    };
+    return previewImport(
+      accountId: accountId,
+      parsed: parsed,
+      sourceHash: sourceHashOf(bytes),
+      chart: state.chart,
+      batches: batches,
+      existingRecords: sourceRecords,
+      journals: state.ledger.journals,
+      receiptJournalIds: state.receipts.receiptJournalIds,
+    );
+  }
+
+  Future<ImportOutcome> commitStatement(
+    ImportPreview preview, {
+    required String accountId,
+    Map<int, RowDecision> decisions = const {},
+    String? fileName,
+  }) => _commit(
+    preview,
+    accountId: accountId,
+    decisions: decisions,
+    fileName: fileName,
+  );
+
   Future<ImportOutcome> commit(
     ImportPreview preview,
     CsvMapping mapping, {
+    Map<int, RowDecision> decisions = const {},
+    String? fileName,
+  }) => _commit(
+    preview,
+    accountId: mapping.accountId,
+    mappingId: mapping.id,
+    decisions: decisions,
+    fileName: fileName,
+  );
+
+  Future<ImportOutcome> _commit(
+    ImportPreview preview, {
+    required String accountId,
+    String? mappingId,
     Map<int, RowDecision> decisions = const {},
     String? fileName,
   }) async {
@@ -105,8 +183,8 @@ class ImportService {
       uncategorisedExpenseId: UncategorisedIds.expense,
       uncategorisedIncomeId: UncategorisedIds.income,
       decisions: decisions,
-      chooseCategory: ruleCategoryChooser(state.rules, mapping.accountId),
-      mappingId: mapping.id,
+      chooseCategory: ruleCategoryChooser(state.rules, accountId),
+      mappingId: mappingId,
       fileName: fileName,
     );
     if (result.alreadyCommitted) {
