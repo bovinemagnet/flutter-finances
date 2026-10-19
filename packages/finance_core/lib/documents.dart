@@ -13,6 +13,7 @@ export 'src/documents/extraction/receipt_dates.dart' show DateConvention;
 export 'src/documents/extraction/receipt_items.dart';
 export 'src/documents/extraction/receipt_parser.dart';
 export 'src/documents/extraction/receipt_review.dart';
+export 'src/documents/extraction/receipt_separation.dart';
 export 'src/documents/imports/csv_mapping.dart';
 export 'src/documents/imports/csv_parse.dart';
 export 'src/documents/imports/csv_reader.dart';
