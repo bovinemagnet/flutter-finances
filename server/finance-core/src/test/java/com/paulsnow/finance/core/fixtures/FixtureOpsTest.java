@@ -24,6 +24,8 @@ class FixtureOpsTest {
         // The runner fails any case whose op is absent from this map, so new
         // fixture operations cannot be silently skipped.
         assertThat(FixtureOps.all()).doesNotContainKey("planning.unknown")
-                .containsKeys("money.parse", "money.allocate", "journal.validate", "ledger.scenario");
+                .containsKeys("money.parse", "money.allocate", "journal.validate", "ledger.scenario",
+                        "periods.generate", "schedule.occurrences", "budget.remaining", "rollover.next",
+                        "allocation.template", "monthly.equivalent", "discretionary.estimate", "forecast.daily");
     }
 }
