@@ -61,6 +61,7 @@ class _AccountEditorState extends State<AccountEditor> {
   late bool _forecast = widget.existing?.includeInForecast ?? true;
   late bool _netWorth = widget.existing?.includeInNetWorth ?? true;
   late bool _archived = widget.existing?.archived ?? false;
+  late bool _shared = widget.existing?.sharing == AccountSharing.shared;
   String _opening = '';
   late LocalDate _openingDate = widget.today;
 
@@ -81,6 +82,7 @@ class _AccountEditorState extends State<AccountEditor> {
       archived: _archived,
       dataSource: widget.existing?.dataSource ?? 'manual',
       lastReconciledOn: widget.existing?.lastReconciledOn,
+      sharing: _shared ? AccountSharing.shared : AccountSharing.private,
     );
     await widget.onSave(AccountEdit(account, opening, _openingDate));
   }
@@ -175,6 +177,15 @@ class _AccountEditorState extends State<AccountEditor> {
             value: !_netWorth,
             title: const Text('Leave out of net worth'),
             onChanged: (v) => setState(() => _netWorth = !v),
+          ),
+          SwitchListTile(
+            value: _shared,
+            title: const Text('Share with my household'),
+            subtitle: const Text(
+              'Members of a shared workspace see this account and its '
+              'transactions; otherwise only you do',
+            ),
+            onChanged: (v) => setState(() => _shared = v),
           ),
           if (!_isNew)
             SwitchListTile(

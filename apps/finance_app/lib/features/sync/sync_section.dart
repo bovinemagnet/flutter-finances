@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/sync_controller.dart';
 import 'conflicts_screen.dart';
+import 'household_screen.dart';
 
 /// Sync controls for the settings page.
 class SyncSection extends StatelessWidget {
@@ -187,6 +188,16 @@ class SyncSection extends StatelessWidget {
                   title: const Text('Sign in again'),
                   onTap: controller.signIn,
                 ),
+              ListTile(
+                leading: const Icon(Icons.group_outlined),
+                title: const Text('Household'),
+                subtitle: const Text('Invite people to share chosen accounts'),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => HouseholdScreen(controller: controller),
+                  ),
+                ),
+              ),
               ListTile(
                 leading: const Icon(Icons.logout),
                 title: const Text('Sign out'),

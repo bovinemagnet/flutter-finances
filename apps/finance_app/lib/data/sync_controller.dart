@@ -181,6 +181,15 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   Future<List<RemoteWorkspace>> remoteWorkspaces() =>
       client.listRemoteWorkspaces();
 
+  /// Household members and invitations for the synced workspace.
+  HouseholdClient get household => HouseholdClient.of(client);
+
+  String get workspaceId => state.settings.workspaceId;
+
+  /// Joins a household from an invitation code before connecting.
+  Future<HouseholdRole> acceptInvitation(String code) =>
+      household.accept(InvitationCode.parse(code));
+
   /// Creates a server workspace for this device's data, or uses [existing],
   /// registers this device and returns the preview the user must confirm.
   Future<SyncBootstrapPreview> prepare({

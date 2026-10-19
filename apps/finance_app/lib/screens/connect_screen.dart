@@ -32,6 +32,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
   final _server = TextEditingController();
   final _issuer = TextEditingController();
   final _client = TextEditingController(text: 'finance-app');
+  final _invitation = TextEditingController();
   String? _error;
   var _busy = false;
 
@@ -40,6 +41,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
     _server.dispose();
     _issuer.dispose();
     _client.dispose();
+    _invitation.dispose();
     super.dispose();
   }
 
@@ -85,6 +87,9 @@ class _ConnectScreenState extends State<ConnectScreen> {
         ),
       );
       await sync.signIn();
+      if (_invitation.text.trim().isNotEmpty) {
+        await sync.acceptInvitation(_invitation.text.trim());
+      }
       final remotes = await sync.remoteWorkspaces();
       if (remotes.isEmpty) {
         throw StateError('There is no synced workspace for this account yet');
@@ -160,6 +165,12 @@ class _ConnectScreenState extends State<ConnectScreen> {
             controller: _client,
             decoration: const InputDecoration(
               labelText: 'Application identifier',
+            ),
+          ),
+          TextField(
+            controller: _invitation,
+            decoration: const InputDecoration(
+              labelText: 'Invitation code (to join someone else\'s household)',
             ),
           ),
           const SizedBox(height: 16),
