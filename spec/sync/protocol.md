@@ -191,6 +191,28 @@ intent with a different checksum for a completed asset is
 `409 ASSET_ALREADY_COMPLETE`. Download of another workspace's asset is
 `404 NOT_FOUND`; a rejected asset stays `409 ASSET_NOT_AVAILABLE`.
 
+**CSV imports (IMP 01-03).** `POST /v1/imports/preview` `{"fileName",
+"contentBase64", "mapping", "outflowCategoryId", "inflowCategoryId"}`
+parses with the shared `csv.parse` mapping (which names `accountId` and
+`encoding`), keeps raw rows and their hashes, and returns the batch:
+`{"batchId", "status": "previewed | committing | committed | rolled_back",
+"rowCount", "errorCount", "newCount", "duplicateCount", "totals",
+"dateGap", "rows": [{"rowNumber", "date", "description", "amountMinor",
+"status", "errorCode", "fingerprint", "journalId", "matches"}]}`. Rows are
+keyed by the shared `csv.fingerprint`; a fingerprint already committed in
+the workspace is `duplicate` (an overlapping statement), while identical
+same-day rows keep distinct occurrence numbers (A11). Possible transfers
+and existing entries are listed as `matches` for review, never applied.
+The same file with the same settings for the same account is the same
+batch. `POST /v1/imports/{batchId}/commit` `{"decisions"?: {"<row>":
+"import | skip"}}` posts each new row as a `journal.post` through the
+command path (`expense` to the outflow category, `income` to the inflow
+category, `posted`), with journal and command ids derived from the batch
+and row, so committing again creates nothing new (A12); large batches
+answer `202` with a `jobId`. `POST /v1/imports/{batchId}/rollback` voids
+the batch's untouched journals with `journal.correct` and lists edited
+ones for review. `GET /v1/imports/{batchId}?offset&limit` pages the rows.
+
 **Jobs, exports and deletion.** `GET /v1/jobs/{id}` returns `{"id", "type",
 "status": "queued | running | succeeded | failed", "attempts", "result",
 "error"}`. `POST /v1/exports` returns `202 {"exportId", "jobId"}`; the job
