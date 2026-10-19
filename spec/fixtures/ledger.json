@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "area": "ledger",
+  "notes": "Amounts are decimal strings. Balances are as a user reads them: money held, or money owed for creditCard and loan accounts. Each entry of type 'correct' replaces the referenced entry with a reversal plus replacement. Period totals count posted and reversed journals only.",
+  "cases": [
+    {
+      "id": "A01-card-purchase-then-repayment",
+      "op": "ledger.scenario",
+      "input": {
+        "currency": "AUD", "exponent": 2,
+        "accounts": [{"id": "bank", "type": "transaction"}, {"id": "card", "type": "creditCard"}],
+        "categories": [{"id": "groceries", "kind": "expense"}],
+        "entries": [
+          {"type": "openingBalance", "account": "bank", "amount": "1000.00", "date": "2026-07-01"},
+          {"type": "expense", "account": "card", "amount": "120.00", "date": "2026-07-02", "splits": [{"category": "groceries", "amount": "120.00"}]},
+          {"type": "transfer", "account": "bank", "to": "card", "amount": "120.00", "date": "2026-07-10"}
+        ],
+        "periods": [{"start": "2026-07-01", "end": "2026-07-31"}]
+      },
+      "expect": {
+        "balances": {"bank": "880.00", "card": "0.00"},
+        "netWorth": "880.00", "journalCount": 3, "errors": [],
+        "periods": [{"expenses": "120.00", "income": "0.00"}]
+      }
+    },
+    {
+      "id": "A02-transfer-to-savings",
+      "op": "ledger.scenario",
+      "input": {
+        "currency": "AUD", "exponent": 2,
+        "accounts": [{"id": "bank", "type": "transaction"}, {"id": "savings", "type": "savings"}],
+        "categories": [],
+        "entries": [
+          {"type": "openingBalance", "account": "bank", "amount": "2000.00", "date": "2026-07-01"},
+          {"type": "transfer", "account": "bank", "to": "savings", "amount": "500.00", "date": "2026-07-02"}
+        ],
+        "periods": [{"start": "2026-07-01", "end": "2026-07-31"}]
+      },
+      "expect": {
+        "balances": {"bank": "1500.00", "savings": "500.00"},
+        "netWorth": "2000.00", "journalCount": 2, "errors": [],
+        "periods": [{"expenses": "0.00", "income": "0.00"}]
+      }
+    },
+    {
+      "id": "A03-split-exact-and-mismatch",
+      "op": "ledger.scenario",
+      "input": {
+        "currency": "AUD", "exponent": 2,
+        "accounts": [{"id": "bank", "type": "transaction"}],
+        "categories": [{"id": "groceries", "kind": "expense"}, {"id": "household", "kind": "expense"}],
+        "entries": [
+          {"type": "expense", "account": "bank", "amount": "103.47", "date": "2026-07-01", "splits": [{"category": "groceries", "amount": "80.00"}, {"category": "household", "amount": "23.47"}]},
+          {"type": "expense", "account": "bank", "amount": "103.47", "date": "2026-07-01", "splits": [{"category": "groceries", "amount": "80.00"}, {"category": "household", "amount": "23.46"}]}
+        ],
+        "periods": [{"start": "2026-07-01", "end": "2026-07-01"}]
+      },
+      "expect": {
+        "balances": {"bank": "-103.47"},
+        "categories": {"groceries": "80.00", "household": "23.47"},
+        "netWorth": "-103.47", "journalCount": 1,
+        "errors": [{"entry": 1, "code": "SPLIT_MISMATCH"}],
+        "periods": [{"expenses": "103.47", "income": "0.00"}]
+      }
+    },
+    {
+      "id": "A04-refund-next-month",
+      "op": "ledger.scenario",
+      "input": {
+        "currency": "AUD", "exponent": 2,
+        "accounts": [{"id": "bank", "type": "transaction"}],
+        "categories": [{"id": "clothing", "kind": "expense"}],
+        "entries": [
+          {"ref": "jacket", "type": "expense", "account": "bank", "amount": "100.00", "date": "2026-07-20", "splits": [{"category": "clothing", "amount": "100.00"}]},
+          {"type": "refund", "account": "bank", "amount": "40.00", "date": "2026-08-03", "refundOf": "jacket", "splits": [{"category": "clothing", "amount": "40.00"}]}
+        ],
+        "periods": [
+          {"start": "2026-07-01", "end": "2026-07-31"},
+          {"start": "2026-08-01", "end": "2026-08-31"},
+          {"start": "2026-07-01", "end": "2026-08-31"}
+        ]
+      },
+      "expect": {
+        "balances": {"bank": "-60.00"},
+        "netWorth": "-60.00", "journalCount": 2, "errors": [],
+        "periods": [
+          {"expenses": "100.00", "income": "0.00"},
+          {"expenses": "-40.00", "income": "0.00"},
+          {"expenses": "60.00", "income": "0.00"}
+        ]
+      }
+    },
+    {
+      "id": "income-and-liability-opening-balance",
+      "op": "ledger.scenario",
+      "input": {
+        "currency": "AUD", "exponent": 2,
+        "accounts": [{"id": "bank", "type": "transaction"}, {"id": "loan", "type": "loan"}, {"id": "super", "type": "superannuation", "includeInNetWorth": false}],
+        "categories": [{"id": "salary", "kind": "income"}, {"id": "interest", "kind": "expense"}],
+        "entries": [
+          {"type": "openingBalance", "account": "loan", "amount": "25000.00", "date": "2026-07-01"},
+          {"type": "openingBalance", "account": "super", "amount": "90000.00", "date": "2026-07-01"},
+          {"type": "income", "account": "bank", "amount": "3123.45", "date": "2026-07-03", "splits": [{"category": "salary", "amount": "3123.45"}]},
+          {"type": "transfer", "account": "bank", "to": "loan", "amount": "800.00", "date": "2026-07-15"},
+          {"type": "expense", "account": "loan", "amount": "95.10", "date": "2026-07-15", "splits": [{"category": "interest", "amount": "95.10"}]}
+        ],
+        "periods": [{"start": "2026-07-01", "end": "2026-07-31"}]
+      },
+      "expect": {
+        "balances": {"bank": "2323.45", "loan": "24295.10", "super": "90000.00"},
+        "netWorth": "-21971.65", "journalCount": 5, "errors": [],
+        "periods": [{"expenses": "95.10", "income": "3123.45"}]
+      }
+    },
+    {
+      "id": "correction-replaces-amount-in-original-period",
+      "op": "ledger.scenario",
+      "input": {
+        "currency": "AUD", "exponent": 2,
+        "accounts": [{"id": "bank", "type": "transaction"}],
+        "categories": [{"id": "groceries", "kind": "expense"}],
+        "entries": [
+          {"ref": "shop", "type": "expense", "account": "bank", "amount": "63.25", "date": "2026-07-05", "splits": [{"category": "groceries", "amount": "63.25"}]},
+          {"type": "correct", "target": "shop", "replacement": {"type": "expense", "account": "bank", "amount": "36.25", "date": "2026-07-05", "splits": [{"category": "groceries", "amount": "36.25"}]}}
+        ],
+        "periods": [{"start": "2026-07-01", "end": "2026-07-31"}]
+      },
+      "expect": {
+        "balances": {"bank": "-36.25"},
+        "netWorth": "-36.25", "journalCount": 3, "errors": [],
+        "periods": [{"expenses": "36.25", "income": "0.00"}]
+      }
+    },
+    {
+      "id": "draft-and-pending-excluded-from-posted-ledger",
+      "op": "ledger.scenario",
+      "input": {
+        "currency": "AUD", "exponent": 2,
+        "accounts": [{"id": "bank", "type": "transaction"}],
+        "categories": [{"id": "fuel", "kind": "expense"}],
+        "entries": [
+          {"type": "expense", "account": "bank", "amount": "5.00", "date": "2026-07-01", "status": "draft", "splits": [{"category": "fuel", "amount": "5.00"}]},
+          {"type": "expense", "account": "bank", "amount": "70.00", "date": "2026-07-01", "status": "pending", "splits": [{"category": "fuel", "amount": "70.00"}]}
+        ],
+        "periods": [{"start": "2026-07-01", "end": "2026-07-31"}]
+      },
+      "expect": {
+        "balances": {"bank": "0.00"},
+        "pendingBalances": {"bank": "-70.00"},
+        "netWorth": "0.00", "journalCount": 2, "errors": [],
+        "periods": [{"expenses": "0.00", "income": "0.00", "pendingExpenses": "70.00"}]
+      }
+    },
+    {
+      "id": "reimbursement-receivable-and-offset",
+      "op": "ledger.scenario",
+      "input": {
+        "currency": "AUD", "exponent": 2,
+        "accounts": [{"id": "bank", "type": "transaction"}],
+        "categories": [{"id": "dining", "kind": "expense"}],
+        "entries": [
+          {"type": "reimbursableExpense", "account": "bank", "amount": "60.00", "date": "2026-07-01"},
+          {"type": "reimbursement", "account": "bank", "amount": "60.00", "date": "2026-07-04"},
+          {"type": "expense", "account": "bank", "amount": "90.00", "date": "2026-07-05", "splits": [{"category": "dining", "amount": "90.00"}]},
+          {"type": "reimbursement", "account": "bank", "amount": "30.00", "date": "2026-07-06", "splits": [{"category": "dining", "amount": "30.00"}]}
+        ],
+        "periods": [{"start": "2026-07-01", "end": "2026-07-31"}]
+      },
+      "expect": {
+        "balances": {"bank": "-60.00"},
+        "categories": {"dining": "60.00"},
+        "netWorth": "-60.00", "journalCount": 4, "errors": [],
+        "periods": [{"expenses": "60.00", "income": "0.00"}]
+      }
+    },
+    {
+      "id": "draft-errors",
+      "op": "ledger.scenario",
+      "input": {
+        "currency": "AUD", "exponent": 2,
+        "accounts": [{"id": "bank", "type": "transaction"}],
+        "categories": [{"id": "salary", "kind": "income"}, {"id": "fuel", "kind": "expense"}],
+        "entries": [
+          {"type": "transfer", "account": "bank", "to": "bank", "amount": "1.00", "date": "2026-07-01"},
+          {"type": "expense", "account": "missing", "amount": "1.00", "date": "2026-07-01", "splits": [{"category": "fuel", "amount": "1.00"}]},
+          {"type": "expense", "account": "bank", "amount": "1.00", "date": "2026-07-01", "splits": [{"category": "salary", "amount": "1.00"}]},
+          {"type": "expense", "account": "bank", "amount": "0.00", "date": "2026-07-01", "splits": [{"category": "fuel", "amount": "0.00"}]},
+          {"type": "expense", "account": "bank", "amount": "1.00", "date": "2026-07-01"}
+        ],
+        "periods": []
+      },
+      "expect": {
+        "balances": {"bank": "0.00"},
+        "netWorth": "0.00", "journalCount": 0,
+        "errors": [
+          {"entry": 0, "code": "SAME_ACCOUNT"},
+          {"entry": 1, "code": "UNKNOWN_ACCOUNT"},
+          {"entry": 2, "code": "WRONG_CATEGORY_KIND"},
+          {"entry": 3, "code": "NON_POSITIVE_AMOUNT"},
+          {"entry": 4, "code": "MISSING_SPLITS"}
+        ],
+        "periods": []
+      }
+    }
+  ]
+}

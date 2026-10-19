@@ -1,0 +1,13 @@
+name: finance_core
+description: Financial domain rules for the personal finance application.
+version: 0.0.0
+publish_to: none
+resolution: workspace
+environment:
+  sdk: ^3.13.0
+dependencies:
+  crypto: ^3.0.6
+  meta: ^1.17.0
+dev_dependencies:
+  lints: ^6.1.0
+  test: ^1.31.0

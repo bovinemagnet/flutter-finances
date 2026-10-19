@@ -1,0 +1,8 @@
+name: finance_workspace
+publish_to: none
+environment:
+  sdk: ^3.13.0
+workspace:
+  - packages/finance_core
+dev_dependencies:
+  lints: ^6.1.0

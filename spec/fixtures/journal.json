@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "area": "journal",
+  "cases": [
+    {"id": "balanced", "op": "journal.validate", "input": {"postings": [{"account": "groceries", "minor": 1000, "currency": "AUD"}, {"account": "bank", "minor": -1000, "currency": "AUD"}]}, "expect": {"errors": []}},
+    {"id": "A03-split-balanced", "op": "journal.validate", "input": {"postings": [{"account": "groceries", "minor": 8000, "currency": "AUD"}, {"account": "dining", "minor": 2347, "currency": "AUD"}, {"account": "bank", "minor": -10347, "currency": "AUD"}]}, "expect": {"errors": []}},
+    {"id": "A03-split-short-by-one-cent", "op": "journal.validate", "input": {"postings": [{"account": "groceries", "minor": 8000, "currency": "AUD"}, {"account": "dining", "minor": 2346, "currency": "AUD"}, {"account": "bank", "minor": -10347, "currency": "AUD"}]}, "expect": {"errors": ["UNBALANCED"]}},
+    {"id": "empty", "op": "journal.validate", "input": {"postings": []}, "expect": {"errors": ["EMPTY"]}},
+    {"id": "single", "op": "journal.validate", "input": {"postings": [{"account": "bank", "minor": 100, "currency": "AUD"}]}, "expect": {"errors": ["TOO_FEW_POSTINGS", "UNBALANCED"]}},
+    {"id": "mixed-currency", "op": "journal.validate", "input": {"postings": [{"account": "a", "minor": 100, "currency": "AUD"}, {"account": "b", "minor": -100, "currency": "NZD"}]}, "expect": {"errors": ["MIXED_CURRENCY"]}},
+    {"id": "zero-amount", "op": "journal.validate", "input": {"postings": [{"account": "a", "minor": 0, "currency": "AUD"}, {"account": "b", "minor": 0, "currency": "AUD"}]}, "expect": {"errors": ["ZERO_AMOUNT"]}},
+    {"id": "posting-out-of-range", "op": "journal.validate", "input": {"postings": [{"account": "a", "minor": 1000000000000000, "currency": "AUD"}, {"account": "b", "minor": -1000000000000000, "currency": "AUD"}]}, "expect": {"errors": ["OUT_OF_RANGE"]}},
+    {"id": "debits-out-of-range", "op": "journal.validate", "input": {"postings": [{"account": "a", "minor": 999999999999999, "currency": "AUD"}, {"account": "b", "minor": 999999999999999, "currency": "AUD"}, {"account": "c", "minor": -999999999999999, "currency": "AUD"}]}, "expect": {"errors": ["UNBALANCED", "OUT_OF_RANGE"]}}
+  ]
+}

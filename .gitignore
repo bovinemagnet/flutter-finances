@@ -1,0 +1,11 @@
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.gradle/
+server/**/build/
+*.iml
+.idea/
+.vscode/
+node_modules/
+src/docs/build/

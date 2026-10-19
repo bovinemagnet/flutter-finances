@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "area": "money",
+  "cases": [
+    {"id": "parse-plain", "op": "money.parse", "input": {"text": "103.47", "exponent": 2}, "expect": {"minor": 10347}},
+    {"id": "parse-negative-short-fraction", "op": "money.parse", "input": {"text": "-0.5", "exponent": 2}, "expect": {"minor": -50}},
+    {"id": "parse-grouping", "op": "money.parse", "input": {"text": "1,234.50", "exponent": 2}, "expect": {"minor": 123450}},
+    {"id": "parse-comma-decimal", "op": "money.parse", "input": {"text": "1.234,56", "exponent": 2, "decimalSeparator": ","}, "expect": {"minor": 123456}},
+    {"id": "parse-whole", "op": "money.parse", "input": {"text": "12", "exponent": 2}, "expect": {"minor": 1200}},
+    {"id": "parse-zero-exponent", "op": "money.parse", "input": {"text": "7", "exponent": 0}, "expect": {"minor": 7}},
+    {"id": "parse-excess-precision", "op": "money.parse", "input": {"text": "1.005", "exponent": 2}, "expect": {"error": "FORMAT"}},
+    {"id": "parse-garbage", "op": "money.parse", "input": {"text": "12a.00", "exponent": 2}, "expect": {"error": "FORMAT"}},
+    {"id": "parse-out-of-range", "op": "money.parse", "input": {"text": "10000000000000.00", "exponent": 2}, "expect": {"error": "OUT_OF_RANGE"}},
+    {"id": "parse-max", "op": "money.parse", "input": {"text": "9999999999999.99", "exponent": 2}, "expect": {"minor": 999999999999999}},
+    {"id": "allocate-thirds", "op": "money.allocate", "input": {"total": 100, "weights": [1, 1, 1]}, "expect": {"parts": [34, 33, 33]}},
+    {"id": "allocate-negative-thirds", "op": "money.allocate", "input": {"total": -100, "weights": [1, 1, 1]}, "expect": {"parts": [-34, -33, -33]}},
+    {"id": "allocate-50-30-20", "op": "money.allocate", "input": {"total": 312345, "weights": [5000, 3000, 2000]}, "expect": {"parts": [156173, 93703, 62469]}},
+    {"id": "allocate-tie-to-lower-index", "op": "money.allocate", "input": {"total": 5, "weights": [1, 1]}, "expect": {"parts": [3, 2]}},
+    {"id": "allocate-zero-weight", "op": "money.allocate", "input": {"total": 1001, "weights": [0, 2, 1]}, "expect": {"parts": [0, 667, 334]}},
+    {"id": "allocate-largest-remainder", "op": "money.allocate", "input": {"total": 10, "weights": [3, 3, 4]}, "expect": {"parts": [3, 3, 4]}},
+    {"id": "allocate-remainder-order", "op": "money.allocate", "input": {"total": 7, "weights": [1, 2, 4]}, "expect": {"parts": [1, 2, 4]}},
+    {"id": "allocate-uneven", "op": "money.allocate", "input": {"total": 1000, "weights": [1, 1, 1, 1, 1, 1, 1]}, "expect": {"parts": [143, 143, 143, 143, 143, 143, 142]}}
+  ]
+}
