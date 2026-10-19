@@ -27,6 +27,6 @@ class FixtureOpsTest {
                 .containsKeys("money.parse", "money.allocate", "journal.validate", "ledger.scenario",
                         "periods.generate", "schedule.occurrences", "budget.remaining", "rollover.next",
                         "allocation.template", "monthly.equivalent", "discretionary.estimate", "forecast.daily",
-                        "csv.parse", "csv.fingerprint", "csv.sanitise", "content.sniff");
+                        "csv.parse", "csv.fingerprint", "csv.sanitise", "content.sniff", "report.compute");
     }
 }

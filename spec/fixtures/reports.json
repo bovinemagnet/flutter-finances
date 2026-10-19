@@ -1,0 +1,2417 @@
+{
+  "schemaVersion": 1,
+  "area": "reports",
+  "cases": [
+    {
+      "id": "REP01-income-vs-expenses-monthly",
+      "description": "Posted and reversed journals form the posted ledger: the corrected purchase counts once at its new amount; transfers, the card repayment and the reimbursable expense are neither income nor expenses; the refund reduces August spending; pending and draft entries are excluded.",
+      "op": "report.compute",
+      "input": {
+        "currency": "AUD",
+        "exponent": 2,
+        "accounts": [
+          {
+            "id": "bank",
+            "type": "transaction"
+          },
+          {
+            "id": "card",
+            "type": "creditCard"
+          },
+          {
+            "id": "savings",
+            "type": "savings"
+          },
+          {
+            "id": "house",
+            "type": "property",
+            "includeInNetWorth": false
+          }
+        ],
+        "categories": [
+          {
+            "id": "groceries",
+            "kind": "expense"
+          },
+          {
+            "id": "dining",
+            "kind": "expense"
+          },
+          {
+            "id": "salary",
+            "kind": "income"
+          }
+        ],
+        "entries": [
+          {
+            "ref": "open",
+            "type": "openingBalance",
+            "account": "bank",
+            "amount": "1000.00",
+            "date": "2026-06-30"
+          },
+          {
+            "ref": "pay",
+            "type": "income",
+            "account": "bank",
+            "amount": "3000.00",
+            "date": "2026-07-01",
+            "payee": "Employer",
+            "splits": [
+              {
+                "category": "salary",
+                "amount": "3000.00"
+              }
+            ]
+          },
+          {
+            "ref": "shop1",
+            "type": "expense",
+            "account": "bank",
+            "amount": "100.00",
+            "date": "2026-07-05",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "100.00"
+              }
+            ]
+          },
+          {
+            "ref": "dinner",
+            "type": "expense",
+            "account": "card",
+            "amount": "60.00",
+            "date": "2026-07-10",
+            "splits": [
+              {
+                "category": "dining",
+                "amount": "60.00"
+              }
+            ]
+          },
+          {
+            "ref": "move",
+            "type": "transfer",
+            "account": "bank",
+            "to": "savings",
+            "amount": "500.00",
+            "date": "2026-07-15"
+          },
+          {
+            "ref": "repay",
+            "type": "transfer",
+            "account": "bank",
+            "to": "card",
+            "amount": "60.00",
+            "date": "2026-07-20"
+          },
+          {
+            "ref": "shop2",
+            "type": "expense",
+            "account": "bank",
+            "amount": "80.00",
+            "date": "2026-08-02",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "50.00"
+              },
+              {
+                "category": "dining",
+                "amount": "30.00"
+              }
+            ]
+          },
+          {
+            "ref": "refund",
+            "type": "refund",
+            "account": "bank",
+            "amount": "20.00",
+            "date": "2026-08-03",
+            "payee": "Grocer",
+            "refundOf": "shop2",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "20.00"
+              }
+            ]
+          },
+          {
+            "ref": "pend",
+            "type": "expense",
+            "account": "bank",
+            "amount": "999.00",
+            "date": "2026-08-04",
+            "status": "pending",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "999.00"
+              }
+            ]
+          },
+          {
+            "ref": "draft",
+            "type": "expense",
+            "account": "bank",
+            "amount": "777.00",
+            "date": "2026-08-05",
+            "status": "draft",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "777.00"
+              }
+            ]
+          },
+          {
+            "type": "correct",
+            "target": "shop1",
+            "ref": "shop1b",
+            "reversalRef": "shop1r",
+            "replacement": {
+              "type": "expense",
+              "account": "bank",
+              "amount": "110.00",
+              "date": "2026-07-05",
+              "payee": "Grocer",
+              "splits": [
+                {
+                  "category": "groceries",
+                  "amount": "110.00"
+                }
+              ]
+            }
+          },
+          {
+            "ref": "house",
+            "type": "openingBalance",
+            "account": "house",
+            "amount": "500000.00",
+            "date": "2026-06-30"
+          },
+          {
+            "ref": "lend",
+            "type": "reimbursableExpense",
+            "account": "bank",
+            "amount": "40.00",
+            "date": "2026-08-10",
+            "payee": "Friend"
+          }
+        ],
+        "report": {
+          "kind": "income-vs-expenses",
+          "period": {
+            "type": "custom",
+            "start": "2026-07-01",
+            "end": "2026-08-31"
+          }
+        }
+      },
+      "expect": {
+        "rows": [
+          {
+            "key": "2026-07",
+            "amounts": {
+              "income": "3000.00",
+              "expenses": "170.00",
+              "net": "2830.00"
+            },
+            "journals": [
+              "pay",
+              "shop1",
+              "shop1r",
+              "shop1b",
+              "dinner"
+            ]
+          },
+          {
+            "key": "2026-08",
+            "amounts": {
+              "income": "0.00",
+              "expenses": "60.00",
+              "net": "-60.00"
+            },
+            "journals": [
+              "shop2",
+              "refund"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "REP02-income-vs-expenses-financial-year",
+      "description": "A July to June financial year has twelve monthly rows, empty months included.",
+      "op": "report.compute",
+      "input": {
+        "currency": "AUD",
+        "exponent": 2,
+        "accounts": [
+          {
+            "id": "bank",
+            "type": "transaction"
+          },
+          {
+            "id": "card",
+            "type": "creditCard"
+          },
+          {
+            "id": "savings",
+            "type": "savings"
+          },
+          {
+            "id": "house",
+            "type": "property",
+            "includeInNetWorth": false
+          }
+        ],
+        "categories": [
+          {
+            "id": "groceries",
+            "kind": "expense"
+          },
+          {
+            "id": "dining",
+            "kind": "expense"
+          },
+          {
+            "id": "salary",
+            "kind": "income"
+          }
+        ],
+        "entries": [
+          {
+            "ref": "open",
+            "type": "openingBalance",
+            "account": "bank",
+            "amount": "1000.00",
+            "date": "2026-06-30"
+          },
+          {
+            "ref": "pay",
+            "type": "income",
+            "account": "bank",
+            "amount": "3000.00",
+            "date": "2026-07-01",
+            "payee": "Employer",
+            "splits": [
+              {
+                "category": "salary",
+                "amount": "3000.00"
+              }
+            ]
+          },
+          {
+            "ref": "shop1",
+            "type": "expense",
+            "account": "bank",
+            "amount": "100.00",
+            "date": "2026-07-05",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "100.00"
+              }
+            ]
+          },
+          {
+            "ref": "dinner",
+            "type": "expense",
+            "account": "card",
+            "amount": "60.00",
+            "date": "2026-07-10",
+            "splits": [
+              {
+                "category": "dining",
+                "amount": "60.00"
+              }
+            ]
+          },
+          {
+            "ref": "move",
+            "type": "transfer",
+            "account": "bank",
+            "to": "savings",
+            "amount": "500.00",
+            "date": "2026-07-15"
+          },
+          {
+            "ref": "repay",
+            "type": "transfer",
+            "account": "bank",
+            "to": "card",
+            "amount": "60.00",
+            "date": "2026-07-20"
+          },
+          {
+            "ref": "shop2",
+            "type": "expense",
+            "account": "bank",
+            "amount": "80.00",
+            "date": "2026-08-02",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "50.00"
+              },
+              {
+                "category": "dining",
+                "amount": "30.00"
+              }
+            ]
+          },
+          {
+            "ref": "refund",
+            "type": "refund",
+            "account": "bank",
+            "amount": "20.00",
+            "date": "2026-08-03",
+            "payee": "Grocer",
+            "refundOf": "shop2",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "20.00"
+              }
+            ]
+          },
+          {
+            "ref": "pend",
+            "type": "expense",
+            "account": "bank",
+            "amount": "999.00",
+            "date": "2026-08-04",
+            "status": "pending",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "999.00"
+              }
+            ]
+          },
+          {
+            "ref": "draft",
+            "type": "expense",
+            "account": "bank",
+            "amount": "777.00",
+            "date": "2026-08-05",
+            "status": "draft",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "777.00"
+              }
+            ]
+          },
+          {
+            "type": "correct",
+            "target": "shop1",
+            "ref": "shop1b",
+            "reversalRef": "shop1r",
+            "replacement": {
+              "type": "expense",
+              "account": "bank",
+              "amount": "110.00",
+              "date": "2026-07-05",
+              "payee": "Grocer",
+              "splits": [
+                {
+                  "category": "groceries",
+                  "amount": "110.00"
+                }
+              ]
+            }
+          },
+          {
+            "ref": "house",
+            "type": "openingBalance",
+            "account": "house",
+            "amount": "500000.00",
+            "date": "2026-06-30"
+          },
+          {
+            "ref": "lend",
+            "type": "reimbursableExpense",
+            "account": "bank",
+            "amount": "40.00",
+            "date": "2026-08-10",
+            "payee": "Friend"
+          }
+        ],
+        "report": {
+          "kind": "income-vs-expenses",
+          "period": {
+            "type": "financialYear",
+            "startYear": 2026
+          }
+        }
+      },
+      "expect": {
+        "rows": [
+          {
+            "key": "2026-07",
+            "amounts": {
+              "income": "3000.00",
+              "expenses": "170.00",
+              "net": "2830.00"
+            },
+            "journals": [
+              "pay",
+              "shop1",
+              "shop1r",
+              "shop1b",
+              "dinner"
+            ]
+          },
+          {
+            "key": "2026-08",
+            "amounts": {
+              "income": "0.00",
+              "expenses": "60.00",
+              "net": "-60.00"
+            },
+            "journals": [
+              "shop2",
+              "refund"
+            ]
+          },
+          {
+            "key": "2026-09",
+            "amounts": {
+              "income": "0.00",
+              "expenses": "0.00",
+              "net": "0.00"
+            },
+            "journals": []
+          },
+          {
+            "key": "2026-10",
+            "amounts": {
+              "income": "0.00",
+              "expenses": "0.00",
+              "net": "0.00"
+            },
+            "journals": []
+          },
+          {
+            "key": "2026-11",
+            "amounts": {
+              "income": "0.00",
+              "expenses": "0.00",
+              "net": "0.00"
+            },
+            "journals": []
+          },
+          {
+            "key": "2026-12",
+            "amounts": {
+              "income": "0.00",
+              "expenses": "0.00",
+              "net": "0.00"
+            },
+            "journals": []
+          },
+          {
+            "key": "2027-01",
+            "amounts": {
+              "income": "0.00",
+              "expenses": "0.00",
+              "net": "0.00"
+            },
+            "journals": []
+          },
+          {
+            "key": "2027-02",
+            "amounts": {
+              "income": "0.00",
+              "expenses": "0.00",
+              "net": "0.00"
+            },
+            "journals": []
+          },
+          {
+            "key": "2027-03",
+            "amounts": {
+              "income": "0.00",
+              "expenses": "0.00",
+              "net": "0.00"
+            },
+            "journals": []
+          },
+          {
+            "key": "2027-04",
+            "amounts": {
+              "income": "0.00",
+              "expenses": "0.00",
+              "net": "0.00"
+            },
+            "journals": []
+          },
+          {
+            "key": "2027-05",
+            "amounts": {
+              "income": "0.00",
+              "expenses": "0.00",
+              "net": "0.00"
+            },
+            "journals": []
+          },
+          {
+            "key": "2027-06",
+            "amounts": {
+              "income": "0.00",
+              "expenses": "0.00",
+              "net": "0.00"
+            },
+            "journals": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "REP01-spending-by-category",
+      "description": "Net spending per expense category, largest first; refunds reduce the category and splits count towards each category.",
+      "op": "report.compute",
+      "input": {
+        "currency": "AUD",
+        "exponent": 2,
+        "accounts": [
+          {
+            "id": "bank",
+            "type": "transaction"
+          },
+          {
+            "id": "card",
+            "type": "creditCard"
+          },
+          {
+            "id": "savings",
+            "type": "savings"
+          },
+          {
+            "id": "house",
+            "type": "property",
+            "includeInNetWorth": false
+          }
+        ],
+        "categories": [
+          {
+            "id": "groceries",
+            "kind": "expense"
+          },
+          {
+            "id": "dining",
+            "kind": "expense"
+          },
+          {
+            "id": "salary",
+            "kind": "income"
+          }
+        ],
+        "entries": [
+          {
+            "ref": "open",
+            "type": "openingBalance",
+            "account": "bank",
+            "amount": "1000.00",
+            "date": "2026-06-30"
+          },
+          {
+            "ref": "pay",
+            "type": "income",
+            "account": "bank",
+            "amount": "3000.00",
+            "date": "2026-07-01",
+            "payee": "Employer",
+            "splits": [
+              {
+                "category": "salary",
+                "amount": "3000.00"
+              }
+            ]
+          },
+          {
+            "ref": "shop1",
+            "type": "expense",
+            "account": "bank",
+            "amount": "100.00",
+            "date": "2026-07-05",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "100.00"
+              }
+            ]
+          },
+          {
+            "ref": "dinner",
+            "type": "expense",
+            "account": "card",
+            "amount": "60.00",
+            "date": "2026-07-10",
+            "splits": [
+              {
+                "category": "dining",
+                "amount": "60.00"
+              }
+            ]
+          },
+          {
+            "ref": "move",
+            "type": "transfer",
+            "account": "bank",
+            "to": "savings",
+            "amount": "500.00",
+            "date": "2026-07-15"
+          },
+          {
+            "ref": "repay",
+            "type": "transfer",
+            "account": "bank",
+            "to": "card",
+            "amount": "60.00",
+            "date": "2026-07-20"
+          },
+          {
+            "ref": "shop2",
+            "type": "expense",
+            "account": "bank",
+            "amount": "80.00",
+            "date": "2026-08-02",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "50.00"
+              },
+              {
+                "category": "dining",
+                "amount": "30.00"
+              }
+            ]
+          },
+          {
+            "ref": "refund",
+            "type": "refund",
+            "account": "bank",
+            "amount": "20.00",
+            "date": "2026-08-03",
+            "payee": "Grocer",
+            "refundOf": "shop2",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "20.00"
+              }
+            ]
+          },
+          {
+            "ref": "pend",
+            "type": "expense",
+            "account": "bank",
+            "amount": "999.00",
+            "date": "2026-08-04",
+            "status": "pending",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "999.00"
+              }
+            ]
+          },
+          {
+            "ref": "draft",
+            "type": "expense",
+            "account": "bank",
+            "amount": "777.00",
+            "date": "2026-08-05",
+            "status": "draft",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "777.00"
+              }
+            ]
+          },
+          {
+            "type": "correct",
+            "target": "shop1",
+            "ref": "shop1b",
+            "reversalRef": "shop1r",
+            "replacement": {
+              "type": "expense",
+              "account": "bank",
+              "amount": "110.00",
+              "date": "2026-07-05",
+              "payee": "Grocer",
+              "splits": [
+                {
+                  "category": "groceries",
+                  "amount": "110.00"
+                }
+              ]
+            }
+          },
+          {
+            "ref": "house",
+            "type": "openingBalance",
+            "account": "house",
+            "amount": "500000.00",
+            "date": "2026-06-30"
+          },
+          {
+            "ref": "lend",
+            "type": "reimbursableExpense",
+            "account": "bank",
+            "amount": "40.00",
+            "date": "2026-08-10",
+            "payee": "Friend"
+          }
+        ],
+        "report": {
+          "kind": "spending-by-category",
+          "period": {
+            "type": "custom",
+            "start": "2026-07-01",
+            "end": "2026-08-31"
+          }
+        }
+      },
+      "expect": {
+        "rows": [
+          {
+            "key": "groceries",
+            "label": "groceries",
+            "amounts": {
+              "spending": "140.00"
+            },
+            "journals": [
+              "shop1",
+              "shop1r",
+              "shop1b",
+              "shop2",
+              "refund"
+            ]
+          },
+          {
+            "key": "dining",
+            "label": "dining",
+            "amounts": {
+              "spending": "90.00"
+            },
+            "journals": [
+              "dinner",
+              "shop2"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "REP01-spending-by-payee",
+      "description": "Net spending per payee; entries without a payee share the empty key labelled No payee, and a reversal keeps its original's payee.",
+      "op": "report.compute",
+      "input": {
+        "currency": "AUD",
+        "exponent": 2,
+        "accounts": [
+          {
+            "id": "bank",
+            "type": "transaction"
+          },
+          {
+            "id": "card",
+            "type": "creditCard"
+          },
+          {
+            "id": "savings",
+            "type": "savings"
+          },
+          {
+            "id": "house",
+            "type": "property",
+            "includeInNetWorth": false
+          }
+        ],
+        "categories": [
+          {
+            "id": "groceries",
+            "kind": "expense"
+          },
+          {
+            "id": "dining",
+            "kind": "expense"
+          },
+          {
+            "id": "salary",
+            "kind": "income"
+          }
+        ],
+        "entries": [
+          {
+            "ref": "open",
+            "type": "openingBalance",
+            "account": "bank",
+            "amount": "1000.00",
+            "date": "2026-06-30"
+          },
+          {
+            "ref": "pay",
+            "type": "income",
+            "account": "bank",
+            "amount": "3000.00",
+            "date": "2026-07-01",
+            "payee": "Employer",
+            "splits": [
+              {
+                "category": "salary",
+                "amount": "3000.00"
+              }
+            ]
+          },
+          {
+            "ref": "shop1",
+            "type": "expense",
+            "account": "bank",
+            "amount": "100.00",
+            "date": "2026-07-05",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "100.00"
+              }
+            ]
+          },
+          {
+            "ref": "dinner",
+            "type": "expense",
+            "account": "card",
+            "amount": "60.00",
+            "date": "2026-07-10",
+            "splits": [
+              {
+                "category": "dining",
+                "amount": "60.00"
+              }
+            ]
+          },
+          {
+            "ref": "move",
+            "type": "transfer",
+            "account": "bank",
+            "to": "savings",
+            "amount": "500.00",
+            "date": "2026-07-15"
+          },
+          {
+            "ref": "repay",
+            "type": "transfer",
+            "account": "bank",
+            "to": "card",
+            "amount": "60.00",
+            "date": "2026-07-20"
+          },
+          {
+            "ref": "shop2",
+            "type": "expense",
+            "account": "bank",
+            "amount": "80.00",
+            "date": "2026-08-02",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "50.00"
+              },
+              {
+                "category": "dining",
+                "amount": "30.00"
+              }
+            ]
+          },
+          {
+            "ref": "refund",
+            "type": "refund",
+            "account": "bank",
+            "amount": "20.00",
+            "date": "2026-08-03",
+            "payee": "Grocer",
+            "refundOf": "shop2",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "20.00"
+              }
+            ]
+          },
+          {
+            "ref": "pend",
+            "type": "expense",
+            "account": "bank",
+            "amount": "999.00",
+            "date": "2026-08-04",
+            "status": "pending",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "999.00"
+              }
+            ]
+          },
+          {
+            "ref": "draft",
+            "type": "expense",
+            "account": "bank",
+            "amount": "777.00",
+            "date": "2026-08-05",
+            "status": "draft",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "777.00"
+              }
+            ]
+          },
+          {
+            "type": "correct",
+            "target": "shop1",
+            "ref": "shop1b",
+            "reversalRef": "shop1r",
+            "replacement": {
+              "type": "expense",
+              "account": "bank",
+              "amount": "110.00",
+              "date": "2026-07-05",
+              "payee": "Grocer",
+              "splits": [
+                {
+                  "category": "groceries",
+                  "amount": "110.00"
+                }
+              ]
+            }
+          },
+          {
+            "ref": "house",
+            "type": "openingBalance",
+            "account": "house",
+            "amount": "500000.00",
+            "date": "2026-06-30"
+          },
+          {
+            "ref": "lend",
+            "type": "reimbursableExpense",
+            "account": "bank",
+            "amount": "40.00",
+            "date": "2026-08-10",
+            "payee": "Friend"
+          }
+        ],
+        "report": {
+          "kind": "spending-by-payee",
+          "period": {
+            "type": "custom",
+            "start": "2026-07-01",
+            "end": "2026-08-31"
+          }
+        }
+      },
+      "expect": {
+        "rows": [
+          {
+            "key": "Grocer",
+            "label": "Grocer",
+            "amounts": {
+              "spending": "170.00"
+            },
+            "journals": [
+              "shop1",
+              "shop1r",
+              "shop1b",
+              "shop2",
+              "refund"
+            ]
+          },
+          {
+            "key": "",
+            "label": "No payee",
+            "amounts": {
+              "spending": "60.00"
+            },
+            "journals": [
+              "dinner"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "REP01-account-balances-as-of",
+      "description": "Balances as the user reads them on a date (a liability's owed amount is positive), in chart order, with every journal that touched the account.",
+      "op": "report.compute",
+      "input": {
+        "currency": "AUD",
+        "exponent": 2,
+        "accounts": [
+          {
+            "id": "bank",
+            "type": "transaction"
+          },
+          {
+            "id": "card",
+            "type": "creditCard"
+          },
+          {
+            "id": "savings",
+            "type": "savings"
+          },
+          {
+            "id": "house",
+            "type": "property",
+            "includeInNetWorth": false
+          }
+        ],
+        "categories": [
+          {
+            "id": "groceries",
+            "kind": "expense"
+          },
+          {
+            "id": "dining",
+            "kind": "expense"
+          },
+          {
+            "id": "salary",
+            "kind": "income"
+          }
+        ],
+        "entries": [
+          {
+            "ref": "open",
+            "type": "openingBalance",
+            "account": "bank",
+            "amount": "1000.00",
+            "date": "2026-06-30"
+          },
+          {
+            "ref": "pay",
+            "type": "income",
+            "account": "bank",
+            "amount": "3000.00",
+            "date": "2026-07-01",
+            "payee": "Employer",
+            "splits": [
+              {
+                "category": "salary",
+                "amount": "3000.00"
+              }
+            ]
+          },
+          {
+            "ref": "shop1",
+            "type": "expense",
+            "account": "bank",
+            "amount": "100.00",
+            "date": "2026-07-05",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "100.00"
+              }
+            ]
+          },
+          {
+            "ref": "dinner",
+            "type": "expense",
+            "account": "card",
+            "amount": "60.00",
+            "date": "2026-07-10",
+            "splits": [
+              {
+                "category": "dining",
+                "amount": "60.00"
+              }
+            ]
+          },
+          {
+            "ref": "move",
+            "type": "transfer",
+            "account": "bank",
+            "to": "savings",
+            "amount": "500.00",
+            "date": "2026-07-15"
+          },
+          {
+            "ref": "repay",
+            "type": "transfer",
+            "account": "bank",
+            "to": "card",
+            "amount": "60.00",
+            "date": "2026-07-20"
+          },
+          {
+            "ref": "shop2",
+            "type": "expense",
+            "account": "bank",
+            "amount": "80.00",
+            "date": "2026-08-02",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "50.00"
+              },
+              {
+                "category": "dining",
+                "amount": "30.00"
+              }
+            ]
+          },
+          {
+            "ref": "refund",
+            "type": "refund",
+            "account": "bank",
+            "amount": "20.00",
+            "date": "2026-08-03",
+            "payee": "Grocer",
+            "refundOf": "shop2",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "20.00"
+              }
+            ]
+          },
+          {
+            "ref": "pend",
+            "type": "expense",
+            "account": "bank",
+            "amount": "999.00",
+            "date": "2026-08-04",
+            "status": "pending",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "999.00"
+              }
+            ]
+          },
+          {
+            "ref": "draft",
+            "type": "expense",
+            "account": "bank",
+            "amount": "777.00",
+            "date": "2026-08-05",
+            "status": "draft",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "777.00"
+              }
+            ]
+          },
+          {
+            "type": "correct",
+            "target": "shop1",
+            "ref": "shop1b",
+            "reversalRef": "shop1r",
+            "replacement": {
+              "type": "expense",
+              "account": "bank",
+              "amount": "110.00",
+              "date": "2026-07-05",
+              "payee": "Grocer",
+              "splits": [
+                {
+                  "category": "groceries",
+                  "amount": "110.00"
+                }
+              ]
+            }
+          },
+          {
+            "ref": "house",
+            "type": "openingBalance",
+            "account": "house",
+            "amount": "500000.00",
+            "date": "2026-06-30"
+          },
+          {
+            "ref": "lend",
+            "type": "reimbursableExpense",
+            "account": "bank",
+            "amount": "40.00",
+            "date": "2026-08-10",
+            "payee": "Friend"
+          }
+        ],
+        "report": {
+          "kind": "account-balances",
+          "asOf": "2026-07-31"
+        }
+      },
+      "expect": {
+        "rows": [
+          {
+            "key": "bank",
+            "label": "bank",
+            "amounts": {
+              "balance": "3330.00"
+            },
+            "journals": [
+              "open",
+              "pay",
+              "shop1",
+              "shop1r",
+              "shop1b",
+              "move",
+              "repay"
+            ]
+          },
+          {
+            "key": "card",
+            "label": "card",
+            "amounts": {
+              "balance": "0.00"
+            },
+            "journals": [
+              "dinner",
+              "repay"
+            ]
+          },
+          {
+            "key": "savings",
+            "label": "savings",
+            "amounts": {
+              "balance": "500.00"
+            },
+            "journals": [
+              "move"
+            ]
+          },
+          {
+            "key": "house",
+            "label": "house",
+            "amounts": {
+              "balance": "500000.00"
+            },
+            "journals": [
+              "house"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "REP01-account-balances-all-time",
+      "description": "Without a date every posted journal counts; pending and draft entries never do.",
+      "op": "report.compute",
+      "input": {
+        "currency": "AUD",
+        "exponent": 2,
+        "accounts": [
+          {
+            "id": "bank",
+            "type": "transaction"
+          },
+          {
+            "id": "card",
+            "type": "creditCard"
+          },
+          {
+            "id": "savings",
+            "type": "savings"
+          },
+          {
+            "id": "house",
+            "type": "property",
+            "includeInNetWorth": false
+          }
+        ],
+        "categories": [
+          {
+            "id": "groceries",
+            "kind": "expense"
+          },
+          {
+            "id": "dining",
+            "kind": "expense"
+          },
+          {
+            "id": "salary",
+            "kind": "income"
+          }
+        ],
+        "entries": [
+          {
+            "ref": "open",
+            "type": "openingBalance",
+            "account": "bank",
+            "amount": "1000.00",
+            "date": "2026-06-30"
+          },
+          {
+            "ref": "pay",
+            "type": "income",
+            "account": "bank",
+            "amount": "3000.00",
+            "date": "2026-07-01",
+            "payee": "Employer",
+            "splits": [
+              {
+                "category": "salary",
+                "amount": "3000.00"
+              }
+            ]
+          },
+          {
+            "ref": "shop1",
+            "type": "expense",
+            "account": "bank",
+            "amount": "100.00",
+            "date": "2026-07-05",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "100.00"
+              }
+            ]
+          },
+          {
+            "ref": "dinner",
+            "type": "expense",
+            "account": "card",
+            "amount": "60.00",
+            "date": "2026-07-10",
+            "splits": [
+              {
+                "category": "dining",
+                "amount": "60.00"
+              }
+            ]
+          },
+          {
+            "ref": "move",
+            "type": "transfer",
+            "account": "bank",
+            "to": "savings",
+            "amount": "500.00",
+            "date": "2026-07-15"
+          },
+          {
+            "ref": "repay",
+            "type": "transfer",
+            "account": "bank",
+            "to": "card",
+            "amount": "60.00",
+            "date": "2026-07-20"
+          },
+          {
+            "ref": "shop2",
+            "type": "expense",
+            "account": "bank",
+            "amount": "80.00",
+            "date": "2026-08-02",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "50.00"
+              },
+              {
+                "category": "dining",
+                "amount": "30.00"
+              }
+            ]
+          },
+          {
+            "ref": "refund",
+            "type": "refund",
+            "account": "bank",
+            "amount": "20.00",
+            "date": "2026-08-03",
+            "payee": "Grocer",
+            "refundOf": "shop2",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "20.00"
+              }
+            ]
+          },
+          {
+            "ref": "pend",
+            "type": "expense",
+            "account": "bank",
+            "amount": "999.00",
+            "date": "2026-08-04",
+            "status": "pending",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "999.00"
+              }
+            ]
+          },
+          {
+            "ref": "draft",
+            "type": "expense",
+            "account": "bank",
+            "amount": "777.00",
+            "date": "2026-08-05",
+            "status": "draft",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "777.00"
+              }
+            ]
+          },
+          {
+            "type": "correct",
+            "target": "shop1",
+            "ref": "shop1b",
+            "reversalRef": "shop1r",
+            "replacement": {
+              "type": "expense",
+              "account": "bank",
+              "amount": "110.00",
+              "date": "2026-07-05",
+              "payee": "Grocer",
+              "splits": [
+                {
+                  "category": "groceries",
+                  "amount": "110.00"
+                }
+              ]
+            }
+          },
+          {
+            "ref": "house",
+            "type": "openingBalance",
+            "account": "house",
+            "amount": "500000.00",
+            "date": "2026-06-30"
+          },
+          {
+            "ref": "lend",
+            "type": "reimbursableExpense",
+            "account": "bank",
+            "amount": "40.00",
+            "date": "2026-08-10",
+            "payee": "Friend"
+          }
+        ],
+        "report": {
+          "kind": "account-balances"
+        }
+      },
+      "expect": {
+        "rows": [
+          {
+            "key": "bank",
+            "label": "bank",
+            "amounts": {
+              "balance": "3230.00"
+            },
+            "journals": [
+              "open",
+              "pay",
+              "shop1",
+              "shop1r",
+              "shop1b",
+              "move",
+              "repay",
+              "shop2",
+              "refund",
+              "lend"
+            ]
+          },
+          {
+            "key": "card",
+            "label": "card",
+            "amounts": {
+              "balance": "0.00"
+            },
+            "journals": [
+              "dinner",
+              "repay"
+            ]
+          },
+          {
+            "key": "savings",
+            "label": "savings",
+            "amounts": {
+              "balance": "500.00"
+            },
+            "journals": [
+              "move"
+            ]
+          },
+          {
+            "key": "house",
+            "label": "house",
+            "amounts": {
+              "balance": "500000.00"
+            },
+            "journals": [
+              "house"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "REP01-net-worth-history-opening-and-receivable",
+      "description": "Net worth at each month end (the range end for a partial month) starts from the balance before the range, excludes accounts left out of net worth and includes the reimbursement receivable, so lending money does not reduce it.",
+      "op": "report.compute",
+      "input": {
+        "currency": "AUD",
+        "exponent": 2,
+        "accounts": [
+          {
+            "id": "bank",
+            "type": "transaction"
+          },
+          {
+            "id": "card",
+            "type": "creditCard"
+          },
+          {
+            "id": "savings",
+            "type": "savings"
+          },
+          {
+            "id": "house",
+            "type": "property",
+            "includeInNetWorth": false
+          }
+        ],
+        "categories": [
+          {
+            "id": "groceries",
+            "kind": "expense"
+          },
+          {
+            "id": "dining",
+            "kind": "expense"
+          },
+          {
+            "id": "salary",
+            "kind": "income"
+          }
+        ],
+        "entries": [
+          {
+            "ref": "open",
+            "type": "openingBalance",
+            "account": "bank",
+            "amount": "1000.00",
+            "date": "2026-06-30"
+          },
+          {
+            "ref": "pay",
+            "type": "income",
+            "account": "bank",
+            "amount": "3000.00",
+            "date": "2026-07-01",
+            "payee": "Employer",
+            "splits": [
+              {
+                "category": "salary",
+                "amount": "3000.00"
+              }
+            ]
+          },
+          {
+            "ref": "shop1",
+            "type": "expense",
+            "account": "bank",
+            "amount": "100.00",
+            "date": "2026-07-05",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "100.00"
+              }
+            ]
+          },
+          {
+            "ref": "dinner",
+            "type": "expense",
+            "account": "card",
+            "amount": "60.00",
+            "date": "2026-07-10",
+            "splits": [
+              {
+                "category": "dining",
+                "amount": "60.00"
+              }
+            ]
+          },
+          {
+            "ref": "move",
+            "type": "transfer",
+            "account": "bank",
+            "to": "savings",
+            "amount": "500.00",
+            "date": "2026-07-15"
+          },
+          {
+            "ref": "repay",
+            "type": "transfer",
+            "account": "bank",
+            "to": "card",
+            "amount": "60.00",
+            "date": "2026-07-20"
+          },
+          {
+            "ref": "shop2",
+            "type": "expense",
+            "account": "bank",
+            "amount": "80.00",
+            "date": "2026-08-02",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "50.00"
+              },
+              {
+                "category": "dining",
+                "amount": "30.00"
+              }
+            ]
+          },
+          {
+            "ref": "refund",
+            "type": "refund",
+            "account": "bank",
+            "amount": "20.00",
+            "date": "2026-08-03",
+            "payee": "Grocer",
+            "refundOf": "shop2",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "20.00"
+              }
+            ]
+          },
+          {
+            "ref": "pend",
+            "type": "expense",
+            "account": "bank",
+            "amount": "999.00",
+            "date": "2026-08-04",
+            "status": "pending",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "999.00"
+              }
+            ]
+          },
+          {
+            "ref": "draft",
+            "type": "expense",
+            "account": "bank",
+            "amount": "777.00",
+            "date": "2026-08-05",
+            "status": "draft",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "777.00"
+              }
+            ]
+          },
+          {
+            "type": "correct",
+            "target": "shop1",
+            "ref": "shop1b",
+            "reversalRef": "shop1r",
+            "replacement": {
+              "type": "expense",
+              "account": "bank",
+              "amount": "110.00",
+              "date": "2026-07-05",
+              "payee": "Grocer",
+              "splits": [
+                {
+                  "category": "groceries",
+                  "amount": "110.00"
+                }
+              ]
+            }
+          },
+          {
+            "ref": "house",
+            "type": "openingBalance",
+            "account": "house",
+            "amount": "500000.00",
+            "date": "2026-06-30"
+          },
+          {
+            "ref": "lend",
+            "type": "reimbursableExpense",
+            "account": "bank",
+            "amount": "40.00",
+            "date": "2026-08-10",
+            "payee": "Friend"
+          }
+        ],
+        "report": {
+          "kind": "net-worth-history",
+          "period": {
+            "type": "custom",
+            "start": "2026-07-01",
+            "end": "2026-08-15"
+          }
+        }
+      },
+      "expect": {
+        "rows": [
+          {
+            "key": "2026-07-31",
+            "amounts": {
+              "netWorth": "3830.00"
+            },
+            "journals": [
+              "pay",
+              "shop1",
+              "shop1r",
+              "shop1b",
+              "dinner",
+              "move",
+              "repay"
+            ]
+          },
+          {
+            "key": "2026-08-15",
+            "amounts": {
+              "netWorth": "3770.00"
+            },
+            "journals": [
+              "shop2",
+              "refund",
+              "lend"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "REP02-net-worth-history-calendar-year",
+      "description": "A calendar year has twelve month-end points.",
+      "op": "report.compute",
+      "input": {
+        "currency": "AUD",
+        "exponent": 2,
+        "accounts": [
+          {
+            "id": "bank",
+            "type": "transaction"
+          },
+          {
+            "id": "card",
+            "type": "creditCard"
+          },
+          {
+            "id": "savings",
+            "type": "savings"
+          },
+          {
+            "id": "house",
+            "type": "property",
+            "includeInNetWorth": false
+          }
+        ],
+        "categories": [
+          {
+            "id": "groceries",
+            "kind": "expense"
+          },
+          {
+            "id": "dining",
+            "kind": "expense"
+          },
+          {
+            "id": "salary",
+            "kind": "income"
+          }
+        ],
+        "entries": [
+          {
+            "ref": "open",
+            "type": "openingBalance",
+            "account": "bank",
+            "amount": "1000.00",
+            "date": "2026-06-30"
+          },
+          {
+            "ref": "pay",
+            "type": "income",
+            "account": "bank",
+            "amount": "3000.00",
+            "date": "2026-07-01",
+            "payee": "Employer",
+            "splits": [
+              {
+                "category": "salary",
+                "amount": "3000.00"
+              }
+            ]
+          },
+          {
+            "ref": "shop1",
+            "type": "expense",
+            "account": "bank",
+            "amount": "100.00",
+            "date": "2026-07-05",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "100.00"
+              }
+            ]
+          },
+          {
+            "ref": "dinner",
+            "type": "expense",
+            "account": "card",
+            "amount": "60.00",
+            "date": "2026-07-10",
+            "splits": [
+              {
+                "category": "dining",
+                "amount": "60.00"
+              }
+            ]
+          },
+          {
+            "ref": "move",
+            "type": "transfer",
+            "account": "bank",
+            "to": "savings",
+            "amount": "500.00",
+            "date": "2026-07-15"
+          },
+          {
+            "ref": "repay",
+            "type": "transfer",
+            "account": "bank",
+            "to": "card",
+            "amount": "60.00",
+            "date": "2026-07-20"
+          },
+          {
+            "ref": "shop2",
+            "type": "expense",
+            "account": "bank",
+            "amount": "80.00",
+            "date": "2026-08-02",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "50.00"
+              },
+              {
+                "category": "dining",
+                "amount": "30.00"
+              }
+            ]
+          },
+          {
+            "ref": "refund",
+            "type": "refund",
+            "account": "bank",
+            "amount": "20.00",
+            "date": "2026-08-03",
+            "payee": "Grocer",
+            "refundOf": "shop2",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "20.00"
+              }
+            ]
+          },
+          {
+            "ref": "pend",
+            "type": "expense",
+            "account": "bank",
+            "amount": "999.00",
+            "date": "2026-08-04",
+            "status": "pending",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "999.00"
+              }
+            ]
+          },
+          {
+            "ref": "draft",
+            "type": "expense",
+            "account": "bank",
+            "amount": "777.00",
+            "date": "2026-08-05",
+            "status": "draft",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "777.00"
+              }
+            ]
+          },
+          {
+            "type": "correct",
+            "target": "shop1",
+            "ref": "shop1b",
+            "reversalRef": "shop1r",
+            "replacement": {
+              "type": "expense",
+              "account": "bank",
+              "amount": "110.00",
+              "date": "2026-07-05",
+              "payee": "Grocer",
+              "splits": [
+                {
+                  "category": "groceries",
+                  "amount": "110.00"
+                }
+              ]
+            }
+          },
+          {
+            "ref": "house",
+            "type": "openingBalance",
+            "account": "house",
+            "amount": "500000.00",
+            "date": "2026-06-30"
+          },
+          {
+            "ref": "lend",
+            "type": "reimbursableExpense",
+            "account": "bank",
+            "amount": "40.00",
+            "date": "2026-08-10",
+            "payee": "Friend"
+          }
+        ],
+        "report": {
+          "kind": "net-worth-history",
+          "period": {
+            "type": "calendarYear",
+            "year": 2026
+          }
+        }
+      },
+      "expect": {
+        "rows": [
+          {
+            "key": "2026-01-31",
+            "amounts": {
+              "netWorth": "0.00"
+            },
+            "journals": []
+          },
+          {
+            "key": "2026-02-28",
+            "amounts": {
+              "netWorth": "0.00"
+            },
+            "journals": []
+          },
+          {
+            "key": "2026-03-31",
+            "amounts": {
+              "netWorth": "0.00"
+            },
+            "journals": []
+          },
+          {
+            "key": "2026-04-30",
+            "amounts": {
+              "netWorth": "0.00"
+            },
+            "journals": []
+          },
+          {
+            "key": "2026-05-31",
+            "amounts": {
+              "netWorth": "0.00"
+            },
+            "journals": []
+          },
+          {
+            "key": "2026-06-30",
+            "amounts": {
+              "netWorth": "1000.00"
+            },
+            "journals": [
+              "open"
+            ]
+          },
+          {
+            "key": "2026-07-31",
+            "amounts": {
+              "netWorth": "3830.00"
+            },
+            "journals": [
+              "pay",
+              "shop1",
+              "shop1r",
+              "shop1b",
+              "dinner",
+              "move",
+              "repay"
+            ]
+          },
+          {
+            "key": "2026-08-31",
+            "amounts": {
+              "netWorth": "3770.00"
+            },
+            "journals": [
+              "shop2",
+              "refund",
+              "lend"
+            ]
+          },
+          {
+            "key": "2026-09-30",
+            "amounts": {
+              "netWorth": "3770.00"
+            },
+            "journals": []
+          },
+          {
+            "key": "2026-10-31",
+            "amounts": {
+              "netWorth": "3770.00"
+            },
+            "journals": []
+          },
+          {
+            "key": "2026-11-30",
+            "amounts": {
+              "netWorth": "3770.00"
+            },
+            "journals": []
+          },
+          {
+            "key": "2026-12-31",
+            "amounts": {
+              "netWorth": "3770.00"
+            },
+            "journals": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "REP01-cash-flow-boundary",
+      "description": "Transfers within the account set are internal; a transfer to an account outside it crosses the boundary; the net row lists the boundary-crossing journals in date order.",
+      "op": "report.compute",
+      "input": {
+        "currency": "AUD",
+        "exponent": 2,
+        "accounts": [
+          {
+            "id": "bank",
+            "type": "transaction"
+          },
+          {
+            "id": "card",
+            "type": "creditCard"
+          },
+          {
+            "id": "savings",
+            "type": "savings"
+          },
+          {
+            "id": "house",
+            "type": "property",
+            "includeInNetWorth": false
+          }
+        ],
+        "categories": [
+          {
+            "id": "groceries",
+            "kind": "expense"
+          },
+          {
+            "id": "dining",
+            "kind": "expense"
+          },
+          {
+            "id": "salary",
+            "kind": "income"
+          }
+        ],
+        "entries": [
+          {
+            "ref": "open",
+            "type": "openingBalance",
+            "account": "bank",
+            "amount": "1000.00",
+            "date": "2026-06-30"
+          },
+          {
+            "ref": "pay",
+            "type": "income",
+            "account": "bank",
+            "amount": "3000.00",
+            "date": "2026-07-01",
+            "payee": "Employer",
+            "splits": [
+              {
+                "category": "salary",
+                "amount": "3000.00"
+              }
+            ]
+          },
+          {
+            "ref": "shop1",
+            "type": "expense",
+            "account": "bank",
+            "amount": "100.00",
+            "date": "2026-07-05",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "100.00"
+              }
+            ]
+          },
+          {
+            "ref": "dinner",
+            "type": "expense",
+            "account": "card",
+            "amount": "60.00",
+            "date": "2026-07-10",
+            "splits": [
+              {
+                "category": "dining",
+                "amount": "60.00"
+              }
+            ]
+          },
+          {
+            "ref": "move",
+            "type": "transfer",
+            "account": "bank",
+            "to": "savings",
+            "amount": "500.00",
+            "date": "2026-07-15"
+          },
+          {
+            "ref": "repay",
+            "type": "transfer",
+            "account": "bank",
+            "to": "card",
+            "amount": "60.00",
+            "date": "2026-07-20"
+          },
+          {
+            "ref": "shop2",
+            "type": "expense",
+            "account": "bank",
+            "amount": "80.00",
+            "date": "2026-08-02",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "50.00"
+              },
+              {
+                "category": "dining",
+                "amount": "30.00"
+              }
+            ]
+          },
+          {
+            "ref": "refund",
+            "type": "refund",
+            "account": "bank",
+            "amount": "20.00",
+            "date": "2026-08-03",
+            "payee": "Grocer",
+            "refundOf": "shop2",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "20.00"
+              }
+            ]
+          },
+          {
+            "ref": "pend",
+            "type": "expense",
+            "account": "bank",
+            "amount": "999.00",
+            "date": "2026-08-04",
+            "status": "pending",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "999.00"
+              }
+            ]
+          },
+          {
+            "ref": "draft",
+            "type": "expense",
+            "account": "bank",
+            "amount": "777.00",
+            "date": "2026-08-05",
+            "status": "draft",
+            "payee": "Grocer",
+            "splits": [
+              {
+                "category": "groceries",
+                "amount": "777.00"
+              }
+            ]
+          },
+          {
+            "type": "correct",
+            "target": "shop1",
+            "ref": "shop1b",
+            "reversalRef": "shop1r",
+            "replacement": {
+              "type": "expense",
+              "account": "bank",
+              "amount": "110.00",
+              "date": "2026-07-05",
+              "payee": "Grocer",
+              "splits": [
+                {
+                  "category": "groceries",
+                  "amount": "110.00"
+                }
+              ]
+            }
+          },
+          {
+            "ref": "house",
+            "type": "openingBalance",
+            "account": "house",
+            "amount": "500000.00",
+            "date": "2026-06-30"
+          },
+          {
+            "ref": "lend",
+            "type": "reimbursableExpense",
+            "account": "bank",
+            "amount": "40.00",
+            "date": "2026-08-10",
+            "payee": "Friend"
+          }
+        ],
+        "report": {
+          "kind": "cash-flow",
+          "period": {
+            "type": "custom",
+            "start": "2026-07-01",
+            "end": "2026-08-31"
+          },
+          "accounts": [
+            "bank",
+            "card"
+          ]
+        }
+      },
+      "expect": {
+        "rows": [
+          {
+            "key": "inflows",
+            "amounts": {
+              "amount": "3120.00"
+            },
+            "journals": [
+              "pay",
+              "shop1r",
+              "refund"
+            ]
+          },
+          {
+            "key": "outflows",
+            "amounts": {
+              "amount": "890.00"
+            },
+            "journals": [
+              "shop1",
+              "shop1b",
+              "dinner",
+              "move",
+              "shop2",
+              "lend"
+            ]
+          },
+          {
+            "key": "internalTransfers",
+            "amounts": {
+              "amount": "60.00"
+            },
+            "journals": [
+              "repay"
+            ]
+          },
+          {
+            "key": "net",
+            "amounts": {
+              "amount": "2230.00"
+            },
+            "journals": [
+              "pay",
+              "shop1",
+              "shop1r",
+              "shop1b",
+              "dinner",
+              "move",
+              "shop2",
+              "refund",
+              "lend"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

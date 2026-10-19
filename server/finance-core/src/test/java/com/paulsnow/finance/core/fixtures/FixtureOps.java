@@ -56,6 +56,7 @@ final class FixtureOps {
         ops.put("ledger.scenario", FixtureOps::ledgerScenario);
         ops.putAll(PlanningFixtureOps.all());
         ops.putAll(DocumentsFixtureOps.all());
+        ops.putAll(ReportsFixtureOps.all());
         return Map.copyOf(ops);
     }
 
