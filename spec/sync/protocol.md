@@ -104,7 +104,10 @@ review, never applied automatically.
    "sizeBytes", "sha256"}` returns `{"uploadUrl", "headers", "expiresAt"}` for
    a short-lived presigned PUT. Re-requesting an intent for the same
    `assetId` and checksum returns a fresh URL for the same object.
-2. The client PUTs the bytes, then `POST /v1/receipts/{receiptId}/complete`
+2. The client PUTs the bytes with every header in `headers` (they are
+   signed; they include `x-amz-tagging: finance-retention=staging`, which
+   lets the bucket lifecycle expire an upload that is never completed
+   after one day), then `POST /v1/receipts/{receiptId}/complete`
    with `{"assetId"}`. The server verifies ownership, size, checksum and
    content type by magic bytes, then marks the asset `quarantined` until the
    scan job marks it `available` or `rejected`. Completing twice is a no-op;
@@ -384,7 +387,9 @@ under `receipts/<receiptId>/<assetId>` and `manifest.json` (schema version,
 workspace currency and timezone, effective date semantics,
 `acceptedSequence`, counts, relationships, and the path, size and SHA-256
 of every file); `GET /v1/exports/{id}/download` returns `{"downloadUrl",
-"expiresAt"}` or `409 EXPORT_NOT_READY`. `DELETE /v1/workspaces/{id}`
+"expiresAt"}`, `409 EXPORT_NOT_READY`, or `410 EXPORT_EXPIRED` once the
+archive is older than the export retention (7 days by default; the bucket
+lifecycle then deletes it). `DELETE /v1/workspaces/{id}`
 (owner) revokes every device at once and returns `202` with a deletion
 whose progress `GET /v1/workspaces/{id}/deletion` reports to the requester.
 The deletion's suppression record outlives the workspace (SEC 06): if a

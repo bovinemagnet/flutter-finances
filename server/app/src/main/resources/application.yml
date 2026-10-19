@@ -67,6 +67,12 @@ finance:
     create-bucket: false
     upload-url-ttl: 15m
     download-url-ttl: 5m
+    # SEC 06: the worker puts lifecycle rules on the bucket at start-up
+    # (staging uploads expire after a day, export archives after this
+    # retention, rounded up to whole days). Set manage-lifecycle to false
+    # when infrastructure code owns the bucket's lifecycle.
+    export-retention: ${FINANCE_EXPORT_RETENTION:7d}
+    manage-lifecycle: ${FINANCE_S3_MANAGE_LIFECYCLE:true}
   receipts:
     # REC 05, matching the client's ContentLimits.
     max-size-bytes: 20971520

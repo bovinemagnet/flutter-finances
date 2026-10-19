@@ -28,6 +28,7 @@ import com.paulsnow.finance.core.documents.PdfInspector;
 import com.paulsnow.finance.server.common.ApiException;
 import com.paulsnow.finance.server.jobs.JobService;
 import com.paulsnow.finance.server.storage.ObjectStorage;
+import com.paulsnow.finance.server.storage.Retention;
 import com.paulsnow.finance.server.storage.PresignedRequest;
 import com.paulsnow.finance.server.sync.EntityReader;
 import com.paulsnow.finance.server.sync.VisibilityService;
@@ -136,7 +137,7 @@ public class ReceiptService {
                             assetKey(workspaceId, receiptId, assetId), now, now)
                     .update();
         }
-        return storage.presignPut(uploadKey(workspaceId, assetId), contentType);
+        return storage.presignPut(uploadKey(workspaceId, assetId), contentType, Retention.STAGING);
     }
 
     /**

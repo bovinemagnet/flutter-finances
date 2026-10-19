@@ -60,6 +60,8 @@ class ReceiptsIntegrationTest extends IntegrationTestSupport {
         JsonNode intent = intent(actor, receiptId, assetId, "image/png", bytes).andExpect(status().isOk())
                 .andExpect(jsonPath("$.uploadUrl").isNotEmpty())
                 .andExpect(jsonPath("$.expiresAt").isNotEmpty())
+                // Staging uploads are tagged so the bucket lifecycle expires them (SEC 06).
+                .andExpect(jsonPath("$.headers['x-amz-tagging']").value("finance-retention=staging"))
                 .andReturn().getResponse().getContentAsString().transform(this::read);
         assertThat(put(intent, bytes)).isEqualTo(200);
 

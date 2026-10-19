@@ -7,6 +7,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
@@ -73,8 +75,12 @@ class StorageConfiguration {
         return new S3ObjectStorage(client, presigner, properties);
     }
 
-    /** Creates the bucket at startup when {@code finance.storage.create-bucket} is true. */
+    /**
+     * Creates the bucket at startup when {@code finance.storage.create-bucket}
+     * is true, before any other runner (such as the lifecycle rules) uses it.
+     */
     @Bean
+    @Order(Ordered.HIGHEST_PRECEDENCE)
     ApplicationRunner createBucket(S3Client client, StorageProperties properties) {
         return args -> {
             if (!properties.createBucket()) {

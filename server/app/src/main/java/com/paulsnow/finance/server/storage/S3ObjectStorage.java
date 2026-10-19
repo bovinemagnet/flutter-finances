@@ -48,11 +48,11 @@ class S3ObjectStorage implements ObjectStorage {
     }
 
     @Override
-    public PresignedRequest presignPut(String key, String contentType) {
+    public PresignedRequest presignPut(String key, String contentType, Retention retention) {
         PresignedPutObjectRequest signed = presigner.presignPutObject(PutObjectPresignRequest.builder()
                 .signatureDuration(properties.uploadUrlTtl())
                 .putObjectRequest(PutObjectRequest.builder().bucket(properties.bucket()).key(key)
-                        .contentType(contentType).build())
+                        .contentType(contentType).tagging(retention == null ? null : retention.tagging()).build())
                 .build());
         return new PresignedRequest(signed.url().toString(), clientHeaders(signed.signedHeaders()),
                 signed.expiration());
@@ -90,9 +90,9 @@ class S3ObjectStorage implements ObjectStorage {
     }
 
     @Override
-    public void put(String key, Path file, String contentType) {
+    public void put(String key, Path file, String contentType, Retention retention) {
         client.putObject(PutObjectRequest.builder().bucket(properties.bucket()).key(key).contentType(contentType)
-                .build(), RequestBody.fromFile(file));
+                .tagging(retention == null ? null : retention.tagging()).build(), RequestBody.fromFile(file));
     }
 
     @Override

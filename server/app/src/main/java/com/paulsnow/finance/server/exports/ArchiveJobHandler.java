@@ -28,6 +28,7 @@ import com.paulsnow.finance.server.jobs.JobHandler;
 import com.paulsnow.finance.server.jobs.PermanentJobFailure;
 import com.paulsnow.finance.server.receipts.ReceiptService;
 import com.paulsnow.finance.server.storage.ObjectStorage;
+import com.paulsnow.finance.server.storage.Retention;
 import com.paulsnow.finance.server.sync.EntityReader;
 import com.paulsnow.finance.server.sync.Visibility;
 import com.paulsnow.finance.server.sync.VisibilityService;
@@ -102,7 +103,8 @@ class ArchiveJobHandler implements JobHandler {
             write(archive, workspace, exportId, accepted, sees);
             String sha256 = sha256(archive);
             long size = Files.size(archive);
-            storage.put(ExportService.objectKey(workspaceId, exportId), archive, "application/zip");
+            storage.put(ExportService.objectKey(workspaceId, exportId), archive, "application/zip",
+                    Retention.EXPORT);
             jdbc.sql("update export_archive set status = 'ready', object_key = ?, sha256 = ?, size_bytes = ?, "
                             + "accepted_through = ?, completed_at = ? where id = ? and workspace_id = ?")
                     .params(ExportService.objectKey(workspaceId, exportId), sha256, size, accepted,
