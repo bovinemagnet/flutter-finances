@@ -4,5 +4,10 @@ environment:
   sdk: ^3.13.0
 workspace:
   - packages/finance_core
+  - packages/finance_store
 dev_dependencies:
   lints: ^6.1.0
+hooks:
+  user_defines:
+    sqlite3:
+      source: sqlite3mc
