@@ -66,6 +66,14 @@ All signing keys come from repository secrets, listed in `tool/packaging/README.
 
 `apps/finance_app/android/app/build.gradle.kts` compiles against `compileSdk = 37`, which the sharing plugin (`receive_sharing_intent`) requires. It also enables core library desugaring (`isCoreLibraryDesugaringEnabled` with `coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")`), because `flutter_local_notifications` uses `java.time` on older Android versions. Source and target compatibility is Java 17, and the Android jobs install JDK 21 to run Gradle.
 
+== iOS build settings
+
+The deployment target is iOS 15.5 (`IPHONEOS_DEPLOYMENT_TARGET` in `apps/finance_app/ios/Runner.xcodeproj/project.pbxproj`), the minimum that the CocoaPods for `google_mlkit_text_recognition` and `google_mlkit_commons` require. There is no committed Podfile, so CocoaPods takes the platform from the Runner target.
+
+== Windows build settings
+
+`apps/finance_app/windows/CMakeLists.txt` defines `_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS`. `local_auth_windows` still compiles with `/await`, and without the definition Visual Studio 2026 turns its `<experimental/coroutine>` header into a hard error (STL1011).
+
 == Linux packages
 
 `tool/packaging/linux/build-deb.sh` packages the output of `flutter build linux --release`. It always writes `finance-app-<version>-linux-<arch>.tar.gz`, containing the bundle and a `share/` directory with the desktop file, icons and AppStream metainfo. With `dpkg-deb` available it also writes `finance-app_<version>_<arch>.deb`, which installs the bundle in `/opt/finance-app` with a `/usr/bin/finance-app` launcher. The package depends on GTK 3, libsecret (the database key lives in the Secret Service, see SEC 02), WebKitGTK 4.1 and libsoup 3.
@@ -79,7 +87,8 @@ All signing keys come from repository secrets, listed in `tool/packaging/README.
 Sharing a file into the app on iOS needs a Share Extension target that shares an App Group with the app. `apps/finance_app/ios/tool/add_share_extension.rb` adds it to `Runner.xcodeproj` with the `xcodeproj` gem (version 1.24 or later), so it can run on any machine with Ruby, and it is idempotent:
 
 * it gives the app the bundle id `com.paulsnow.finance.app` and `Runner/Runner.entitlements` with the App Group `group.com.paulsnow.finance.app`;
-* it creates the `ShareExtension` target (bundle id `com.paulsnow.finance.app.ShareExtension`) from `apps/finance_app/ios/ShareExtension`, with its own entitlements and the `receive-sharing-intent` Swift package product; and
+* it creates the `ShareExtension` target (bundle id `com.paulsnow.finance.app.ShareExtension`) from `apps/finance_app/ios/ShareExtension`, with its own entitlements and the `receive-sharing-intent` Swift package product;
+* it references the `receive_sharing_intent` Swift package at `Flutter/ephemeral/Packages/.packages/receive_sharing_intent-<version>`, the versioned symlink that Flutter creates during `flutter build ios`. The version is read from the workspace `pubspec.lock`, and on a plugin upgrade the script repoints the existing package reference rather than adding another; and
 * it embeds the extension in the app ("Embed Foundation Extensions", ahead of "Thin Binary") and adds it as a dependency.
 
 `build.yml` runs the script before `flutter build ios --no-codesign`, and the `ios` job in `release.yml` runs it before the signed build. Both check that `ShareExtension.appex` is embedded. A developer with Xcode may instead run it once and commit the updated `project.pbxproj`.
@@ -90,7 +99,7 @@ The handoff uses the App Group. When the user shares a receipt photo or PDF, `Sh
 
 * *iOS distribution.* `release.yml` builds and signs the App Store IPA, but the `ios` job has not yet run on GitHub Actions and is unverified until the first tagged release. Uploading the IPA to TestFlight is a manual step, using Transporter or `xcrun altool`.
 * *Store submission and updates.* Store submission and an update mechanism are not defined. A release is a draft GitHub release that a person publishes.
-* *Platform verification.* Builds are produced for Android, macOS and Windows, but they have not been run and verified on those systems in this workflow.
+* *Platform verification.* The `Build` workflow (`build.yml`) passes on GitHub Actions for Android, iOS (unsigned, with the share extension embedded), macOS, Windows and Linux, and `CI` passes. The built apps have not been run and verified on those systems in this workflow, and the signed `release.yml` jobs remain unverified until the first tagged release.
 
 == Server and documentation builds
 
