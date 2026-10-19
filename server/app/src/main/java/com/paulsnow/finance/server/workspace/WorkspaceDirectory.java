@@ -36,6 +36,10 @@ public class WorkspaceDirectory {
 
     private static final Duration LAST_SEEN_GRANULARITY = Duration.ofMinutes(1);
 
+    /** Hides a deleted workspace that a restored backup brought back (SEC 06). */
+    private static final String NOT_SUPPRESSED = " and not exists (select 1 from workspace_deletion_suppression s "
+            + "where s.workspace_id = w.id)";
+
     private final JdbcClient jdbc;
     private final Clock clock;
 
@@ -73,8 +77,8 @@ public class WorkspaceDirectory {
      * @return the workspace, or empty when unknown or being deleted
      */
     public Optional<WorkspaceInfo> findActive(UUID workspaceId) {
-        return jdbc.sql("select id, name, currency, currency_exponent, timezone from workspace "
-                        + "where id = ? and status = 'active'")
+        return jdbc.sql("select id, name, currency, currency_exponent, timezone from workspace w "
+                        + "where id = ? and status = 'active'" + NOT_SUPPRESSED)
                 .param(workspaceId)
                 .query(WorkspaceDirectory::mapWorkspace)
                 .optional();
@@ -91,7 +95,7 @@ public class WorkspaceDirectory {
     public CurrentMember requireMember(CurrentUser user, UUID workspaceId) {
         return jdbc.sql("select w.id, w.name, w.currency, w.currency_exponent, w.timezone, m.role "
                         + "from workspace w join membership m on m.workspace_id = w.id "
-                        + "where w.id = ? and m.user_id = ? and w.status = 'active'")
+                        + "where w.id = ? and m.user_id = ? and w.status = 'active'" + NOT_SUPPRESSED)
                 .params(workspaceId, user.id())
                 .query((rs, row) -> new CurrentMember(user, mapWorkspace(rs, row), rs.getString("role")))
                 .optional()
@@ -113,7 +117,9 @@ public class WorkspaceDirectory {
                 .filter(d -> d.userId().equals(user.id()))
                 .orElseThrow(() -> ApiException.forbidden("DEVICE_NOT_AUTHORISED",
                         "This device is not registered to you."));
-        if (device.revokedAt() != null) {
+        // A device of a deleted workspace stays revoked even if a restored
+        // backup brought its row back (SEC 06).
+        if (device.revokedAt() != null || isDeletionSuppressed(device.workspaceId())) {
             throw ApiException.forbidden("DEVICE_REVOKED", "This device's cloud access has been revoked.");
         }
         if (expectedWorkspaceId != null && !expectedWorkspaceId.equals(device.workspaceId())) {
@@ -149,6 +155,18 @@ public class WorkspaceDirectory {
     public boolean isDeletionSuppressed(UUID workspaceId) {
         return jdbc.sql("select count(*) from workspace_deletion_suppression where workspace_id = ?")
                 .param(workspaceId).query(Long.class).single() > 0;
+    }
+
+    /**
+     * Lists deleted workspaces whose rows exist again, for example after a
+     * database backup taken before the deletion was restored (SEC 06).
+     *
+     * @return workspace identifiers with a suppression record and a workspace row
+     */
+    public List<UUID> suppressedButPresent() {
+        return jdbc.sql("select w.id from workspace w join workspace_deletion_suppression s "
+                        + "on s.workspace_id = w.id order by w.id")
+                .query(UUID.class).list();
     }
 
     /**
@@ -232,7 +250,7 @@ public class WorkspaceDirectory {
     List<CurrentMember> membershipsOf(CurrentUser user) {
         return jdbc.sql("select w.id, w.name, w.currency, w.currency_exponent, w.timezone, m.role "
                         + "from workspace w join membership m on m.workspace_id = w.id "
-                        + "where m.user_id = ? and w.status = 'active' order by w.created_at")
+                        + "where m.user_id = ? and w.status = 'active'" + NOT_SUPPRESSED + " order by w.created_at")
                 .param(user.id())
                 .query((rs, row) -> new CurrentMember(user, mapWorkspace(rs, row), rs.getString("role")))
                 .list();

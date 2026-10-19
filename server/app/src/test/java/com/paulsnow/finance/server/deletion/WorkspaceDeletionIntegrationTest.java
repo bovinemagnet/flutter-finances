@@ -130,6 +130,58 @@ class WorkspaceDeletionIntegrationTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.error").value("WORKSPACE_DELETED"));
     }
 
+    @Autowired
+    SuppressionEnforcer enforcer;
+
+    @Test
+    void aSuppressedWorkspaceRestoredFromABackupIsRefusedAndPurgedAgain() throws Exception {
+        // A workspace with data, whose deletion suppression record survived
+        // a database restore that brought the workspace itself back.
+        Actor owner = newActor();
+        String bank = createAccount(owner, "transaction");
+        String groceries = createCategory(owner, "expense");
+        submitOne(owner, postJournal(owner, expenseJournal(Ids.newId(), bank, groceries, 6325, "posted"), 0));
+        changes(owner, null);
+        String receiptId = Ids.newId();
+        submitOne(owner, upsert(owner, "receipt", receiptId, 0, Map.of("status", "captured")));
+        String objectKey = uploadReceipt(owner, receiptId);
+        Actor bystander = newActor();
+        jdbc.sql("insert into workspace_deletion_suppression (workspace_id, deleted_at) values (?, now())")
+                .param(owner.workspaceId()).update();
+
+        // Sync and setup requests are refused at once.
+        mvc.perform(get("/v1/sync/changes").with(user(owner.subject()))
+                        .header("X-Device-Id", owner.deviceId().toString()))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.error").value("DEVICE_REVOKED"));
+        mvc.perform(get("/v1/workspaces/" + owner.workspaceId()).with(user(owner.subject())))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.error").value("WORKSPACE_NOT_FOUND"));
+        mvc.perform(get("/v1/workspaces").with(user(owner.subject())))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        mvc.perform(post("/v1/devices").with(user(owner.subject())).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("deviceId", Ids.newId(),
+                                "workspaceId", owner.workspaceId().toString(), "name", "Phone",
+                                "platform", "android"))))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.error").value("WORKSPACE_NOT_FOUND"));
+        mvc.perform(post("/v1/receipts/upload-intents").with(user(owner.subject()))
+                        .header("X-Workspace-Id", owner.workspaceId().toString())
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isNotFound());
+
+        assertThat(enforcer.enforce()).isEqualTo(1);
+
+        for (String table : WORKSPACE_TABLES) {
+            assertThat(jdbc.sql("select count(*) from " + table + " where workspace_id = ?")
+                    .param(owner.workspaceId()).query(Long.class).single()).as(table).isZero();
+        }
+        assertThat(jdbc.sql("select count(*) from workspace where id = ?").param(owner.workspaceId())
+                .query(Long.class).single()).isZero();
+        assertThat(storage.head(objectKey)).isEmpty();
+        assertThat(jdbc.sql("select count(*) from workspace where id = ?").param(bystander.workspaceId())
+                .query(Long.class).single()).isEqualTo(1);
+        // Nothing is left to enforce.
+        assertThat(enforcer.enforce()).isZero();
+    }
+
     @Test
     void onlyAnOwnerCanDelete() throws Exception {
         Actor owner = newActor();
