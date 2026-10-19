@@ -328,6 +328,27 @@ class SyncCommandsIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    void toleratesAndPreservesAdditiveFieldsFromNewerClients() throws Exception {
+        Actor actor = newActor();
+        String bank = createAccount(actor, "transaction");
+        String groceries = createCategory(actor, "expense");
+        ObjectNode journal = expenseJournal(Ids.newId(), bank, groceries, 100, "posted");
+        journal.put("merchantRef", "future-field");
+        ObjectNode command = postJournal(actor, journal, 0);
+        command.put("groupId", Ids.newId());
+        command.put("clientBuild", 42);
+        assertThat(submitOne(actor, command).path("status").asString()).isEqualTo("applied");
+        JsonNode stored = null;
+        for (JsonNode change : changes(actor, null).path("changes")) {
+            if (change.path("entityId").asString().equals(journal.path("id").asString())) {
+                stored = change.path("data");
+            }
+        }
+        assertThat(stored).isNotNull();
+        assertThat(stored.path("merchantRef").asString()).isEqualTo("future-field");
+    }
+
+    @Test
     void reevaluatesARejectedCommandWhenItIsRetriedWithANewBase() throws Exception {
         Actor phone = newActor();
         Actor tablet = secondDevice(phone);
