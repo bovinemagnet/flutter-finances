@@ -55,7 +55,8 @@ class Recurrence {
     this.until,
     this.count,
     this.monthEnd = MonthEndRule.clamp,
-  }) {
+    int? dayOfMonth,
+  }) : dayOfMonth = dayOfMonth ?? start.day {
     if (interval < 1) {
       throw ArgumentError.value(interval, 'interval', 'must be at least 1');
     }
@@ -66,6 +67,16 @@ class Recurrence {
         (!frequency.isMonthBased || !start.isLastDayOfMonth)) {
       throw ArgumentError(
         'The last-day rule needs a month-based frequency starting on a month end',
+      );
+    }
+    if (this.dayOfMonth < 1 ||
+        this.dayOfMonth > 31 ||
+        (frequency.isMonthBased &&
+            monthEnd == MonthEndRule.clamp &&
+            start.addMonths(0, intendedDay: this.dayOfMonth) != start)) {
+      throw ArgumentError(
+        'The start must be the intended day ${this.dayOfMonth}, clamped to '
+        'its month',
       );
     }
   }
@@ -82,6 +93,11 @@ class Recurrence {
   /// Maximum number of occurrences.
   final int? count;
   final MonthEndRule monthEnd;
+
+  /// The intended day of month for month-based repeats with the clamp rule.
+  /// Defaults to the start's day; a series continued from a clamped date
+  /// (28 February for a 31st) keeps 31 so later dates do not drift.
+  final int dayOfMonth;
 
   bool get isBounded => until != null || count != null;
 
@@ -100,7 +116,7 @@ class Recurrence {
         LocalDate.daysInMonth(first.year, first.month),
       );
     }
-    return start.addMonths(months, intendedDay: start.day);
+    return start.addMonths(months, intendedDay: dayOfMonth);
   }
 
   /// Index of the last unbounded occurrence on or before [date]; negative
@@ -120,6 +136,12 @@ class Recurrence {
       index++;
     }
     return index;
+  }
+
+  /// Whether [date] is an occurrence of this series within its bounds.
+  bool isOccurrence(LocalDate date) {
+    final n = indexOnOrBefore(date);
+    return occurrence(n) == date && _inBounds(n, date);
   }
 
   bool _inBounds(int n, LocalDate date) =>
@@ -161,6 +183,7 @@ class Recurrence {
     int? count,
     bool clearCount = false,
     MonthEndRule? monthEnd,
+    int? dayOfMonth,
   }) => Recurrence(
     frequency: frequency ?? this.frequency,
     start: start ?? this.start,
@@ -168,6 +191,7 @@ class Recurrence {
     until: clearUntil ? null : until ?? this.until,
     count: clearCount ? null : count ?? this.count,
     monthEnd: monthEnd ?? this.monthEnd,
+    dayOfMonth: dayOfMonth ?? (start == null ? this.dayOfMonth : null),
   );
 
   @override
@@ -178,11 +202,19 @@ class Recurrence {
       other.interval == interval &&
       other.until == until &&
       other.count == count &&
-      other.monthEnd == monthEnd;
+      other.monthEnd == monthEnd &&
+      other.dayOfMonth == dayOfMonth;
 
   @override
-  int get hashCode =>
-      Object.hash(frequency, start, interval, until, count, monthEnd);
+  int get hashCode => Object.hash(
+    frequency,
+    start,
+    interval,
+    until,
+    count,
+    monthEnd,
+    dayOfMonth,
+  );
 }
 
 int _floorDiv(int a, int b) {

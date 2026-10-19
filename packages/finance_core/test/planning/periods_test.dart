@@ -42,6 +42,24 @@ void main() {
       expect(rule.occurrence(2), d('2028-03-31'));
     });
 
+    test('an explicit intended day survives a start on a clamped date', () {
+      final rule = Recurrence(
+        frequency: Frequency.monthly,
+        start: d('2027-02-28'),
+        dayOfMonth: 31,
+      );
+      expect(rule.occurrence(0), d('2027-02-28'));
+      expect(rule.occurrence(1), d('2027-03-31'));
+      expect(
+        () => Recurrence(
+          frequency: Frequency.monthly,
+          start: d('2027-03-28'),
+          dayOfMonth: 31,
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('last-day rule keeps month ends', () {
       final rule = Recurrence(
         frequency: Frequency.monthly,
