@@ -194,7 +194,22 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
                 icon: const Icon(Icons.auto_fix_high_outlined),
                 label: const Text('Improve readability'),
                 onPressed: () async {
-                  final page = pages.first;
+                  final page = pages.length == 1
+                      ? pages.single
+                      : await showDialog<ReceiptPage>(
+                          context: context,
+                          builder: (context) => SimpleDialog(
+                            title: const Text('Which page?'),
+                            children: [
+                              for (final p in pages)
+                                SimpleDialogOption(
+                                  onPressed: () => Navigator.of(context).pop(p),
+                                  child: Text('Page ${p.pageNumber}'),
+                                ),
+                            ],
+                          ),
+                        );
+                  if (page == null || !context.mounted) return;
                   final record = state.store.vault.asset(page.sourceAssetId);
                   if (record == null ||
                       record.contentType == 'application/pdf') {

@@ -80,13 +80,10 @@ class SettingsPage extends StatelessWidget {
     );
     if (path == null) return;
     try {
-      final summary = await exportBackup(
-        state.store,
-        File(path),
-        recoverySecret: secret,
-      );
+      await exportBackup(state.store, File(path), recoverySecret: secret);
+      await state.recordBackup();
       messenger.showSnackBar(
-        SnackBar(content: Text('Backup saved: ${summary.toString()}')),
+        const SnackBar(content: Text('Encrypted backup saved')),
       );
     } on Exception catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Backup failed: $e')));

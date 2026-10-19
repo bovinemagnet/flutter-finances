@@ -15,6 +15,38 @@ Future<void> openTransactionEditor(
 }) async {
   final state = AppScope.of(context);
   final messenger = ScaffoldMessenger.of(context);
+  final saved = state.entryDraft;
+  if (journal == null && prefilled == null && saved != null) {
+    final resume = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Continue your unsaved entry?'),
+        content: Text(
+          '${saved['payee'] ?? ''} ${saved['amountText'] ?? ''}'.trim(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Discard'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    if (!context.mounted) return;
+    if (resume == true) {
+      prefilled = TransactionFormModel.fromDraftJson(
+        state.chart,
+        saved,
+        today: state.today(),
+      );
+    }
+    await state.clearEntryDraft();
+    if (!context.mounted) return;
+  }
   final model =
       prefilled ??
       (journal == null
@@ -66,6 +98,21 @@ Future<void> openTransactionEditor(
         ),
         body: TransactionForm(
           model: model,
+          onInterrupted: (m) => state.saveEntryDraft(m.toDraftJson()),
+          refundCandidates:
+              (state.ledger.journals
+                      .where(
+                        (j) =>
+                            j.type == TransactionType.expense &&
+                            j.status == JournalStatus.posted &&
+                            j.amount != null,
+                      )
+                      .toList()
+                    ..sort(
+                      (a, b) => b.effectiveDate.compareTo(a.effectiveDate),
+                    ))
+                  .take(50)
+                  .toList(),
           onCancel: () => Navigator.of(context).pop(false),
           onSave: (draft) async {
             if (journal == null) {
