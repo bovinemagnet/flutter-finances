@@ -231,6 +231,74 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
               ),
             if (pages.length > 1)
               OutlinedButton.icon(
+                icon: const Icon(Icons.auto_awesome_outlined),
+                label: const Text('Suggest how to split'),
+                onPressed: () async {
+                  final recogniser = AppScope.servicesOf(context)
+                      .textRecogniser;
+                  final messenger = ScaffoldMessenger.of(context);
+                  if (!await recogniser.isAvailable()) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Reading text is not available on this device; '
+                          'separate pages by hand',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+                  final proposal = await service.suggestSeparation(
+                    receipt.id,
+                    recogniser,
+                  );
+                  if (!context.mounted) return;
+                  if (proposal.isSingleReceipt) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text('This looks like a single receipt'),
+                      ),
+                    );
+                    return;
+                  }
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: Text(
+                        'Split into ${proposal.groups.length} receipts?',
+                      ),
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (final group in proposal.groups)
+                            Text(
+                              'Pages ${group.pages.map((p) => p + 1).join(', ')}'
+                              '${group.merchantHint == null ? '' : ' · ${group.merchantHint}'}'
+                              ' · ${group.confidence.name} confidence'
+                              '${group.needsManualSplit ? ' · a page holds more than one receipt' : ''}',
+                            ),
+                        ],
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: const Text('Keep together'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          child: const Text('Split'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed == true) {
+                    await service.applySeparation(receipt.id, proposal);
+                  }
+                },
+              ),
+            if (pages.length > 1)
+              OutlinedButton.icon(
                 icon: const Icon(Icons.call_split),
                 label: const Text('Separate pages'),
                 onPressed: () async {

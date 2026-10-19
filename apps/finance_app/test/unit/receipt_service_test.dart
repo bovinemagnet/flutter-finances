@@ -343,4 +343,32 @@ void main() {
     expect(reminders.single.title, 'Warranty ending');
     expect(reminders.single.privateBody, isNot(contains('Kettle')));
   });
+
+  test('a multi-receipt capture gets a suggested split to confirm', () async {
+    final receipt = await receipts.capture([
+      CapturedFile(photo(), source: CaptureSource.camera),
+      CapturedFile(photo(), source: CaptureSource.camera),
+    ]);
+    final texts = [
+      'CORNER CAFE\n19/10/2026\nFlat white 5.00\nTOTAL 5.00\n',
+      'FRESH GROCER PTY LTD\n18/10/2026\nMilk 3.80\nTOTAL 3.80\n',
+    ];
+    var call = 0;
+    final proposal = await receipts.suggestSeparation(
+        receipt.id, _PerPageRecogniser(() => texts[call++]));
+    expect(proposal.groups, hasLength(2));
+    final created = await receipts.applySeparation(receipt.id, proposal);
+    expect(created, hasLength(1));
+    expect(receipts.receipts(), hasLength(2));
+  });
+}
+
+class _PerPageRecogniser implements TextRecogniser {
+  _PerPageRecogniser(this.next);
+  final String Function() next;
+  @override
+  Future<bool> isAvailable() async => true;
+  @override
+  Future<OcrResult> recognise(List<Uint8List> images) async =>
+      OcrResult.fromText(next(), engine: 'fake', engineVersion: '1');
 }

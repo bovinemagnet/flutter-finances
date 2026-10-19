@@ -504,6 +504,42 @@ class ReceiptService {
     return written;
   }
 
+  /// Reads each image page on its own and proposes where separate receipts
+  /// start (P1 automatic separation). Nothing changes until
+  /// [applySeparation] is called with the user's confirmation.
+  Future<ReceiptSeparationProposal> suggestSeparation(
+    String receiptId,
+    TextRecogniser recogniser,
+  ) async {
+    final results = <OcrResult>[];
+    for (final page in pagesFor(receiptId)) {
+      final record = _store.vault.asset(page.sourceAssetId);
+      if (record == null || record.contentType == 'application/pdf') {
+        results.add(
+          OcrResult(engine: 'none', engineVersion: '0', lines: const []),
+        );
+        continue;
+      }
+      results.add(await recogniser.recognise([await readPage(page)]));
+    }
+    return proposeReceiptSeparation(
+      results,
+      dateConvention: state.dateConvention,
+    );
+  }
+
+  /// Applies a confirmed separation proposal; returns the new receipts.
+  Future<List<Receipt>> applySeparation(
+    String receiptId,
+    ReceiptSeparationProposal proposal,
+  ) {
+    final pages = pagesFor(receiptId);
+    return splitPages(receiptId, [
+      for (final group in proposal.groups)
+        [for (final index in group.pages) pages[index].pageNumber],
+    ]);
+  }
+
   /// Ranked candidate transactions for a receipt (MATCH 01).
   List<MatchCandidate> candidates(
     ReceiptFields fields, {
