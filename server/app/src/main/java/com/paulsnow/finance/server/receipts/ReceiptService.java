@@ -279,17 +279,15 @@ public class ReceiptService {
     }
 
     /**
-     * Removes every document of a workspace, records and objects
-     * (deletion job).
+     * Removes a workspace's document records (deletion job); the deletion
+     * job removes the stored objects with the workspace's key prefix.
      *
      * @param workspaceId workspace being deleted
-     * @return objects removed
+     * @return records removed
      */
     public int purgeWorkspace(UUID workspaceId) {
-        int objects = storage.deletePrefix("workspaces/" + workspaceId + "/");
-        jdbc.sql("delete from receipt_document where workspace_id = ?").param(workspaceId).update();
-        jdbc.sql("delete from receipt_asset where workspace_id = ?").param(workspaceId).update();
-        return objects;
+        int assets = jdbc.sql("delete from receipt_asset where workspace_id = ?").param(workspaceId).update();
+        return assets + jdbc.sql("delete from receipt_document where workspace_id = ?").param(workspaceId).update();
     }
 
     private void reject(String staging, String code) {
