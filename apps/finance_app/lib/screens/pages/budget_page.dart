@@ -119,8 +119,9 @@ class _BudgetPageState extends State<BudgetPage> {
         ],
       ),
     );
-    if (value != null && value.isPositive)
+    if (value != null && value.isPositive) {
       await state.allocateToGoal(progress.goal.id, value);
+    }
   }
 
   @override

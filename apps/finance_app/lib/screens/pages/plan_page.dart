@@ -352,8 +352,9 @@ class _ScheduleEditorState extends State<ScheduleEditor> {
                   firstDate: DateTime(2000),
                   lastDate: DateTime(2100),
                 );
-                if (picked != null)
+                if (picked != null) {
                   setState(() => _start = LocalDate.fromDateTime(picked));
+                }
               },
             ),
           ),

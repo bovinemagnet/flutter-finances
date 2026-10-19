@@ -10,8 +10,9 @@ Future<void> scanReceipt(BuildContext context) async {
   final messenger = ScaffoldMessenger.of(context);
   if (!await services.scanner.isAvailable()) {
     final files = await services.fileImporter.pickReceipts();
-    if (context.mounted && files.isNotEmpty)
+    if (context.mounted && files.isNotEmpty) {
       await saveCapturedReceipt(context, files);
+    }
     return;
   }
   try {

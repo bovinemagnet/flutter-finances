@@ -75,7 +75,7 @@ class TransactionsPage extends StatelessWidget {
       );
     }
 
-    final list = (bool onlyUnreviewed) => TransactionList(
+    TransactionList list(bool onlyUnreviewed) => TransactionList(
       items: onlyUnreviewed ? items.where((i) => !i.reviewed).toList() : items,
       categories: chart.categories.toList(),
       onOpen: (j) => openTransactionEditor(context, journal: j),

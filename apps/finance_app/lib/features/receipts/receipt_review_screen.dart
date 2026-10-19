@@ -198,8 +198,9 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
                   firstDate: DateTime(2000),
                   lastDate: DateTime(2100),
                 );
-                if (picked != null)
+                if (picked != null) {
                   setState(() => _date = LocalDate.fromDateTime(picked));
+                }
               },
             ),
           ),
@@ -467,8 +468,9 @@ class _PagePreview extends StatelessWidget {
                   child: Text('The image is not on this device yet'),
                 );
               }
-              if (!snapshot.hasData)
+              if (!snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
+              }
               final bytes = snapshot.data!;
               final isPdf =
                   bytes.length > 4 &&

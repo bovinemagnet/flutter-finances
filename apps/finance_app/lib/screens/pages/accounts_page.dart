@@ -257,8 +257,9 @@ class _ReconcileScreenState extends State<ReconcileScreen> {
                       firstDate: DateTime(2000),
                       lastDate: DateTime(2100),
                     );
-                    if (picked != null)
+                    if (picked != null) {
                       setState(() => _date = LocalDate.fromDateTime(picked));
+                    }
                   },
                   child: Text('as at ${formatDate(_date)}'),
                 ),
