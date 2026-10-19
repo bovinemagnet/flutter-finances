@@ -4,6 +4,8 @@ import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
 import 'package:test/test.dart';
 
+import 'support/devices.dart';
+import 'support/fake_server.dart';
 import 'support/store_fixtures.dart';
 
 Duration p95(List<Duration> samples) {
@@ -122,4 +124,24 @@ void main() {
     print('SQL balance and period total: ${sw.elapsedMilliseconds} ms');
     expect(balance, -expenses);
   }, timeout: const Timeout(Duration(minutes: 5)));
+
+  test('enabling sync uploads a large local history in bounded time', () async {
+    final server = FakeSyncServer(workspaceId: 'ws-bulk');
+    final device = Device.wrap('bulk', store, server);
+    for (var i = 0; i < 3000; i++) {
+      await store.postTransaction(expense('1.00', payee: 'Item $i'));
+    }
+    final preview = await device.client.previewBootstrap(
+      remoteWorkspaceId: 'ws-bulk',
+    );
+    await device.client.enableSync(preview);
+    final sw = Stopwatch()..start();
+    final report = await device.sync();
+    print(
+      'Pushed ${report.push.sent} commands in ${sw.elapsedMilliseconds} ms',
+    );
+    expect(report.push.accepted, 3005);
+    expect(server.live('journal'), hasLength(3000));
+    expect(sw.elapsed, lessThan(const Duration(seconds: 60)));
+  }, timeout: const Timeout(Duration(minutes: 3)));
 }

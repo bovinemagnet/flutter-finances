@@ -207,11 +207,31 @@ class Outbox {
 
   /// [start] and every later pending command that shares an entity with it,
   /// transitively. Reverting or holding [start] must include all of them.
+  ///
+  /// Candidates are found through the indexed `outbox_keys` table, so the
+  /// cost does not grow with the number of unrelated pending commands.
   List<OutboxEntry> closure(OutboxEntry start) {
+    final candidates = <int>{};
+    final seen = <EntityRef>{};
+    final queue = [...start.keys];
+    while (queue.isNotEmpty) {
+      final key = queue.removeLast();
+      if (!seen.add(key)) continue;
+      final rows = db.select(
+        'SELECT seq FROM outbox_keys WHERE entity_type = ? AND entity_id = ? '
+        'AND seq > ?',
+        [key.type, key.id, start.seq],
+      );
+      for (final row in rows) {
+        final seq = row['seq'] as int;
+        if (candidates.add(seq)) queue.addAll(bySeq(seq)!.keys);
+      }
+    }
     final keys = {...start.keys};
     final result = [start];
-    for (final entry in pending()) {
-      if (entry.seq <= start.seq) continue;
+    for (final seq in candidates.toList()..sort()) {
+      final entry = bySeq(seq)!;
+      if (entry.status != OutboxStatus.pending) continue;
       if (entry.keys.any(keys.contains)) {
         result.add(entry);
         keys.addAll(entry.keys);
@@ -219,6 +239,15 @@ class Outbox {
     }
     return result;
   }
+
+  /// Pending commands whose primary entity is [ref], recorded after
+  /// [afterSeq].
+  List<OutboxEntry> pendingFor(EntityRef ref, {required int afterSeq}) =>
+      _query(
+        "status = 'pending' AND entity_type = ? AND entity_id = ? "
+        'AND seq > ? ORDER BY seq',
+        [ref.type, ref.id, afterSeq],
+      );
 
   /// Moves a command out of `pending`; it then no longer marks its
   /// entities as unsynced.

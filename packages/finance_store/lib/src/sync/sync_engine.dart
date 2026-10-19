@@ -131,19 +131,18 @@ class SyncEngine {
     for (final ref in created) {
       if (_state.revision(ref) == 0) _state.setRevision(ref, 1);
     }
-    for (final later in _outbox.pending()) {
-      if (later.seq <= entry.seq) continue;
-      final c = later.command;
-      int? base;
-      if (later.primary == primary &&
-          revision != null &&
-          c.baseRevision == entry.command.baseRevision) {
-        base = revision;
-      } else if (created.contains(later.primary) && c.baseRevision == 0) {
-        base = 1;
+    if (revision != null) {
+      for (final later in _outbox.pendingFor(primary, afterSeq: entry.seq)) {
+        if (later.command.baseRevision == entry.command.baseRevision) {
+          _outbox.updateCommand(later.seq, _withBase(later.command, revision));
+        }
       }
-      if (base != null) {
-        _outbox.updateCommand(later.seq, _withBase(c, base));
+    }
+    for (final ref in created) {
+      for (final later in _outbox.pendingFor(ref, afterSeq: entry.seq)) {
+        if (later.command.baseRevision == 0) {
+          _outbox.updateCommand(later.seq, _withBase(later.command, 1));
+        }
       }
     }
   }
