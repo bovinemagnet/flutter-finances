@@ -215,4 +215,19 @@ void main() {
       );
     },
   );
+
+  test('a what-if scenario changes the projection but never the ledger', () async {
+    await onboard();
+    final journalsBefore = state.ledger.journals.length;
+    final base = state.forecast().lowestBalance;
+    final scenario = Scenario(id: 's', name: 'What if', changes: [
+      OneOffChange(
+          id: 'c1', date: today.addDays(3), accountId: 'bank', amount: Money(-150000, aud)),
+    ]);
+    final projected = state.forecast(scenario: scenario);
+    expect(projected.lowestBalance, base - Money(150000, aud));
+    expect(projected.includesHypothetical, isTrue);
+    expect(state.ledger.journals, hasLength(journalsBefore));
+    expect(state.unsyncedCount, isNot(0));
+  });
 }

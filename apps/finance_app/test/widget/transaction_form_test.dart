@@ -1,7 +1,7 @@
 import 'package:finance_app/features/transactions/transaction_form.dart';
 import 'package:finance_app/features/transactions/transaction_form_model.dart';
 import 'package:finance_core/finance_core.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Split;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
@@ -117,5 +117,42 @@ void main() {
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
     expect(model.amount, Money(1230, Currency.aud));
+  });
+
+  testWidgets('a refund links to the original purchase (FIN 06)', (tester) async {
+    tester.view.physicalSize = const Size(500, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final original = JournalFactory(chart).build(TransactionDraft(
+      type: TransactionType.expense,
+      accountId: 'card',
+      amount: Money(10000, Currency.aud),
+      effectiveDate: LocalDate(2026, 9, 20),
+      payee: 'Outdoor Store',
+      splits: [Split('groceries', Money(10000, Currency.aud))],
+    ));
+    final saved = <TransactionDraft>[];
+    final model = TransactionFormModel(chart, today: LocalDate(2026, 10, 19));
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: TransactionForm(
+          model: model,
+          refundCandidates: [original],
+          onSave: (d) async => saved.add(d),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('Refund'));
+    await tester.pump();
+    await tester.tap(find.text('Refund of'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Outdoor Store').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'Amount'), '40');
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    expect(saved.single.refundOf, original.id);
+    expect(saved.single.accountId, 'card');
+    expect(saved.single.splits.single.categoryId, 'groceries');
   });
 }

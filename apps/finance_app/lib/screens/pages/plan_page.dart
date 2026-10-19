@@ -20,6 +20,184 @@ class PlanPage extends StatefulWidget {
 class _PlanPageState extends State<PlanPage> {
   LocalDate? _month;
 
+  /// Hypothetical changes; they alter only the projection (PLAN 03).
+  final _whatIf = <ScenarioChange>[];
+
+  Future<void> _addOneOff() async {
+    final state = AppScope.of(context);
+    final description = TextEditingController();
+    final amount = TextEditingController();
+    var outgoing = true;
+    String? accountId = state.chart.accounts
+        .where((a) => a.type.isLiquid && a.includeInForecast)
+        .firstOrNull
+        ?.id;
+    var date = state.today().addDays(7);
+    final change = await showDialog<OneOffChange>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('What if…'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: true, label: Text('Money out')),
+                    ButtonSegment(value: false, label: Text('Money in')),
+                  ],
+                  selected: {outgoing},
+                  onSelectionChanged: (v) =>
+                      setState(() => outgoing = v.single),
+                ),
+                TextField(
+                  controller: description,
+                  decoration: const InputDecoration(labelText: 'Description'),
+                ),
+                TextField(
+                  controller: amount,
+                  decoration: const InputDecoration(
+                    labelText: 'Amount',
+                    prefixText: r'$ ',
+                  ),
+                ),
+                DropdownButtonFormField<String>(
+                  initialValue: accountId,
+                  decoration: const InputDecoration(labelText: 'Account'),
+                  items: [
+                    for (final a in state.chart.accounts.where(
+                      (a) => a.type.isLiquid,
+                    ))
+                      DropdownMenuItem(value: a.id, child: Text(a.name)),
+                  ],
+                  onChanged: (v) => setState(() => accountId = v),
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('On ${formatDate(date)}'),
+                  trailing: TextButton(
+                    child: const Text('Change'),
+                    onPressed: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime(date.year, date.month, date.day),
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null)
+                        setState(() => date = LocalDate.fromDateTime(picked));
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                try {
+                  final value = evaluateAmountExpression(
+                    amount.text,
+                    state.currency,
+                  );
+                  if (accountId == null) return;
+                  Navigator.of(context).pop(
+                    OneOffChange(
+                      id: newId(),
+                      date: date,
+                      accountId: accountId!,
+                      amount: outgoing ? -value : value,
+                      description: description.text.trim().isEmpty
+                          ? 'What if'
+                          : description.text.trim(),
+                    ),
+                  );
+                } on FormatException {
+                  return;
+                }
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (change != null) setState(() => _whatIf.add(change));
+  }
+
+  Future<void> _skipSchedule() async {
+    final state = AppScope.of(context);
+    final schedule = await showDialog<RecurringSchedule>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('What if this stopped?'),
+        children: [
+          for (final s in state.schedules)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(s),
+              child: Text(s.name),
+            ),
+        ],
+      ),
+    );
+    if (schedule != null) {
+      setState(
+        () => _whatIf.add(
+          RemoveScheduleChange(id: newId(), scheduleId: schedule.id),
+        ),
+      );
+    }
+  }
+
+  Widget _forecastTab(AppState state) {
+    final scenario = _whatIf.isEmpty
+        ? null
+        : Scenario(id: 'what-if', name: 'What if', changes: List.of(_whatIf));
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Wrap(
+            spacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                icon: const Icon(Icons.science_outlined),
+                label: const Text('What if…'),
+                onPressed: _addOneOff,
+              ),
+              if (state.schedules.isNotEmpty)
+                OutlinedButton(
+                  onPressed: _skipSchedule,
+                  child: const Text('What if a bill stopped'),
+                ),
+              if (_whatIf.isNotEmpty)
+                TextButton(
+                  onPressed: () => setState(_whatIf.clear),
+                  child: Text('Clear ${_whatIf.length} hypothetical changes'),
+                ),
+            ],
+          ),
+        ),
+        if (_whatIf.isNotEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'Hypothetical: nothing is recorded or changed in your accounts.',
+            ),
+          ),
+        Expanded(
+          child: ForecastView(forecast: state.forecast(scenario: scenario)),
+        ),
+      ],
+    );
+  }
+
   Future<void> _recordPayment(ScheduledOccurrence occurrence) async {
     final state = AppScope.of(context);
     final schedule = state.schedules.firstWhere(
@@ -216,7 +394,7 @@ class _PlanPageState extends State<PlanPage> {
                       SizedBox(height: 400, child: bills),
                     ],
                   ),
-                  ForecastView(forecast: state.forecast()),
+                  _forecastTab(state),
                 ],
               ),
             ),

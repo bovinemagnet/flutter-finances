@@ -14,11 +14,15 @@ class TransactionForm extends StatefulWidget {
     required this.model,
     required this.onSave,
     this.onCancel,
+    this.refundCandidates = const [],
   });
 
   final TransactionFormModel model;
   final Future<void> Function(TransactionDraft draft) onSave;
   final VoidCallback? onCancel;
+
+  /// Recent purchases a refund can be linked to (FIN 06).
+  final List<Journal> refundCandidates;
 
   @override
   State<TransactionForm> createState() => _TransactionFormState();
@@ -149,6 +153,48 @@ class _TransactionFormState extends State<TransactionForm> {
                     DropdownMenuItem(value: a.id, child: Text(a.name)),
                 ],
                 onChanged: (id) => setState(() => model.counterAccountId = id),
+              ),
+            ],
+            if (model.type == TransactionType.refund &&
+                widget.refundCandidates.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String?>(
+                initialValue: model.refundOf,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Refund of',
+                  helperText:
+                      'Reduces that category in the month of the refund',
+                ),
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('Not linked'),
+                  ),
+                  for (final j in widget.refundCandidates)
+                    DropdownMenuItem<String?>(
+                      value: j.id,
+                      child: Text(
+                        '${formatShortDate(j.effectiveDate)} · '
+                        '${j.payee ?? 'Purchase'} · ${formatMoney(j.amount!)}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (id) => setState(() {
+                  model.refundOf = id;
+                  final original = widget.refundCandidates
+                      .where((j) => j.id == id)
+                      .firstOrNull;
+                  if (original == null) return;
+                  model.accountId ??= original.accountId;
+                  final categories = original.postings
+                      .where((p) => model.chart.hasCategory(p.ledgerAccountId))
+                      .toList();
+                  if (categories.length == 1) {
+                    model.categoryId = categories.single.ledgerAccountId;
+                  }
+                }),
               ),
             ],
             if (model.needsCategory) ...[
