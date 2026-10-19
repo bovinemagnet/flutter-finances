@@ -46,8 +46,23 @@ Health, info, Prometheus and API documentation are reachable without a token. Ev
 
 | none (default) | Production-style defaults. Every environment-specific value comes from an environment variable, the worker is off, and the bucket is not created.
 | `local` | Developer defaults: local PostgreSQL and MinIO, the OIDC issuer on port 8180, the bucket created at start-up, and the worker on.
+| `e2e` | Used by the end-to-end suite (`application-e2e.yml`, started by `tool/e2e/run.sh`). Access tokens are verified against a static public key instead of an OIDC issuer. Never use it anywhere else.
 | `test` | Used by the server tests (`src/test/resources/application-test.yml`). Not for running the service.
 |===
+
+[[end-to-end-tests]]
+== End-to-end tests
+
+`tool/e2e/run.sh` runs the Dart sync client against the real server. It needs `podman`, `java`, `curl`, `python3` and `dart` on the path. The script:
+
+. starts PostgreSQL (`docker.io/library/postgres:18`) and MinIO containers with podman on free local ports;
+. builds the server with `gradle25w :server:app:bootJar` (skip with `FINANCE_E2E_SKIP_BUILD=1`) and starts it with the `e2e` profile on a free port, with the API and worker in one process, a 20 second tombstone horizon so expired cursors can be exercised, and the committed test key pair in `tool/e2e/keys`;
+. waits for the health check, then runs `dart test -P e2e test/e2e` in `packages/finance_store` with `FINANCE_E2E_BASE_URL` and `FINANCE_E2E_PRIVATE_KEY` set; and
+. always stops the server and removes the containers, printing the tail of the server log when the run fails. `FINANCE_E2E_KEEP_LOGS=1` keeps the log directory.
+
+Extra arguments go to `dart test`, for example `--name A10`. The images can be replaced with `FINANCE_E2E_POSTGRES_IMAGE` and `FINANCE_E2E_MINIO_IMAGE`.
+
+CAUTION: The test key pair is public and committed to the repository. The `e2e` profile has no default for the key location and must never be pointed at a real environment.
 
 == Environment variables
 
@@ -82,8 +97,11 @@ These properties have no environment variable. Override them with the usual Spri
 | `finance.sync.purge-cron` | `0 17 3 * * *` (UTC) | Tombstone purge schedule, run by the worker only
 | `finance.storage.upload-url-ttl` | `15m` | Lifetime of presigned upload URLs
 | `finance.storage.download-url-ttl` | `5m` | Lifetime of presigned download URLs
-| `finance.receipts.max-size-bytes` | `26214400` | Largest receipt document (25 MiB)
-| `finance.receipts.max-image-dimension` | `20000` | Largest image width or height, in pixels
+| `finance.receipts.max-size-bytes` | `20971520` | Largest receipt document (20 MiB)
+| `finance.receipts.max-pages-per-receipt` | `10` | Most pages a receipt's source documents may total
+| `finance.receipts.max-image-side` | `16384` | Largest image width or height, in pixels
+| `finance.receipts.max-image-pixels` | `50000000` | Largest image area (50 megapixels)
+| `finance.deletion.suppression-cron` | `0 */15 * * * *` (UTC) | How often the worker re-erases deleted workspaces that have reappeared (also run once at start-up), worker only
 | `finance.imports.max-rows` | `50000` | Largest CSV import
 | `finance.imports.synchronous-row-limit` | `1000` | Imports above this many new rows commit as a job
 | `finance.worker.*` | see xref:operations:job-worker.adoc[] | Worker polling, lease and retry settings

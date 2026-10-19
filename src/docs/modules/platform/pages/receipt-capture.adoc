@@ -56,6 +56,8 @@ Saving a receipt never posts an expense. See xref:sync:offline.adoc[].
 | Decoded image area | 50,000,000 pixels
 |===
 
+The server applies the same limits when an upload completes (see xref:domain:receipts.adoc[]).
+
 If any file is rejected, or the page total is over the limit, nothing is saved and the messages are shown. Otherwise each file is saved as a source asset in the vault, one receipt page record is created per page, and then the receipt record is written. Only after that does the application report the receipt as saved (REC 03).
 
 == Metadata stripping
@@ -88,6 +90,35 @@ Both engines produce an `OcrResult`, which the shared parser in `finance_core` t
 * Extraction never creates an expense by itself. The person reviews the suggested fields and chooses to create an expense or attach the receipt to an existing transaction (REC 06, OCR 04, A07).
 
 The Receipts page lists receipts with their state ("Saved, waiting to be read", "Reading", "Needs review", "Reviewed" or "Could not be read"), whether they are matched, and whether they are saved on this device only. It can be filtered to unmatched receipts and to receipts that could not be read.
+
+If the device runs out of storage while a receipt is written, nothing is left half saved and the application says "Not saved: this device is out of storage. Free some space and try again." Any other write failure shows "Not saved: the receipt could not be written to storage."
+
+== Making a photo readable
+
+The receipt review screen offers "Improve readability" for the first page of a receipt that is an image (not a PDF), opening "Make it readable" (`features/receipts/image_edit_screen.dart`), for photos that no native scanner has corrected (REC 02). The user can rotate in quarter turns, crop the sides and the top and bottom, and "Enhance faded text", which stretches contrast between the 2nd and 98th percentile of brightness on a greyscale copy (`lib/platform/image_tools.dart`). "Save copy" stores the result as a JPEG readable derivative without metadata, attached to that page. The original file is kept exactly as captured. The page preview shows the derivative when there is one, text recognition still reads the original, and saving a new copy replaces the previous derivative.
+
+== Warnings
+
+When a receipt is reviewed, the application checks it and shows warnings. A warning never blocks saving or posting.
+
+* "The photo looks blurred; check the details are readable": the variance of the Laplacian on a downscaled greyscale copy is under 100.
+* "The photo is small; the text may be hard to read": both sides are under 600 pixels.
+* "This exact file is already saved as another receipt": another receipt has an asset with the same SHA-256.
+* "This looks like a photo of a receipt already saved": the difference hash of the image is close to that of another receipt's image (MATCH 02).
+
+The duplicate warnings name the other receipt so the user can open it. PDFs are not assessed for blur or size.
+
+== Separating pages
+
+A document of several receipts, such as a multi-page PDF or a scan with several pages, is saved as one receipt. On the review screen, "Separate pages" lets the user pick a page that becomes its own receipt (REC 05). The new receipt shares the same source file and keeps any readable derivative; the remaining pages are renumbered. Splitting is manual: the application does not detect where one receipt ends.
+
+== Date convention
+
+A receipt date such as 03/04 is ambiguous. In settings, "Receipt dates like 03/04" chooses whether it is read day first ("3 April", the default) or month first ("4 March"). The choice is passed to the parser as the `DateConvention` and applies to receipts read afterwards (OCR 04). The other reading is still kept as an alternative for the user to choose.
+
+== Exporting receipts
+
+Settings has "Export receipts" (EXP 01). It writes every receipt's original source files, unchanged, to a folder, named `<receiptId>-<n>` with an extension from the content type, and a `manifest.json` (`format` `finance.receipts`, `formatVersion` 1). For each receipt the manifest holds the capture time, the confirmed or suggested merchant, date, total and tax, the currency, the linked journal ids, and for each file its name, SHA-256 and content type. A file whose bytes are held only on the server is listed with no file name and the note "stored only on the server". Readable derivatives are not exported.
 
 == Not yet implemented
 

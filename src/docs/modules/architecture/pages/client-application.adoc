@@ -17,13 +17,13 @@ include::example$client-layering.mmd[]
 | Layer | Location (`apps/finance_app/lib`) | Responsibility
 
 | Platform adapters | `platform/` | Interfaces in `platform/services.dart` (`ReceiptScanner`, `FileImporter`, `ShareInbox`, `Notifications`, `BackgroundScheduler`) and `platform/text_recognition.dart` (`TextRecogniser`), plus `PlatformCapabilities` (`platform/capabilities.dart`). Implementations are in `platform/adapters/` (`scanners.dart`, `file_importer.dart`, `share_inbox.dart`, `notifications.dart`, `background.dart`, `browser_sign_in.dart`). No finance code checks the operating system; it asks the adapter or the capability flags.
-| Data layer | `data/` | `AppState` (a `ChangeNotifier` over `FinanceStore`), `ReceiptService`, `ImportService`, `WorkspaceGate`, `PlatformSecureKeyStore`, the OIDC client (`oidc.dart`), bill reminders (`reminders.dart`) and the app's entity type names (`entity_types.dart`).
-| Features | `features/` | Feature-specific widgets and form models: accounts, budget, goals, imports, onboarding, overview, plan, receipts, reports, settings and transactions.
-| Screens | `screens/` and `screens/pages/` | `StartupScreen`, `RestoreScreen`, `HomeScreen` and the seven pages (overview, transactions, budget, plan, accounts, reports, settings).
-| Shell and shared UI | `app/`, `widgets/`, `format/` | Adaptive shell and breakpoints (`app/shell.dart`, `app/breakpoints.dart`), theme including high-contrast variants, amount fields and formatters. See xref:platform:adaptive-layout.adoc[].
+| Data layer | `data/` | `AppState` (a `ChangeNotifier` over `FinanceStore`), `ReceiptService`, `ImportService`, `WorkspaceGate`, `PlatformSecureKeyStore`, the OIDC client (`oidc.dart`), the sync controller (`sync_controller.dart`), bill reminders (`reminders.dart`) and the app's entity type names (`entity_types.dart`).
+| Features | `features/` | Feature-specific widgets and form models: accounts, budget, goals, imports, onboarding, overview, plan, receipts (capture, review, readability edits), reports, settings, sync (the settings section and the conflicts screen) and transactions.
+| Screens | `screens/` and `screens/pages/` | `StartupScreen`, `RestoreScreen`, `ConnectScreen`, `HomeScreen` and the seven pages (overview, transactions, budget, plan, accounts, reports, settings).
+| Shell and shared UI | `app/`, `widgets/`, `format/` | Adaptive shell and breakpoints (`app/shell.dart`, `app/breakpoints.dart`), theme including high-contrast variants, the optional app lock (`app/app_lock.dart`), amount fields and formatters. See xref:platform:adaptive-layout.adoc[].
 |===
 
-Dependencies point downwards: screens and features use `AppState`; `AppState` uses `FinanceStore` and `finance_core`; platform adapters are injected through `AppServices` and are the only code that touches operating system plugins (`cunning_document_scanner`, `image_picker`, `file_selector`, `receive_sharing_intent`, `flutter_local_notifications`, `workmanager`, `flutter_secure_storage`, `google_mlkit_text_recognition`, `flutter_web_auth_2`).
+Dependencies point downwards: screens and features use `AppState`; `AppState` uses `FinanceStore` and `finance_core`; platform adapters are injected through `AppServices` and are the only code that touches operating system plugins (`cunning_document_scanner`, `image_picker`, `file_selector`, `receive_sharing_intent`, `flutter_local_notifications`, `workmanager`, `flutter_secure_storage`, `google_mlkit_text_recognition`, `flutter_web_auth_2`, `local_auth`).
 
 == State management
 
@@ -44,6 +44,7 @@ Every write goes through `FinanceStore`, which saves the change and its outbox c
 . Resolves the workspace directory as `<application support directory>/workspace`.
 . Builds `AppServices`: a `FallbackReceiptScanner` (native document scanner, falling back to a basic camera or library picker), `PlatformFileImporter`, a `PluginShareInbox` when the platform has a share target (otherwise an empty one), `LocalNotifications`, and a text recogniser (ML Kit on mobile, Tesseract on desktop, or an unavailable stub when no on-device OCR exists).
 . Creates a `WorkspaceGate` over the directory and `PlatformSecureKeyStore`.
+. When the workspace is ready, creates a `SyncController`, starts it, and on Android and iOS registers the hourly Workmanager job for a synced workspace (see <<sync-in-the-client>>).
 
 `FinanceApp` shows `StartupScreen` until it supplies an `AppState`, then `HomeScreen`. The `AppScope` wraps the whole `MaterialApp`, with locale `en_AU` and supported locales `en_AU`, `en_GB` and `en_US`.
 
@@ -60,14 +61,26 @@ Every write goes through `FinanceStore`, which saves the change and its outbox c
 | `locked` | The data key is wrapped with a password (Argon2id). The user enters the password to unlock.
 |===
 
-The restore path (`RestoreScreen`) is offered from the startup screen. The user picks a backup file and enters the recovery secret; `WorkspaceGate.stageBackup` calls `stageRestore`, which restores into an isolated staging directory and verifies it. The screen shows the preview (counts, checksum failures, missing assets) and only offers activation when the preview allows it. Details are in xref:architecture:local-store.adoc#restore-staging[Restore staging] and xref:operations:backup-and-restore.adoc[].
+`ConnectScreen` is the other option on a fresh device: see <<sync-in-the-client>>. The restore path (`RestoreScreen`) is offered from the startup screen. The user picks a backup file and enters the recovery secret; `WorkspaceGate.stageBackup` calls `stageRestore`, which restores into an isolated staging directory and verifies it. The screen shows the preview (counts, checksum failures, missing assets) and only offers activation when the preview allows it. Details are in xref:architecture:local-store.adoc#restore-staging[Restore staging] and xref:operations:backup-and-restore.adoc[].
 
 Backups are exported from the settings page with `exportBackup` (see xref:domain:exports-and-backups.adoc[]).
 
+[[sync-in-the-client]]
 == Sync in the client
 
-The sync client (`SyncClient`) and a `BackgroundScheduler` interface exist, as does building blocks for the authorisation code flow with PKCE (`oidc.dart` with `Pkce`, `OidcSession` and token stores, and `platform/adapters/browser_sign_in.dart`). At the time of writing the application does not construct a `SyncClient`, nothing calls `BackgroundScheduler.schedulePeriodicSync` (the mobile adapter registers a Workmanager task; the desktop `ForegroundOnlyScheduler` is a no-op), and no screen drives the sign-in flow. The workspace's `SyncMode` is chosen during onboarding and stored, but only local-only operation is fully wired through the user interface. See xref:sync:sign-in.adoc[] and xref:sync:offline.adoc[] for the designed behaviour.
+Sync is optional and is driven by `SyncController` (`lib/data/sync_controller.dart`), a `ChangeNotifier` that wraps `SyncClient` from `finance_store` and an `OidcSession`. See xref:sync:sign-in.adoc[] for sign-in and xref:sync:offline.adoc[] for how the client behaves while syncing.
+
+* *Settings.* The server address, the sign-in provider address and the application identifier (default `finance-app`) are kept in `sync-settings.json` in the application support directory. They are configuration for this device, not finance data, so they are never synced.
+* *Turning it on.* In the settings page, the sync section (`features/sync/sync_section.dart`) signs the user in, lists the account's server workspaces and lets the user choose one or create a new one. The controller registers this device, asks `SyncClient.previewBootstrap` what would happen, and shows the answer before anything moves: upload this device's saved changes, download the server's data, start empty, or refuse when both sides already hold data (they are never merged automatically). Only a confirmation calls `enableSync`.
+* *Fresh device.* `ConnectScreen` ("Use my synced data") creates an empty local workspace, signs in, picks the server workspace and downloads it. If anything fails, the empty local workspace is removed so first-time setup can run again. A workspace in a currency the client does not support is refused.
+* *When it syncs.* On "Sync now", when the application returns to the foreground, and every two minutes while it is open and the workspace is synced. A sync already in progress is not started twice.
+* *Failures.* An authentication failure asks the user to sign in again. Any other failure leaves the changes in the outbox, shows "Sync paused" and is retried at the next opportunity.
+* *Conflicts.* The settings page shows how many changes need a decision. `ConflictsScreen` lists each one with "Yours" and "Server" summaries and offers "Keep server version", "Keep mine" (sent again as a fresh change, not offered for a change the server refused) and, for journals, "Edit a combined version", which opens the entry form on the server's version and saves the result as one validated correction. Nothing is settled by last write wins.
+* *Background work.* `lib/background_sync.dart` is the Workmanager entry point. It runs only on Android and iOS, only for a synced workspace protected by the platform key store (nobody is present to type a password), and only when a refresh token is stored. It opens the store, runs one sync flagged as a metered connection and closes it again. A failure is retried later. Desktop platforms sync only while the application is open.
+* *Signing out* stops the timer and deletes the stored refresh token. The data stays on the device.
 
 == Testing
 
 Tests are in `apps/finance_app/test` under `unit`, `widget` and `support`.
+
+`unit/sync_controller_test.dart` covers the controller, and `widget/app_lock_test.dart` the app lock. The sync client is also tested against the real server by the end-to-end suite described in xref:ROOT:developer-guide.adoc#end-to-end-tests[the developer guide].

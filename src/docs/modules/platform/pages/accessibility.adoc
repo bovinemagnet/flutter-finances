@@ -15,6 +15,8 @@ IMPORTANT: These are commitments from the product requirements (UX 01). Text sca
 == Related requirements
 
 * *UX 02 Recovery.* Show empty, loading, offline, permission denied, extraction failed, sync conflict and storage full states, and preserve form drafts after interruption.
+
+The entry form reports unsaved input when the application is paused or hidden (`onInterrupted`), and `TransactionFormModel` can write it to and restore it from a draft (`toDraftJson`, `fromDraftJson`). `AppState` keeps one such draft (`saveEntryDraft`, `clearEntryDraft`), which is not counted as a data change for backup reminders. The entry editor screen does not yet connect the form's callback to `AppState`, so a draft is not saved from the interface today. The storage full state is shown when a receipt cannot be saved because the device is out of space (see xref:platform:receipt-capture.adoc[]).
 * *UX 03 Trust cues.* Distinguish calculated balances, bank-reported observations, planned amounts, pending transactions and projections.
 * *Reports.* Charts are presented with tables beside them.
 
@@ -22,4 +24,6 @@ IMPORTANT: These are commitments from the product requirements (UX 01). Text sca
 
 Scenario A18: using a screen reader and 200% text on a tablet, entry, review and receipt linking complete without hidden actions or clipped controls.
 
-The widget test `apps/finance_app/test/widget/accessibility_a18_test.dart` renders the entry form, the review queue and receipt review with linking at a 200% text scale and applies Flutter's labelled tap target and Android tap target guidelines, checking that key actions (such as Mark reviewed, Attach and Confirm) are reachable. It does not replace testing with a real screen reader.
+The widget test `apps/finance_app/test/widget/accessibility_a18_test.dart` renders the entry form, the review queue and receipt review with linking on a tablet-sized view (834 by 1194) at a 200% text scale and applies Flutter's labelled tap target and Android tap target guidelines, checking that key actions (such as Mark reviewed, Attach and Confirm) are reachable. It does not replace testing with a real screen reader.
+
+The test led to two layout rules in the interface. The search fields on the Transactions and Receipts pages carry a semantic label ("Search transactions" and "Search receipts"), and rows of actions (such as those on the conflicts screen) are `OverflowBar` or `Wrap` widgets, so at large text they wrap onto further lines instead of being clipped.

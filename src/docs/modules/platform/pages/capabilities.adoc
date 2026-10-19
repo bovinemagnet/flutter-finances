@@ -17,8 +17,9 @@ The application asks what the device can do rather than which operating system i
 | Drag and drop | No | No | Yes | Yes | Yes
 | Paste | Yes | Yes | Yes | Yes | Yes
 | File capture | Yes | Yes | Yes | Yes | Yes
-| Background work | Yes | Yes | No ^3^ | No ^3^ | No ^3^
+| Background work | Yes ^3^ | Yes ^3^ | No ^3^ | No ^3^ | No ^3^
 | Platform key store | Yes | Yes | Yes | Yes | Conditional ^4^
+| App lock | Yes ^6^ | Yes ^6^ | Yes ^6^ | Yes ^6^ | No ^6^
 | Notifications | Yes ^5^ | Yes ^5^ | Yes ^5^ | Yes ^5^ | Yes ^5^
 |===
 
@@ -30,9 +31,10 @@ The capabilities are computed by `PlatformCapabilities.forPlatform`: mobile mean
 ====
 . Desktop OCR requires Tesseract with English language data (`eng`), detected at start-up. Without it, on-device OCR is unavailable on desktop.
 . On Android the share target is implemented (`PluginShareInbox`). On iOS the app side that reads shared files exists, but the share extension needs its own Xcode target and an App Group, and that target has not yet been added to the repository; a Flutter screen alone does not implement it. The extension is expected to copy files into the App Group container and open the app, which then reads them.
-. Mobile uses the Workmanager plugin for periodic synchronisation with a network-connected constraint (`WorkmanagerScheduler`). Desktop platforms use a foreground-only scheduler (`ForegroundOnlyScheduler`): queued work resumes when the application starts and while its window is open. Nothing depends on background execution succeeding.
+. Background work is the Workmanager plugin on Android and iOS only (`WorkmanagerScheduler`). Once a workspace is synced, the application registers an hourly periodic task with a network-connected constraint; the task (`lib/background_sync.dart`) syncs only a workspace protected by the platform key store (see xref:architecture:client-application.adoc#sync-in-the-client[Sync in the client]). Desktop platforms are foreground-only (`ForegroundOnlyScheduler` does nothing): queued work resumes when the application starts, when it returns to the foreground and every two minutes while its window is open. Nothing depends on background execution succeeding.
 . Linux key store availability depends on a Secret Service provider, checked at runtime. If none is available the password-based fallback is required; a plaintext key is never written (SEC 02).
-. Notifications are scheduled locally and delivery is best effort, because the operating system controls it. The in-app calendar remains the authoritative record. Notification text hides amounts and merchants unless the user opts in.
+. Notifications are scheduled locally and delivery is best effort, because the operating system controls it. The in-app calendar remains the authoritative record. Notification text hides amounts and merchants unless the user opts in, and a bill reminder can also be given quiet hours.
+. The optional app lock uses the `local_auth` plugin (`lib/app/app_lock.dart`) and is offered in settings only when the device reports that it supports device authentication (biometrics or the device passcode). That follows the plugin's platforms: Android, iOS, macOS and Windows, but not Linux. The lock hides the interface on launch and after the application has been in the background for five minutes; it gates the screen only, and the data key stays protected by the platform key store. On Linux there is no app lock, but a workspace protected by a password asks for it on every launch.
 ====
 
 Builds must be produced on each operating system. See xref:building-and-releasing.adoc[].

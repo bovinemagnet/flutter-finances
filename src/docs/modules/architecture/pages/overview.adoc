@@ -49,10 +49,7 @@ include::example$local-save-sync-sequence.mmd[]
 
 The protocol is described in xref:sync:protocol.adoc[].
 
-[NOTE]
-====
-`SyncClient` is implemented and tested in `finance_store`, but the application in `apps/finance_app/lib` does not yet construct one: the screens read and write through `AppState` and `FinanceStore`, and the background-sync adapter is a placeholder. Local-only operation is therefore the complete path in the application today. The OIDC code (`lib/data/oidc.dart`) is likewise present but not yet connected to a sign-in screen.
-====
+In the application, `SyncController` (`apps/finance_app/lib/data/sync_controller.dart`) owns the `SyncClient`. It signs the user in through the system browser, connects the workspace to a server workspace after a preview the user confirms, and then syncs on demand, when the application returns to the foreground and every two minutes while it is open. On Android and iOS a Workmanager job also syncs opportunistically. Local-only operation needs none of this. See xref:architecture:client-application.adoc#sync-in-the-client[Sync in the client].
 
 == API style
 

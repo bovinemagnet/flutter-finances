@@ -4,10 +4,11 @@ Paul Snow
 
 Synced mode signs in with an OpenID Connect (OIDC) identity provider using the authorisation code flow with PKCE (SEC 01). Local-only mode needs no account. The client code is in `apps/finance_app/lib/data/oidc.dart` and `apps/finance_app/lib/platform/adapters/browser_sign_in.dart`.
 
-[NOTE]
-====
-*Implemented:* the OIDC session, PKCE generation, token storage and browser adapter, with unit tests (`apps/finance_app/test/unit/oidc_test.dart`). *Not yet wired:* nothing in the application shell constructs an `OidcConfig` or calls `signInWithBrowser`, so there is no sign-in screen and no configured issuer or client identifier in the application today. Multi-factor authentication, passkeys and account recovery are provided by the identity provider and are not part of this repository.
-====
+The sign-in is started from the application by `SyncController.signIn()` (`apps/finance_app/lib/data/sync_controller.dart`), which calls `signInWithBrowser` with an `OidcSession`. The session is built from the issuer and client identifier the user enters in the sync settings (or on the "Use my synced data" screen of a fresh device); the redirect URI is the one for the platform. Those values live in `sync-settings.json` on the device and are never synced. There is no issuer or client identifier built into the application. Multi-factor authentication, passkeys and account recovery are provided by the identity provider and are not part of this repository.
+
+The session and flow are covered by unit tests (`apps/finance_app/test/unit/oidc_test.dart` and `sync_controller_test.dart`).
+
+On every API call the sync client sends the access token as a bearer token, together with `X-Device-Id` and, once the workspace is synced, `X-Workspace-Id`. See xref:sync:protocol.adoc[].
 
 == Public client, no secret
 
@@ -38,11 +39,12 @@ Both redirect URIs must be registered with the identity provider for the client.
 * The access token is short lived. `accessToken()` returns the cached token until 30 seconds before its `expires_in` (default 300 seconds when absent), then refreshes it.
 * Refresh uses the `refresh_token` grant with the public client identifier. Refresh tokens rotate: whenever the token response carries a new refresh token, it replaces the stored one.
 * If the refresh is refused, the stored token is deleted, the cached access token is cleared and `AuthenticationRequiredException` is thrown, which tells the user to sign in again. The sync transport raises the same exception for a `401` response.
-* `signOut()` clears the access token and deletes the stored refresh token. It does not call a provider logout endpoint.
+* `signOut()` clears the access token and deletes the stored refresh token. It does not call a provider logout endpoint. The application's "Sign out" action stops syncing and calls it; the data stays on the device.
+* When the refresh is refused or a `401` is returned, the application shows "Sign in again to continue syncing" and offers a "Sign in again" action in the sync settings.
 
 == Where the refresh token is kept
 
-`SecureTokenStore` keeps the refresh token in the platform key store under the name `finance_app/oidc/refresh-token`. When the key store is not available (for example, a Linux desktop without a key store service), the token lives only in memory and the user signs in again after a restart. It is never written to a plaintext file. See xref:platform:capabilities.adoc[] for key store availability by platform.
+`SecureTokenStore` keeps the refresh token in the platform key store under the name `finance_app/oidc/refresh-token`. When the key store is not available (for example, a Linux desktop without a key store service), the token lives only in memory and the user signs in again after a restart. It is never written to a plaintext file. The mobile background sync job reads the same token store, and only runs for a workspace protected by the platform key store. See xref:platform:capabilities.adoc[] for key store availability by platform.
 
 == What the server checks
 

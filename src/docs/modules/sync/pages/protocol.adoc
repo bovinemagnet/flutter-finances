@@ -154,7 +154,7 @@ Metadata may arrive before an image, in which case other devices show "Image pen
 | Download of another workspace's asset | `404 NOT_FOUND`
 |===
 
-Uploads go to a staging key. Completion copies verified bytes to the asset's permanent key, so a late or repeated upload cannot replace them. The scan job (`receipts.scan`) runs a structural check by default: it rejects truncated files, images larger than 16,384 pixels per side or 50 megapixels (`finance.receipts.max-image-dimension`), malformed structures and PDFs containing scripts, launch actions, embedded files, XFA forms or rich media. It is not a malware scanner, and a deployment that needs one supplies its own `DocumentScanner` bean.
+Uploads go to a staging key. Completion copies verified bytes to the asset's permanent key, so a late or repeated upload cannot replace them. The scan job (`receipts.scan`) runs a structural check by default: it rejects truncated files, images larger than 16,384 pixels per side (`finance.receipts.max-image-side`) or 50 megapixels (`finance.receipts.max-image-pixels`), malformed structures and PDFs containing scripts, launch actions, embedded files, XFA forms or rich media. It is not a malware scanner, and a deployment that needs one supplies its own `DocumentScanner` bean.
 
 == CSV imports (IMP 01 to IMP 03)
 

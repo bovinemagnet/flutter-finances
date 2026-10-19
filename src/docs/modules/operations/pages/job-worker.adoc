@@ -20,6 +20,8 @@ The API and the worker are the same application. The worker is switched on with 
 | `deletion.workspace` | Erases a workspace; see xref:operations:data-deletion.adoc[]
 |===
 
+Besides jobs, a worker-enabled process runs `SuppressionMaintenance`: it re-erases deleted workspaces that have reappeared once at start-up and on the `finance.deletion.suppression-cron` schedule (see xref:operations:data-deletion.adoc[]).
+
 A job of any other type fails at once with `NO_HANDLER`. Payloads hold identifiers only, never financial data.
 
 == Queueing

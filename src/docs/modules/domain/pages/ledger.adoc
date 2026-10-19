@@ -71,6 +71,8 @@ System accounts have fixed identifiers so every device agrees on them without sy
 | Reimbursement | Account: debit. `system:reimbursement-receivable`: credit | With splits instead, it offsets the expense categories directly
 |===
 
+In the entry form, choosing the Refund type offers a "Refund of" list of recent purchases when the caller supplies one. Choosing a purchase sets `refundOf`, fills in the account when it is empty and, when the purchase has a single category, that category. "Not linked" is also allowed. The entry editor screen does not yet supply the list of purchases, so the choice is not shown there today.
+
 For a signed opening balance or adjustment, the user-facing amount is money held for an asset and money owed for a liability; `toLedgerSign` converts a liability amount into a credit.
 
 == Draft validation

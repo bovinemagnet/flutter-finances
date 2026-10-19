@@ -4,7 +4,7 @@ Paul Snow
 
 [cols="1,3"]
 |===
-| Status | Accepted; implemented for the local client and the sync service
+| Status | Accepted for the implementation
 | Source | Product requirements, section 10, subject to the decision register in section 18
 |===
 
@@ -27,7 +27,7 @@ The product must run on iPhone, iPad, Android, Windows, macOS and Linux, work of
 
 == Decision
 
-Use Flutter for the native clients, an encrypted local SQLite database, and optional synchronisation through a Java and Spring Boot modular monolith with PostgreSQL and private object storage. Quarkus was a viable substitution; supporting both frameworks is to be avoided, and Spring Boot was chosen.
+Use Flutter for the native clients, an encrypted local SQLite database, and optional synchronisation through a Java and Spring Boot modular monolith with PostgreSQL and private object storage. Quarkus was a viable substitution; supporting both frameworks is to be avoided, and Spring Boot was chosen. The product requirements' decision register (section 18) still lists these as proposed defaults to confirm during discovery.
 
 As implemented:
 
