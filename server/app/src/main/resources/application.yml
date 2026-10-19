@@ -40,6 +40,10 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+    distribution:
+      # Buckets for histogram_quantile() over server-side extraction jobs.
+      percentiles-histogram:
+        finance.extraction.latency: true
 
 springdoc:
   api-docs:
