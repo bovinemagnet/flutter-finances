@@ -13,6 +13,8 @@ export 'src/planning/debt_payoff.dart';
 export 'src/planning/discretionary.dart';
 export 'src/planning/forecast.dart';
 export 'src/planning/goals.dart';
+export 'src/planning/holdings.dart';
+export 'src/planning/holdings_json_codec.dart';
 export 'src/planning/insights.dart';
 export 'src/planning/json_codec.dart';
 export 'src/planning/ledger_reports.dart';
