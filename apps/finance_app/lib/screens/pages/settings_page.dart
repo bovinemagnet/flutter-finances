@@ -347,6 +347,24 @@ class SettingsPage extends StatelessWidget {
           ),
           onTap: () => _setBuffer(context),
         ),
+        ListTile(
+          leading: const Icon(Icons.calendar_month_outlined),
+          title: const Text('Receipt dates like 03/04'),
+          trailing: DropdownButton<DateConvention>(
+            value: state.dateConvention,
+            items: const [
+              DropdownMenuItem(
+                value: DateConvention.dayMonth,
+                child: Text('3 April'),
+              ),
+              DropdownMenuItem(
+                value: DateConvention.monthDay,
+                child: Text('4 March'),
+              ),
+            ],
+            onChanged: (v) => v == null ? null : state.setDateConvention(v),
+          ),
+        ),
         const _Header('Security'),
         ListTile(
           leading: const Icon(Icons.lock_outline),

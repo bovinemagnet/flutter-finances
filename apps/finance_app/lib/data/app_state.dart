@@ -325,6 +325,16 @@ class AppState extends ChangeNotifier {
 
   bool get appLockEnabled => _preferences['appLock'] == true;
 
+  /// How receipt dates such as 03/04/2026 are read (OCR 04).
+  DateConvention get dateConvention => DateConvention.values.byName(
+    _preferences['dateConvention'] as String? ?? DateConvention.dayMonth.name,
+  );
+
+  Future<void> setDateConvention(DateConvention convention) async {
+    await _setPreferences({'dateConvention': convention.name});
+    refresh();
+  }
+
   Future<void> setAppLock(bool enabled) async {
     await _setPreferences({'appLock': enabled});
     refresh();

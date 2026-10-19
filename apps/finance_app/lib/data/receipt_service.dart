@@ -213,6 +213,7 @@ class ReceiptService {
         settings: ParserSettings(
           workspaceCurrency: state.currency,
           referenceDate: state.today(),
+          dateConvention: state.dateConvention,
         ),
       );
       await _store.upsertEntity(

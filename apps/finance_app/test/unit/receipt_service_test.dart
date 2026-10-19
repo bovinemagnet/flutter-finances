@@ -295,4 +295,18 @@ void main() {
     final file = (entry['files'] as List).single as Map<String, dynamic>;
     expect(File('${out.path}/${file['file']}').readAsBytesSync(), bytes);
   });
+
+  test('the date convention setting decides ambiguous receipt dates (OCR 04)',
+      () async {
+    const text = 'CORNER STORE\n03/04/2026\nTOTAL 9.90\n';
+    final first = await receipts.capture([CapturedFile(photo(), source: CaptureSource.camera)]);
+    await receipts.extract(first.id, _FakeRecogniser(text));
+    expect(receipts.extractionFor(receipts.receipt(first.id)!)!.suggested.date,
+        LocalDate(2026, 4, 3));
+    await state.setDateConvention(DateConvention.monthDay);
+    final second = await receipts.capture([CapturedFile(photo(), source: CaptureSource.camera)]);
+    await receipts.extract(second.id, _FakeRecogniser(text));
+    expect(receipts.extractionFor(receipts.receipt(second.id)!)!.suggested.date,
+        LocalDate(2026, 3, 4));
+  });
 }
