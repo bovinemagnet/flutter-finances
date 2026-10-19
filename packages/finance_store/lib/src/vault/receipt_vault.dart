@@ -269,6 +269,47 @@ class ReceiptVault {
     );
   }
 
+  /// Stores a file restored from a backup with its original metadata. The
+  /// bytes must match the recorded checksum. It is queued for upload but
+  /// records no command; the restore writes the workspace's commands.
+  @internal
+  Future<AssetRecord> importAsset(
+    Map<String, Object?> metadata,
+    List<int> bytes,
+  ) async {
+    final id = metadata['id'] as String;
+    final kind = AssetKind.values.byName(metadata['kind'] as String);
+    final sha = hash.sha256.convert(bytes).toString();
+    if (sha != metadata['sha256'] || bytes.length != metadata['sizeBytes']) {
+      throw AssetCorruptException(id, 'restored bytes do not match');
+    }
+    final record = AssetRecord(
+      id: id,
+      ownerType: metadata['ownerType'] as String,
+      ownerId: metadata['ownerId'] as String,
+      kind: kind,
+      contentType: metadata['contentType'] as String,
+      sizeBytes: bytes.length,
+      sha256: sha,
+      storedBytes: 0,
+      localState: AssetLocalState.present,
+      uploadState: kind == AssetKind.preview
+          ? AssetUploadState.notRequired
+          : AssetUploadState.pending,
+      uploadAttempts: 0,
+      createdAt: DateTime.parse(metadata['createdAt'] as String),
+    );
+    final file = _file(id, kind);
+    final stored = _writeDurably(id, file, _encrypt(id, bytes));
+    try {
+      _ctx.write(() => _insert(record, storedBytes: stored));
+    } catch (_) {
+      if (file.existsSync()) file.deleteSync();
+      rethrow;
+    }
+    return asset(id)!;
+  }
+
   /// Handles a remote deletion of asset metadata. Bytes without a
   /// confirmed cloud copy are kept, so an unsynced original is never lost.
   void applyRemoteDeletion(String id) {

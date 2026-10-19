@@ -23,6 +23,23 @@ class Device {
     int pageSize = 500,
   }) async {
     final store = await newStore(temp.sub(name), keys: MemoryKeyStore());
+    return wrap(
+      name,
+      store,
+      server,
+      uploadConcurrency: uploadConcurrency,
+      pageSize: pageSize,
+    );
+  }
+
+  /// A device around an existing [store].
+  static Device wrap(
+    String name,
+    FinanceStore store,
+    FakeSyncServer server, {
+    int uploadConcurrency = 2,
+    int pageSize = 500,
+  }) {
     final sleeps = <Duration>[];
     final client = SyncClient(
       store,

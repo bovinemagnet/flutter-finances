@@ -2,6 +2,15 @@
 /// the personal finance application.
 library;
 
+export 'src/backup/archive_container.dart'
+    show
+        BackupDecryptionException,
+        BackupFormatException,
+        readBackupEntries,
+        writeBackupEntries;
+export 'src/backup/backup_export.dart'
+    show BackupSummary, backupFormatVersion, csvCell, exportBackup;
+export 'src/backup/backup_restore.dart';
 export 'src/crypto/aead.dart';
 export 'src/crypto/data_key.dart';
 export 'src/crypto/hkdf.dart';
