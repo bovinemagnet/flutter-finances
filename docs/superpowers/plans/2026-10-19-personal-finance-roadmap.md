@@ -86,33 +86,33 @@ Endpoints: `POST /v1/sync/commands`, `GET /v1/sync/changes?cursor=`, `GET /v1/sy
 - [x] 2.6 Reports, financial years, insights (REP 01–04)
 
 ### Plan 3 — Documents and imports domain (`finance_core`)
-- [ ] 3.1 Receipt model and state machines (REC 04), content validation rules (REC 05)
-- [ ] 3.2 Receipt text parser with provenance and uncertainty (OCR 01, 03, 04, A06)
-- [ ] 3.3 Matching and deduplication (MATCH 01–03, A08, A11)
-- [ ] 3.4 CSV import: mapping, parse, preview, fingerprints, idempotent batches, transfer detection, rollback (IMP 01–03, A12)
-- [ ] 3.5 Categorisation rules with preview and undo (AUTO 01)
-- [ ] 3.6 Exports: CSV with formula sanitisation, JSON archive manifest with hashes (EXP 01, DATA 01, DATA 03)
+- [x] 3.1 Receipt model and state machines (REC 04), content validation rules (REC 05)
+- [x] 3.2 Receipt text parser with provenance and uncertainty (OCR 01, 03, 04, A06)
+- [x] 3.3 Matching and deduplication (MATCH 01–03, A08, A11)
+- [x] 3.4 CSV import: mapping, parse, preview, fingerprints, idempotent batches, transfer detection, rollback (IMP 01–03, A12)
+- [x] 3.5 Categorisation rules with preview and undo (AUTO 01)
+- [x] 3.6 Exports: CSV with formula sanitisation, JSON archive manifest with hashes (EXP 01, DATA 01, DATA 03)
 
 ### Plan 4 — Local store (`finance_store`)
-- [ ] 4.1 Encrypted database open, key wrapping (platform key store or password fallback), migrations (SEC 02, NFR 11)
-- [ ] 4.2 Repositories and command handlers writing state + outbox atomically (SYNC 01)
-- [ ] 4.3 Encrypted receipt vault with durable save before success (REC 03, REC 08, NFR 10)
-- [ ] 4.4 Sync client: push outbox, pull changes, conflicts, cursor expiry rebuild, document uploads (SYNC 02–06)
-- [ ] 4.5 Backup/export/restore into isolated workspace (DATA 01–03, A16)
+- [x] 4.1 Encrypted database open, key wrapping (platform key store or password fallback), migrations (SEC 02, NFR 11)
+- [x] 4.2 Repositories and command handlers writing state + outbox atomically (SYNC 01)
+- [x] 4.3 Encrypted receipt vault with durable save before success (REC 03, REC 08, NFR 10)
+- [x] 4.4 Sync client: push outbox, pull changes, conflicts, cursor expiry rebuild, document uploads (SYNC 02–06)
+- [x] 4.5 Backup/export/restore into isolated workspace (DATA 01–03, A16)
 
 ### Plan 5 — Server (`server/`)
-- [ ] 5.1 Gradle build, Java finance-core parity running all fixtures
-- [ ] 5.2 Workspace, membership, devices, JWT resource server, workspace scoping (SEC 01, A17)
-- [ ] 5.3 Sync commands with idempotency, revisions, conflicts, change feed, tombstones, snapshot (A09, A10, A15)
-- [ ] 5.4 Receipt upload intents, completion checks, quarantine, scoped download (SYNC 05, SEC 04)
-- [ ] 5.5 Job table worker, imports preview/commit, exports, deletion jobs (IMP, EXP, SEC 05–06)
+- [x] 5.1 Gradle build, Java finance-core parity running all fixtures
+- [x] 5.2 Workspace, membership, devices, JWT resource server, workspace scoping (SEC 01, A17)
+- [x] 5.3 Sync commands with idempotency, revisions, conflicts, change feed, tombstones, snapshot (A09, A10, A15)
+- [x] 5.4 Receipt upload intents, completion checks, quarantine, scoped download (SYNC 05, SEC 04)
+- [x] 5.5 Job table worker, imports preview/commit, exports, deletion jobs (IMP, EXP, SEC 05–06)
 
 ### Plan 6 — Flutter client (`apps/finance_app`)
-- [ ] 6.1 App shell: width breakpoints, navigation, theming, accessibility, settings and onboarding (Journey A)
-- [ ] 6.2 Transactions: list, entry form with calculator, splits, transfers, refunds, review queue with undo (Journey C)
-- [ ] 6.3 Budget, goals, plan (bills, calendar, forecast), reports with tables beside charts
-- [ ] 6.4 Receipts: capture adapters with fallback, inbox, review, matching, search (Journey B)
-- [ ] 6.5 Imports UI, reconciliation, rules, insights, sync and backup settings (Journeys D, E)
+- [x] 6.1 App shell: width breakpoints, navigation, theming, accessibility, settings and onboarding (Journey A)
+- [x] 6.2 Transactions: list, entry form with calculator, splits, transfers, refunds, review queue with undo (Journey C)
+- [x] 6.3 Budget, goals, plan (bills, calendar, forecast), reports with tables beside charts
+- [x] 6.4 Receipts: capture adapters with fallback, inbox, review, matching, search (Journey B)
+- [x] 6.5 Imports UI, reconciliation, rules, insights, sync and backup settings (Journeys D, E)
 
 ### Plan 7 — Documentation
 - [~] 7.1 Antora component in `src/docs`, Gradle `antora` task, architecture, domain rules, sync protocol, platform capability matrix, operations
