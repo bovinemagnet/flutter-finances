@@ -360,6 +360,21 @@ class SettingsPage extends StatelessWidget {
               : null,
           onTap: passwordProtected ? () => _changePassword(context) : null,
         ),
+        FutureBuilder<bool>(
+          future: AppScope.servicesOf(context).authenticator.isSupported(),
+          builder: (context, snapshot) => snapshot.data == true
+              ? SwitchListTile(
+                  secondary: const Icon(Icons.fingerprint),
+                  title: const Text('Lock the app'),
+                  subtitle: const Text(
+                    'Ask for your fingerprint, face or device passcode '
+                    'when opening the app and after five minutes away',
+                  ),
+                  value: state.appLockEnabled,
+                  onChanged: state.setAppLock,
+                )
+              : const SizedBox.shrink(),
+        ),
         const _Header('About this device'),
         ListTile(
           title: const Text('Workspace'),

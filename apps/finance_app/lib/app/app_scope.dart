@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../data/app_state.dart';
 import '../platform/capabilities.dart';
+import 'app_lock.dart';
 import '../platform/services.dart';
 import '../platform/text_recognition.dart';
 
@@ -17,6 +18,7 @@ class AppServices {
     required this.notifications,
     required this.textRecogniser,
     required this.workspaceDirectory,
+    required this.authenticator,
   });
 
   final PlatformCapabilities capabilities;
@@ -26,6 +28,7 @@ class AppServices {
   final Notifications notifications;
   final TextRecogniser textRecogniser;
   final Directory workspaceDirectory;
+  final DeviceAuthenticator authenticator;
 }
 
 /// Makes [AppState] and [AppServices] available below the root, rebuilding

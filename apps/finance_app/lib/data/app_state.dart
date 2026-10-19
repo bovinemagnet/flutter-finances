@@ -323,6 +323,13 @@ class AppState extends ChangeNotifier {
       )
       .length;
 
+  bool get appLockEnabled => _preferences['appLock'] == true;
+
+  Future<void> setAppLock(bool enabled) async {
+    await _setPreferences({'appLock': enabled});
+    refresh();
+  }
+
   Future<void> recordBackup({DateTime? at}) async {
     await _setPreferences({
       'lastBackupAt': (at ?? DateTime.now()).toUtc().toIso8601String(),

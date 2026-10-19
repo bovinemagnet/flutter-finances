@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:finance_app/app/app_lock.dart';
 import 'package:finance_app/app/app_scope.dart';
 import 'package:finance_app/data/app_state.dart';
 import 'package:finance_app/features/receipts/receipt_review_screen.dart';
@@ -81,6 +82,7 @@ void main() {
           notifications: _NoNotifications(),
           textRecogniser: UnavailableTextRecogniser(),
           workspaceDirectory: Directory.systemTemp,
+          authenticator: _NoAuth(),
         ),
         child: MaterialApp(
           builder: (context, child) => MediaQuery(
@@ -235,6 +237,13 @@ void main() {
     await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
     handle.dispose();
   });
+}
+
+class _NoAuth implements DeviceAuthenticator {
+  @override
+  Future<bool> isSupported() async => false;
+  @override
+  Future<bool> authenticate(String reason) async => true;
 }
 
 class EmptyShareInboxForTests implements ShareInbox {

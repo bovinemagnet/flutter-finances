@@ -5,6 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'app/app_lock.dart';
 import 'app/app_scope.dart';
 import 'app/theme.dart';
 import 'data/app_state.dart';
@@ -46,6 +47,7 @@ Future<void> main() async {
         ? TesseractTextRecogniser()
         : MlKitTextRecogniser(),
     workspaceDirectory: workspace,
+    authenticator: LocalDeviceAuthenticator(),
   );
   runApp(
     FinanceApp(
@@ -89,7 +91,11 @@ class _FinanceAppState extends State<FinanceApp> {
               gate: widget.gate,
               onReady: (state) => setState(() => _state = state),
             )
-          : const HomeScreen(),
+          : AppLockGate(
+              enabled: _state!.appLockEnabled,
+              authenticator: widget.services.authenticator,
+              child: const HomeScreen(),
+            ),
     );
     return AppScope(state: _state, services: widget.services, child: app);
   }
