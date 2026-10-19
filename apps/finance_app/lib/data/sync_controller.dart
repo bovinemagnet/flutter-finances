@@ -186,6 +186,12 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
 
   String get workspaceId => state.settings.workspaceId;
 
+  /// Bank feed connections and their proposals (P1).
+  BankFeedClient get bankFeeds => BankFeedClient.of(client);
+
+  /// Consent to, and results of, optional cloud extraction (P1).
+  ExtractionClient get extraction => ExtractionClient.of(client);
+
   /// Joins a household from an invitation code before connecting.
   Future<HouseholdRole> acceptInvitation(String code) =>
       household.accept(InvitationCode.parse(code));

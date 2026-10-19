@@ -189,6 +189,35 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
         Wrap(
           spacing: 8,
           children: [
+            if (AppScope.syncOf(context)?.isSynced ?? false)
+              OutlinedButton.icon(
+                icon: const Icon(Icons.cloud_download_outlined),
+                label: const Text('Use cloud text'),
+                onPressed: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  try {
+                    final text = await AppScope.syncOf(context)!.extraction
+                        .extractedText(receipt.id);
+                    if (text == null) {
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'No cloud text for this receipt. It is read '
+                            'after syncing when cloud recognition is allowed.',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+                    await service.extractFromText(receipt.id, text);
+                    setState(() => _initialised = false);
+                  } on Exception catch (e) {
+                    messenger.showSnackBar(
+                      SnackBar(content: Text('Could not fetch the text: $e')),
+                    );
+                  }
+                },
+              ),
             if (pages.isNotEmpty)
               OutlinedButton.icon(
                 icon: const Icon(Icons.auto_fix_high_outlined),

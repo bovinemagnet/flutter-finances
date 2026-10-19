@@ -208,7 +208,40 @@ class ReceiptService {
 
   /// Runs text recognition and parsing; failure keeps the document and
   /// leaves retry and manual entry available (REC 04).
-  Future<Receipt> extract(String receiptId, TextRecogniser recogniser) async {
+  Future<Receipt> extract(
+    String receiptId,
+    TextRecogniser recogniser,
+  ) => _extract(receiptId, () async {
+    final images = <Uint8List>[];
+    final seen = <String>{};
+    for (final page in pagesFor(receiptId)) {
+      if (!seen.add(page.sourceAssetId)) continue;
+      final record = _store.vault.asset(page.sourceAssetId);
+      if (record == null || record.contentType == 'application/pdf') {
+        continue;
+      }
+      images.add(await readPage(page));
+    }
+    if (images.isEmpty) {
+      throw const TextRecognitionException(
+        'Text is not read from PDF receipts on this device; enter the details',
+      );
+    }
+    return recogniser.recognise(images);
+  });
+
+  /// Parses text from the optional cloud extraction (AUTO 02). The text is
+  /// untrusted: like on-device text it only fills proposals the user reviews.
+  Future<Receipt> extractFromText(String receiptId, String text) => _extract(
+    receiptId,
+    () async =>
+        OcrResult.fromText(text, engine: 'cloud', engineVersion: 'server'),
+  );
+
+  Future<Receipt> _extract(
+    String receiptId,
+    Future<OcrResult> Function() recognise,
+  ) async {
     var current = receipt(receiptId)!;
     if (current.extractionState == ExtractionState.extractionFailed ||
         current.extractionState == ExtractionState.captured) {
@@ -221,20 +254,7 @@ class ReceiptService {
     current = current.withExtractionEvent(ExtractionEvent.start);
     await _putReceipt(current);
     try {
-      final images = <Uint8List>[];
-      final seen = <String>{};
-      for (final page in pagesFor(receiptId)) {
-        if (!seen.add(page.sourceAssetId)) continue;
-        final record = _store.vault.asset(page.sourceAssetId);
-        if (record == null || record.contentType == 'application/pdf') continue;
-        images.add(await readPage(page));
-      }
-      if (images.isEmpty) {
-        throw const TextRecognitionException(
-          'Text is not read from PDF receipts on this device; enter the details',
-        );
-      }
-      final ocr = await recogniser.recognise(images);
+      final ocr = await recognise();
       final extraction = parseReceipt(
         ocr,
         id: newId(),

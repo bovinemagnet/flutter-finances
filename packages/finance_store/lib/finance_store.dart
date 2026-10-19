@@ -64,4 +64,5 @@ export 'src/sync/transport.dart'
         RetryPolicy,
         Sleep,
         SyncHttpException,
-        SyncNetworkException;
+        SyncNetworkException,
+        SyncTransport;

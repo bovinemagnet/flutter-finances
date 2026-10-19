@@ -143,6 +143,11 @@ class _FinanceAppState extends State<FinanceApp> {
               child: HomeScreen(syncSection: SyncSection(controller: _sync!)),
             ),
     );
-    return AppScope(state: _state, services: widget.services, child: app);
+    return AppScope(
+      state: _state,
+      services: widget.services,
+      sync: _sync,
+      child: app,
+    );
   }
 }

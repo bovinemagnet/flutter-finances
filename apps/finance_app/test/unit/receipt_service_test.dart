@@ -138,6 +138,17 @@ void main() {
     },
   );
 
+  test('cloud text is parsed into the same reviewable proposal', () async {
+    final receipt = await receipts.capture([
+      CapturedFile(photo(), source: CaptureSource.camera),
+    ]);
+    final extracted = await receipts.extractFromText(receipt.id, _receiptText);
+    expect(extracted.extractionState, ExtractionState.needsReview);
+    final extraction = receipts.extractionFor(extracted)!;
+    expect(extraction.suggested.total, Money(1350, aud));
+    expect(extraction.ocr.engine, 'cloud');
+  });
+
   test('failed extraction keeps the document and allows retry', () async {
     final receipt = await receipts.capture([
       CapturedFile(photo(), source: CaptureSource.camera),

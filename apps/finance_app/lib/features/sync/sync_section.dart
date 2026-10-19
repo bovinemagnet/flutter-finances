@@ -2,7 +2,9 @@ import 'package:finance_store/finance_store.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/sync_controller.dart';
+import 'bank_feeds_screen.dart';
 import 'conflicts_screen.dart';
+import 'extraction_consent_screen.dart';
 import 'household_screen.dart';
 
 /// Sync controls for the settings page.
@@ -195,6 +197,27 @@ class SyncSection extends StatelessWidget {
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => HouseholdScreen(controller: controller),
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.account_balance_outlined),
+                title: const Text('Bank feeds'),
+                subtitle: const Text('Suggested entries from your bank'),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => BankFeedsScreen(controller: controller),
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.document_scanner_outlined),
+                title: const Text('Cloud text recognition'),
+                subtitle: const Text('Optional; off unless you allow it'),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        ExtractionConsentScreen(controller: controller),
                   ),
                 ),
               ),

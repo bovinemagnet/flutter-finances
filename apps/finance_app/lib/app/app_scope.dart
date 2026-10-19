@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/widgets.dart';
 
 import '../data/app_state.dart';
+import '../data/sync_controller.dart';
 import '../platform/capabilities.dart';
 import 'app_lock.dart';
 import '../platform/services.dart';
@@ -40,13 +41,20 @@ class AppScope extends InheritedNotifier<AppState> {
     required AppState? state,
     required this.services,
     required super.child,
+    this.sync,
   }) : super(notifier: state);
 
   final AppServices services;
+
+  /// Sync for the open workspace; null before one is open and in tests.
+  final SyncController? sync;
 
   static AppState of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppScope>()!.notifier!;
 
   static AppServices servicesOf(BuildContext context) =>
       context.getInheritedWidgetOfExactType<AppScope>()!.services;
+
+  static SyncController? syncOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<AppScope>()!.sync;
 }
