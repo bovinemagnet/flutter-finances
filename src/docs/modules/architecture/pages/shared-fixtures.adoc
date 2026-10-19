@@ -16,16 +16,16 @@ Each file has a `schemaVersion` (currently `1`), an `area` and `cases`. Every ca
 |===
 | op | input | expect
 
-| `money.parse` | `{text, exponent}` | `{minor}` or `{error}`
-| `money.allocate` | `{total, weights[]}` | `{parts[]}`
-| `journal.validate` | `{postings:[{account, minor, currency}]}` | `{errors:[codes]}`
-| `ledger.scenario` | `{accounts[], categories[], entries[]}` | `{balances{}, expenses, income, netWorth, journalCount}`
-| `periods.generate` | `{cycle, anchor, count, endOfMonth}` | `{periods:[{start,end}]}`
-| `schedule.occurrences` | `{frequency, interval, start, until, count}` | `{dates[]}`
-| `budget.remaining` | `{planned, rollover, adjustments, postedNet, pending}` | `{remaining, pendingRemaining}`
-| `rollover.next` | `{policy, remaining}` | `{opening}`
-| `discretionary.estimate` | budget inputs | `{budgetLimit, cashLimit, estimate, shortfall}`
-| `csv.parse` | `{text, mapping}` | `{rows[], errors[]}`
+| `money.parse` | `+{text, exponent}+` | `+{minor}+` or `+{error}+`
+| `money.allocate` | `+{total, weights[]}+` | `+{parts[]}+`
+| `journal.validate` | `+{postings:[{account, minor, currency}]}+` | `+{errors:[codes]}+`
+| `ledger.scenario` | `+{accounts[], categories[], entries[]}+` | `+{balances{}, expenses, income, netWorth, journalCount}+`
+| `periods.generate` | `+{cycle, anchor, count, endOfMonth}+` | `+{periods:[{start,end}]}+`
+| `schedule.occurrences` | `+{frequency, interval, start, until, count}+` | `+{dates[]}+`
+| `budget.remaining` | `+{planned, rollover, adjustments, postedNet, pending}+` | `+{remaining, pendingRemaining}+`
+| `rollover.next` | `+{policy, remaining}+` | `+{opening}+`
+| `discretionary.estimate` | budget inputs | `+{budgetLimit, cashLimit, estimate, shortfall}+`
+| `csv.parse` | `+{text, mapping}+` | `+{rows[], errors[]}+`
 |===
 
 The semantics of the money and ledger operations are described in xref:domain:money.adoc[] and xref:domain:ledger.adoc[].

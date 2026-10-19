@@ -25,7 +25,7 @@ include::example$sync-sequence.mmd[]
 }
 ----
 
-`POST /v1/sync/commands` accepts `{"commands": [...]}` (at most 500) and returns `{"results": [...]}` in the same order. Each command is committed in its own database transaction together with its idempotency record and change records (SYNC 02).
+`POST /v1/sync/commands` accepts `+{"commands": [...]}+` (at most 500) and returns `+{"results": [...]}+` in the same order. Each command is committed in its own database transaction together with its idempotency record and change records (SYNC 02).
 
 == Results
 
@@ -47,8 +47,8 @@ Replaying a `commandId` returns the stored original result with status `previous
 Each entity has an integer `revision`, starting at 1 on creation and incremented on every accepted change. `baseRevision` is the revision the client last saw (0 for a new entity).
 
 `journal.post`:: Creates a journal, or replaces one whose stored status is `draft` or `pending`. Replacing requires `baseRevision` to equal the stored revision, otherwise the result is `conflict`. A posted or reversed journal can only be changed with `journal.correct`.
-`journal.correct`:: Payload `{"originalId", "reversal": Journal, "replacement": Journal | null}`. `entityId` is the original and its stored revision must equal `baseRevision`, otherwise `conflict` (A10). The original becomes `reversed` atomically with inserting the reversal and replacement.
-`entity.upsert`:: Payload `{"fields": {...}}` with only the changed fields.
+`journal.correct`:: Payload `+{"originalId", "reversal": Journal, "replacement": Journal | null}+`. `entityId` is the original and its stored revision must equal `baseRevision`, otherwise `conflict` (A10). The original becomes `reversed` atomically with inserting the reversal and replacement.
+`entity.upsert`:: Payload `+{"fields": {...}}+` with only the changed fields.
 `entity.delete`:: Writes a tombstone. Deleting a posted journal is rejected (`POSTED_JOURNAL_IMMUTABLE`); void it with `journal.correct` and a null replacement.
 
 == Field merge
@@ -66,17 +66,17 @@ Postings are validated with the rules in xref:domain:ledger.adoc[]. In addition:
 
 == Change feed
 
-`GET /v1/sync/changes?cursor=<opaque>&limit=500` returns `{"changes": [...], "cursor": "opaque", "hasMore": bool}`. Each change is `{"entityType", "entityId", "revision", "op": "upsert | delete", "data": {}}`, where `data` is the full current entity. An empty cursor starts from the beginning. The client applies changes transactionally and keeps pending commands as overlays (SYNC 04).
+`GET /v1/sync/changes?cursor=<opaque>&limit=500` returns `+{"changes": [...], "cursor": "opaque", "hasMore": bool}+`. Each change is `+{"entityType", "entityId", "revision", "op": "upsert | delete", "data": {}}+`, where `data` is the full current entity. An empty cursor starts from the beginning. The client applies changes transactionally and keeps pending commands as overlays (SYNC 04).
 
 === Cursor expiry and snapshot rebase
 
-Tombstones are retained for a proposed 90 days (SYNC 06). A cursor older than that horizon returns HTTP 410 with `{"error": "CURSOR_EXPIRED"}`. The client then pages `GET /v1/sync/snapshot?after=<entityKey>` and rebases its pending commands (A15). Pending commands for entities deleted in the meantime are surfaced for review and never applied automatically.
+Tombstones are retained for a proposed 90 days (SYNC 06). A cursor older than that horizon returns HTTP 410 with `+{"error": "CURSOR_EXPIRED"}+`. The client then pages `GET /v1/sync/snapshot?after=<entityKey>` and rebases its pending commands (A15). Pending commands for entities deleted in the meantime are surfaced for review and never applied automatically.
 
 == Receipt documents (SYNC 05)
 
-. `POST /v1/receipts/upload-intents` with `{"receiptId", "assetId", "kind": "source | derivative", "contentType", "sizeBytes", "sha256"}` returns `{"uploadUrl", "headers", "expiresAt"}` for a short-lived presigned PUT. Requesting an intent again for the same `assetId` and checksum returns a fresh URL for the same object.
-. The client PUTs the bytes, then calls `POST /v1/receipts/{receiptId}/complete` with `{"assetId"}`. The server verifies ownership, size, checksum and content type by magic bytes, then marks the asset `quarantined` until the scan job marks it `available` or `rejected`. Completing twice is a no-op and never creates a second receipt.
-. `GET /v1/receipts/{receiptId}/assets/{assetId}/download` returns a short-lived presigned GET only for members of the owning workspace (A17).
+. `POST /v1/receipts/upload-intents` with `+{"receiptId", "assetId", "kind": "source | derivative", "contentType", "sizeBytes", "sha256"}+` returns `+{"uploadUrl", "headers", "expiresAt"}+` for a short-lived presigned PUT. Requesting an intent again for the same `assetId` and checksum returns a fresh URL for the same object.
+. The client PUTs the bytes, then calls `+POST /v1/receipts/{receiptId}/complete+` with `+{"assetId"}+`. The server verifies ownership, size, checksum and content type by magic bytes, then marks the asset `quarantined` until the scan job marks it `available` or `rejected`. Completing twice is a no-op and never creates a second receipt.
+. `+GET /v1/receipts/{receiptId}/assets/{assetId}/download+` returns a short-lived presigned GET only for members of the owning workspace (A17).
 
 Metadata may arrive before an image, in which case other devices show "Image pending".
 
@@ -90,9 +90,9 @@ Metadata may arrive before an image, in which case other devices show "Image pen
 | `GET /v1/sync/changes` | Pull the change feed
 | `GET /v1/sync/snapshot` | Page a snapshot for rebase
 | `POST /v1/receipts/upload-intents` | Request an upload URL
-| `POST /v1/receipts/{id}/complete` | Complete an upload
-| `GET /v1/receipts/{id}/download` | Scoped download (see above for the asset path)
-| `POST /v1/imports/preview`, `POST /v1/imports/{id}/commit` | Import preview and commit
-| `POST /v1/exports`, `GET /v1/jobs/{id}` | Export and job status
-| `POST /v1/devices`, `DELETE /v1/devices/{id}` | Register and revoke devices
+| `+POST /v1/receipts/{id}/complete+` | Complete an upload
+| `+GET /v1/receipts/{id}/download+` | Scoped download (see above for the asset path)
+| `POST /v1/imports/preview`, `+POST /v1/imports/{id}/commit+` | Import preview and commit
+| `POST /v1/exports`, `+GET /v1/jobs/{id}+` | Export and job status
+| `POST /v1/devices`, `+DELETE /v1/devices/{id}+` | Register and revoke devices
 |===
