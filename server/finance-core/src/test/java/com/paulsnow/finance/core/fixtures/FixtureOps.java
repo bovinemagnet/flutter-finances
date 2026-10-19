@@ -54,6 +54,7 @@ final class FixtureOps {
         ops.put("money.allocate", FixtureOps::moneyAllocate);
         ops.put("journal.validate", FixtureOps::journalValidate);
         ops.put("ledger.scenario", FixtureOps::ledgerScenario);
+        ops.putAll(PlanningFixtureOps.all());
         return Map.copyOf(ops);
     }
 
