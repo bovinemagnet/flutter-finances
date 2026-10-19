@@ -16,7 +16,7 @@ IMPORTANT: These are commitments from the product requirements (UX 01). Text sca
 
 * *UX 02 Recovery.* Show empty, loading, offline, permission denied, extraction failed, sync conflict and storage full states, and preserve form drafts after interruption.
 
-The entry form reports unsaved input when the application is paused or hidden (`onInterrupted`), and `TransactionFormModel` can write it to and restore it from a draft (`toDraftJson`, `fromDraftJson`). `AppState` keeps one such draft (`saveEntryDraft`, `clearEntryDraft`), which is not counted as a data change for backup reminders. The entry editor screen does not yet connect the form's callback to `AppState`, so a draft is not saved from the interface today. The storage full state is shown when a receipt cannot be saved because the device is out of space (see xref:platform:receipt-capture.adoc[]).
+The entry form reports unsaved input when the application is paused or hidden (`onInterrupted`), and `TransactionFormModel` can write it to and restore it from a draft (`toDraftJson`, `fromDraftJson`). `AppState` keeps one such draft (`saveEntryDraft`, `clearEntryDraft`), which is not counted as a data change for backup reminders. `openTransactionEditor` connects the form's callback to `AppState.saveEntryDraft`, so a draft is saved when the application is backgrounded, and the next new entry offers "Continue your unsaved entry?". The storage full state is shown when a receipt cannot be saved because the device is out of space (see xref:platform:receipt-capture.adoc[]).
 * *UX 03 Trust cues.* Distinguish calculated balances, bank-reported observations, planned amounts, pending transactions and projections.
 * *Reports.* Charts are presented with tables beside them.
 
