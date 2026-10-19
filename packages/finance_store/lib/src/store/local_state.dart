@@ -104,15 +104,12 @@ class LocalState {
     }
   }
 
-  /// Marks the entity deleted (a tombstone), keeping its last JSON.
+  /// Marks the entity deleted (a tombstone), keeping its last JSON. An
+  /// entity never stored locally needs no tombstone.
   void markDeleted(EntityRef ref, {int? revision}) {
     final s = snapshot(ref);
-    put(
-      ref,
-      s?.json ?? {'id': ref.id},
-      revision: revision ?? s?.revision ?? 0,
-      deleted: true,
-    );
+    if (s == null) return;
+    put(ref, s.json, revision: revision ?? s.revision, deleted: true);
   }
 
   void setRevision(EntityRef ref, int revision) {

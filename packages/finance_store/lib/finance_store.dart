@@ -28,6 +28,7 @@ export 'src/store/review.dart' show ReviewItem, ReviewKind, ReviewStatus;
 export 'src/store/store_context.dart' show EntityValidator;
 export 'src/store/workspace.dart'
     show
+        WorkspaceDescriptor,
         SyncMode,
         WorkspaceExistsException,
         WorkspaceNotActiveException,
@@ -35,3 +36,18 @@ export 'src/store/workspace.dart'
         WorkspaceSettings;
 export 'src/vault/asset_record.dart' hide uploadStateFromWire, uploadStateWire;
 export 'src/vault/receipt_vault.dart';
+export 'src/sync/asset_sync.dart'
+    show
+        AssetNotYetAvailableException,
+        UploadPhase,
+        UploadProgress,
+        UploadSummary;
+export 'src/sync/sync_client.dart';
+export 'src/sync/transport.dart'
+    show
+        AccessTokenProvider,
+        AuthenticationRequiredException,
+        RetryPolicy,
+        Sleep,
+        SyncHttpException,
+        SyncNetworkException;
