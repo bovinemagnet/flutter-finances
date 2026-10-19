@@ -323,26 +323,41 @@ void main() {
     },
   );
 
-  test('extraction keeps line items and warranties produce reminders', () async {
-    final receipt = await receipts.capture([CapturedFile(photo(), source: CaptureSource.camera)]);
-    await receipts.extract(receipt.id, _FakeRecogniser(_receiptText));
-    final items = receipts.itemsFor(receipt.id)!;
-    expect(items.items.map((i) => i.description), containsAll(['Bananas 1kg', 'Milk 2L', 'Bread']));
-    expect(items.reconciliation, ItemReconciliation.consistent);
+  test(
+    'extraction keeps line items and warranties produce reminders',
+    () async {
+      final receipt = await receipts.capture([
+        CapturedFile(photo(), source: CaptureSource.camera),
+      ]);
+      await receipts.extract(receipt.id, _FakeRecogniser(_receiptText));
+      final items = receipts.itemsFor(receipt.id)!;
+      expect(
+        items.items.map((i) => i.description),
+        containsAll(['Bananas 1kg', 'Milk 2L', 'Bread']),
+      );
+      expect(items.reconciliation, ItemReconciliation.consistent);
 
-    await receipts.addWarranty(Warranty(
-      id: newId(),
-      receiptId: receipt.id,
-      description: 'Kettle',
-      startDate: today,
-      months: 12,
-    ));
-    expect(receipts.warranties().single.expiresOn, LocalDate(2027, 10, 18));
-    final reminders = planReminders(const [], const [],
-        warranties: receipts.warranties(), now: DateTime(2027, 9, 1), horizonDays: 60);
-    expect(reminders.single.title, 'Warranty ending');
-    expect(reminders.single.privateBody, isNot(contains('Kettle')));
-  });
+      await receipts.addWarranty(
+        Warranty(
+          id: newId(),
+          receiptId: receipt.id,
+          description: 'Kettle',
+          startDate: today,
+          months: 12,
+        ),
+      );
+      expect(receipts.warranties().single.expiresOn, LocalDate(2027, 10, 18));
+      final reminders = planReminders(
+        const [],
+        const [],
+        warranties: receipts.warranties(),
+        now: DateTime(2027, 9, 1),
+        horizonDays: 60,
+      );
+      expect(reminders.single.title, 'Warranty ending');
+      expect(reminders.single.privateBody, isNot(contains('Kettle')));
+    },
+  );
 
   test('a multi-receipt capture gets a suggested split to confirm', () async {
     final receipt = await receipts.capture([
@@ -355,7 +370,9 @@ void main() {
     ];
     var call = 0;
     final proposal = await receipts.suggestSeparation(
-        receipt.id, _PerPageRecogniser(() => texts[call++]));
+      receipt.id,
+      _PerPageRecogniser(() => texts[call++]),
+    );
     expect(proposal.groups, hasLength(2));
     final created = await receipts.applySeparation(receipt.id, proposal);
     expect(created, hasLength(1));

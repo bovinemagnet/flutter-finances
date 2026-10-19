@@ -16,6 +16,9 @@ abstract final class AppEntityTypes {
   static const categorisationRule = 'categorisationRule';
   static const entryDraft = 'entryDraft';
   static const debtTerms = 'debtTerms';
+  static const holding = 'holding';
+  static const holdingEvent = 'holdingEvent';
+  static const securityPrice = 'securityPrice';
 
   /// The workspace's single `appPreferences` entity. Synchronised entity
   /// ids must be UUIDs.

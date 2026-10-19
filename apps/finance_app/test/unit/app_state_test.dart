@@ -318,4 +318,47 @@ void main() {
     );
     expect(comparison.avalanche.payoffDates[card.id], isNotNull);
   });
+
+  test('holdings value an investment account and propose an update', () async {
+    await onboard();
+    await state.saveAccount(
+      AccountEdit(
+        const Account(
+          id: 'shares',
+          name: 'Shares',
+          type: AccountType.investment,
+        ),
+        Money(1000000, aud),
+        LocalDate(2026, 10, 1),
+      ),
+    );
+    final holding = Holding(
+      id: newId(),
+      securityCode: 'VAS',
+      name: 'Australian shares',
+      accountId: 'shares',
+    );
+    await state.saveHolding(holding);
+    await state.recordHoldingEvent(
+      HoldingEvent.buy(
+        id: newId(),
+        holdingId: holding.id,
+        date: LocalDate(2026, 10, 2),
+        units: parseUnits('100'),
+      ),
+    );
+    await state.recordPrice(
+      SecurityPrice(
+        securityCode: 'VAS',
+        date: LocalDate(2026, 10, 18),
+        price: Money(12000, aud),
+      ),
+    );
+    final valuation = state.valuation('shares');
+    expect(valuation.total, Money(1200000, aud));
+    final proposal = state.valuationProposal('shares');
+    expect(proposal.draft, isNotNull);
+    await state.post(proposal.draft!);
+    expect(state.ledger.displayBalance('shares'), Money(1200000, aud));
+  });
 }

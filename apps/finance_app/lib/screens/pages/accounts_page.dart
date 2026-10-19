@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_scope.dart';
 import '../../data/app_state.dart';
 import '../../features/accounts/account_editor.dart';
+import '../../features/accounts/holdings_screen.dart';
 import '../../features/plan/debt_payoff_screen.dart';
 import '../../format/formatters.dart';
 
@@ -90,22 +91,32 @@ class AccountsPage extends StatelessWidget {
                   ),
                   PopupMenuButton<String>(
                     tooltip: 'Actions for ${account.name}',
-                    onSelected: (action) => action == 'edit'
-                        ? _edit(context, state, account)
-                        : Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => ReconcileScreen(
-                                state: state,
-                                account: account,
-                              ),
-                            ),
-                          ),
-                    itemBuilder: (context) => const [
-                      PopupMenuItem(value: 'edit', child: Text('Edit')),
-                      PopupMenuItem(
+                    onSelected: (action) => switch (action) {
+                      'edit' => _edit(context, state, account),
+                      'holdings' => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => HoldingsScreen(accountId: account.id),
+                        ),
+                      ),
+                      _ => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              ReconcileScreen(state: state, account: account),
+                        ),
+                      ),
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                      const PopupMenuItem(
                         value: 'reconcile',
                         child: Text('Reconcile'),
                       ),
+                      if (account.type == AccountType.investment ||
+                          account.type == AccountType.superannuation)
+                        const PopupMenuItem(
+                          value: 'holdings',
+                          child: Text('Holdings'),
+                        ),
                     ],
                   ),
                 ],

@@ -714,6 +714,62 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  List<Holding> get holdings => _all(AppEntityTypes.holding, holdingFromJson);
+  List<HoldingEvent> get holdingEvents =>
+      _all(AppEntityTypes.holdingEvent, holdingEventFromJson);
+  List<SecurityPrice> get securityPrices => _all(
+    AppEntityTypes.securityPrice,
+    (j) => securityPriceFromJson(j, currency),
+  );
+
+  Future<void> saveHolding(Holding holding) async {
+    await _put(AppEntityTypes.holding, holding.id, holdingToJson(holding));
+    refresh();
+  }
+
+  Future<void> recordHoldingEvent(HoldingEvent event) async {
+    await _put(
+      AppEntityTypes.holdingEvent,
+      event.id,
+      holdingEventToJson(event),
+    );
+    refresh();
+  }
+
+  /// One price per security and day; a later entry for the same day
+  /// replaces the earlier one.
+  Future<void> recordPrice(SecurityPrice price) async {
+    final id = ownedEntityId(
+      AppEntityTypes.securityPrice,
+      '${price.securityCode}@${price.date}',
+    );
+    await _put(AppEntityTypes.securityPrice, id, {
+      ...securityPriceToJson(price),
+      'id': id,
+    });
+    refresh();
+  }
+
+  /// Detailed holdings valuation of an investment or super account (P1).
+  PortfolioValuation valuation(String accountId, {LocalDate? asOf}) =>
+      valuePortfolio(
+        accountId: accountId,
+        currency: currency,
+        holdings: holdings.where((h) => h.accountId == accountId),
+        events: holdingEvents,
+        prices: PriceBook(securityPrices),
+        asOf: asOf ?? today(),
+      );
+
+  /// A balance adjustment for the user to confirm, bringing the account to
+  /// its holdings value.
+  ValuationAdjustmentProposal valuationProposal(String accountId) =>
+      proposeValuationAdjustment(
+        ledger,
+        valuation(accountId),
+        draftId: newId(),
+      );
+
   /// Merchants charging regularly that no schedule covers yet (P1).
   List<SubscriptionProposal> subscriptionProposals() => detectSubscriptions(
     ledger: ledger,
