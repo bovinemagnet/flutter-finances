@@ -1,0 +1,11 @@
+SHELL COLES EXPRESS
+Annandale
+ABN 22 108 088 742
+TAX INVOICE
+Pump 4  Unleaded 91
+45.67 L @ 189.9 c/L       86.73
+Mars Bar                   2.50
+TOTAL                     89.23
+EFTPOS                    89.23
+GST INCLUDED               8.11
+14/10/2026 18:05

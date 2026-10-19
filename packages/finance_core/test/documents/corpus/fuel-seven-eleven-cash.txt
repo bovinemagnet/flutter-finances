@@ -1,0 +1,10 @@
+7-ELEVEN
+Store 3301 Strathfield
+TAX INVOICE
+PUMP 7 U95 30.00L    65.97
+COFFEE LARGE          4.00
+TOTAL                69.97
+ROUNDING             -0.02
+CASH                 80.00
+CHANGE               10.05
+22/09/2026 15:30

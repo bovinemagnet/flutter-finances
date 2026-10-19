@@ -1,4 +1,5 @@
 import 'package:finance_core/finance_core.dart';
+import 'package:finance_store/finance_store.dart' show SyncMode;
 import 'package:flutter/material.dart';
 
 import '../../format/formatters.dart';
@@ -168,7 +169,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     child: const Column(
       children: [
         RadioListTile<SyncMode>(
-          value: SyncMode.localOnly,
+          value: SyncMode.local,
           title: Text('Only on this device'),
           subtitle: Text(
             'No account needed. Your data can only be recovered '
@@ -365,7 +366,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               : '${_frequencies[model.payFrequency]} budget from ${formatMoney(pay)} take-home pay',
         ),
         Text(
-          model.syncMode == SyncMode.localOnly
+          model.syncMode == SyncMode.local
               ? 'Stored only on this device'
               : 'Sync can be turned on after signing in',
         ),

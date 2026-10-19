@@ -1,0 +1,10 @@
+13CABS
+Taxi Tax Invoice
+ABN 99 888 777 666
+Driver 44120  Plate T1234
+Start 01/11/2026 23:10
+Fare                  38.60
+Booking fee            2.50
+Total                 41.10
+Paid cash             41.10
+GST incl               3.74

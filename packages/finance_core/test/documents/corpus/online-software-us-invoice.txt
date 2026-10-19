@@ -1,0 +1,10 @@
+INVOICE
+Acme Software Inc
+1 Market St, San Francisco CA
+Invoice #INV-2026-0042
+Invoice date: 10/07/2026
+Due date: 11/06/2026
+Pro plan (monthly)        USD 20.00
+Tax                       USD 0.00
+Total                     USD 20.00
+Amount paid               USD 20.00

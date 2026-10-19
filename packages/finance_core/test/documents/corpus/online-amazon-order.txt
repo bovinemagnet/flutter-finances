@@ -1,0 +1,10 @@
+amazon.com.au
+Final Details for Order #249-1234567-1234567
+Order Placed: 16 October 2026
+Items Ordered                         Price
+1 of: USB-C cable 2m                  $14.99
+1 of: Phone case                      $22.50
+Item(s) Subtotal:                     $37.49
+Postage & Packing:                     $0.00
+Grand Total:                          $37.49
+Total includes GST of                  $3.41

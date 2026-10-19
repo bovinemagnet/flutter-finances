@@ -205,6 +205,39 @@ public class LedgerService {
     }
 
     /**
+     * The net amount one journal posts to one ledger account.
+     *
+     * @param journalId     journal
+     * @param effectiveDate effective date
+     * @param account       ledger account (user account, category or system account)
+     * @param netMinor      net amount on that account
+     */
+    public record PostingMovement(UUID journalId, LocalDate effectiveDate, String account, long netMinor) {
+    }
+
+    /**
+     * Lists the net movement per journal and ledger account of every
+     * pending or posted, non-reversal journal dated in a range, for
+     * matching imported statement rows in memory.
+     *
+     * @param workspaceId workspace
+     * @param from        first date
+     * @param to          last date
+     * @return movements ordered by date
+     */
+    public List<PostingMovement> movementsBetween(UUID workspaceId, LocalDate from, LocalDate to) {
+        return jdbc.sql("select j.id, j.effective_date, p.account, sum(p.amount_minor) as net "
+                        + "from ledger_journal j join ledger_posting p on p.journal_id = j.id "
+                        + "where j.workspace_id = ? and j.status in ('pending', 'posted') and j.type <> 'reversal' "
+                        + "and j.effective_date between ? and ? group by j.id, j.effective_date, p.account "
+                        + "order by j.effective_date, j.id")
+                .params(workspaceId, from, to)
+                .query((rs, row) -> new PostingMovement(rs.getObject("id", UUID.class),
+                        rs.getObject("effective_date", LocalDate.class), rs.getString("account"), rs.getLong("net")))
+                .list();
+    }
+
+    /**
      * Removes every journal of a workspace (deletion job only).
      *
      * @param workspaceId workspace being deleted

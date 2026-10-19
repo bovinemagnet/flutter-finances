@@ -1,0 +1,11 @@
+CORNER STORE
+12 Smith St Fitzroy
+BREAD WHITE              4.50
+MILK 2L                  3.10
+CIGARETTES              49.95
+NEWSPAPER                2.50
+SOFT DRINK 600ML         3.20
+TOTAL                   63.25
+CASH TENDERED          100.00
+CHANGE                  36.75
+11/07/2026 18:22

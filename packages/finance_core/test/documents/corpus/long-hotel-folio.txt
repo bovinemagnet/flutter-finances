@@ -1,0 +1,13 @@
+HOTEL CANBERRA
+Tax Invoice
+Guest: P SNOW   Room 412
+Arrival 12/10/2026  Departure 14/10/2026
+12/10 Room charge             219.00
+12/10 Restaurant               64.50
+13/10 Room charge             219.00
+13/10 Minibar                  12.00
+Total charges                 514.50
+Payments                     -514.50
+Balance due                     0.00
+Total includes GST             46.77
+Invoice date: 14/10/2026

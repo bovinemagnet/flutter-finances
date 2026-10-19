@@ -1,0 +1,10 @@
+THE GROUNDS OF ALEXANDRIA
+Tax Invoice
+2x Cappuccino         10.00
+Big Breakfast         26.00
+Subtotal              36.00
+Sunday surcharge 10%   3.60
+Total                 39.60
+Includes GST of        3.60
+EFTPOS                39.60
+Sunday 18/10/2026 11:32

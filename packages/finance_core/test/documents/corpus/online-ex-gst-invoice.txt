@@ -1,0 +1,8 @@
+INVOICE
+From: Northside Web Hosting Pty Ltd
+ABN 11 222 333 444
+Issued 1 November 2026
+Business hosting 12 months
+Subtotal (ex GST)        240.00
+GST 10%                   24.00
+Total AUD                264.00
