@@ -323,6 +323,7 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
           title: const Text('This is a refund'),
           onChanged: (v) => setState(() => _refund = v),
         ),
+        ..._itemsAndWarranties(context, state, receipt.id),
         if (links.isNotEmpty) ...[
           const Divider(),
           for (final link in links)
@@ -591,4 +592,118 @@ class _PagePreview extends StatelessWidget {
       ],
     );
   }
+}
+
+const _reconciliationText = {
+  ItemReconciliation.consistent: 'The items add up to the total',
+  ItemReconciliation.inconsistent:
+      'The items do not add up to the total; check them',
+  ItemReconciliation.insufficient: 'Not enough was read to check the items',
+};
+
+List<Widget> _itemsAndWarranties(
+  BuildContext context,
+  AppState state,
+  String receiptId,
+) {
+  final service = state.receipts;
+  final items = service.itemsFor(receiptId);
+  final warranties = service
+      .warranties()
+      .where((w) => w.receiptId == receiptId)
+      .toList();
+  return [
+    if (items != null && items.items.isNotEmpty) ...[
+      const Divider(),
+      Text('Items', style: Theme.of(context).textTheme.titleSmall),
+      for (final item in items.items)
+        ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: Text(item.description),
+          subtitle: item.discount.isZero
+              ? null
+              : Text('Discount ${formatMoney(item.discount)}'),
+          trailing: Text(formatMoney(item.lineTotal)),
+        ),
+      Text(_reconciliationText[items.reconciliation]!),
+    ],
+    const Divider(),
+    for (final w in warranties)
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.verified_user_outlined),
+        title: Text('Warranty: ${w.description}'),
+        subtitle: Text(
+          'Ends ${formatDate(w.expiresOn)}; reminder a month before',
+        ),
+        trailing: IconButton(
+          tooltip: 'Remove warranty',
+          icon: const Icon(Icons.delete_outline),
+          onPressed: () => service.deleteWarranty(w.id),
+        ),
+      ),
+    Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        icon: const Icon(Icons.verified_user_outlined),
+        label: const Text('Add warranty'),
+        onPressed: () async {
+          final description = TextEditingController(
+            text: items?.items.firstOrNull?.description ?? '',
+          );
+          final months = TextEditingController(text: '12');
+          final warranty = await showDialog<Warranty>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Warranty'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: description,
+                    decoration: const InputDecoration(
+                      labelText: 'What is covered',
+                    ),
+                  ),
+                  TextField(
+                    controller: months,
+                    decoration: const InputDecoration(labelText: 'Months'),
+                    keyboardType: TextInputType.number,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final count = int.tryParse(months.text.trim());
+                    if (count == null || count <= 0) return;
+                    Navigator.of(context).pop(
+                      Warranty(
+                        id: newId(),
+                        receiptId: receiptId,
+                        description: description.text.trim().isEmpty
+                            ? 'Purchase'
+                            : description.text.trim(),
+                        startDate:
+                            service.receipt(receiptId)?.confirmed.date ??
+                            state.today(),
+                        months: count,
+                      ),
+                    );
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            ),
+          );
+          if (warranty != null) await service.addWarranty(warranty);
+        },
+      ),
+    ),
+  ];
 }

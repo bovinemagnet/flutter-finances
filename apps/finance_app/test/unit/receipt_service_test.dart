@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:finance_app/data/app_state.dart';
 import 'package:finance_app/data/receipt_service.dart';
+import 'package:finance_app/data/reminders.dart';
 import 'package:finance_app/platform/image_tools.dart';
 import 'package:finance_app/platform/services.dart';
 import 'package:finance_app/platform/text_recognition.dart';
@@ -11,6 +12,7 @@ import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
+import 'package:intl/date_symbol_data_local.dart';
 
 const _fastKdf = Argon2idParameters(
   memoryKiB: 64,
@@ -45,6 +47,7 @@ CHANGE           6.50
 ''';
 
 void main() {
+  setUpAll(() => initializeDateFormatting('en_AU'));
   const aud = Currency.aud;
   final today = LocalDate(2026, 10, 19);
   late Directory dir;
@@ -319,4 +322,25 @@ void main() {
       );
     },
   );
+
+  test('extraction keeps line items and warranties produce reminders', () async {
+    final receipt = await receipts.capture([CapturedFile(photo(), source: CaptureSource.camera)]);
+    await receipts.extract(receipt.id, _FakeRecogniser(_receiptText));
+    final items = receipts.itemsFor(receipt.id)!;
+    expect(items.items.map((i) => i.description), containsAll(['Bananas 1kg', 'Milk 2L', 'Bread']));
+    expect(items.reconciliation, ItemReconciliation.consistent);
+
+    await receipts.addWarranty(Warranty(
+      id: newId(),
+      receiptId: receipt.id,
+      description: 'Kettle',
+      startDate: today,
+      months: 12,
+    ));
+    expect(receipts.warranties().single.expiresOn, LocalDate(2027, 10, 18));
+    final reminders = planReminders(const [], const [],
+        warranties: receipts.warranties(), now: DateTime(2027, 9, 1), horizonDays: 60);
+    expect(reminders.single.title, 'Warranty ending');
+    expect(reminders.single.privateBody, isNot(contains('Kettle')));
+  });
 }

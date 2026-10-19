@@ -38,6 +38,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final signature = [
       for (final s in state.schedules) s.id,
       for (final s in state.store.entities('recurringSchedule')) s.revision,
+      for (final w in state.receipts.warranties())
+        '${w.id}${w.months}${w.days}${w.startDate}',
       for (final o in state.overrides)
         '${o.id}${o.skipped}${o.dueDate}${o.amount}',
     ].join('|');
@@ -49,6 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
       state.schedules,
       state.overrides,
       now: DateTime.now(),
+      warranties: state.receipts.warranties(),
     ).catchError((Object _) {});
   }
 

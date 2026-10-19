@@ -25,6 +25,8 @@ abstract final class ReceiptEntityTypes {
   static const link = 'receiptLink';
   static const extraction = 'extraction';
   static const fingerprint = 'imageFingerprint';
+  static const items = 'itemExtraction';
+  static const warranty = 'warranty';
 }
 
 /// Something worth checking about a captured receipt; never blocks saving.
@@ -83,6 +85,34 @@ class ReceiptService {
     if (id == null) return null;
     final record = _store.entity(ReceiptEntityTypes.extraction, id);
     return record == null ? null : extractionFromJson(record.json);
+  }
+
+  /// The latest line items proposed for a receipt, if any.
+  ItemExtraction? itemsFor(String receiptId) {
+    final record = _store.entity(
+      ReceiptEntityTypes.items,
+      store.ownedEntityId(ReceiptEntityTypes.items, receiptId),
+    );
+    return record == null || record.deleted
+        ? null
+        : itemExtractionFromJson(record.json);
+  }
+
+  List<Warranty> warranties() =>
+      _all(ReceiptEntityTypes.warranty, warrantyFromJson);
+
+  Future<void> addWarranty(Warranty warranty) async {
+    await _store.upsertEntity(
+      ReceiptEntityTypes.warranty,
+      warranty.id,
+      warrantyToJson(warranty),
+    );
+    state.refresh();
+  }
+
+  Future<void> deleteWarranty(String id) async {
+    await _store.deleteEntity(ReceiptEntityTypes.warranty, id);
+    state.refresh();
   }
 
   Future<Uint8List> readPage(ReceiptPage page) =>
@@ -220,6 +250,21 @@ class ReceiptService {
         ReceiptEntityTypes.extraction,
         extraction.id,
         extractionToJson(extraction),
+      );
+      // Line items are a separate proposal (P1); confirmed values are never
+      // overwritten by a rerun because they live on the receipt itself.
+      final items = extractReceiptItems(
+        ocr,
+        id: store.ownedEntityId(ReceiptEntityTypes.items, receiptId),
+        receiptId: receiptId,
+        createdAt: DateTime.now().toUtc(),
+        extractionId: extraction.id,
+        currency: state.currency,
+      );
+      await _store.upsertEntity(
+        ReceiptEntityTypes.items,
+        items.id,
+        itemExtractionToJson(items),
       );
       current = current
           .withExtractionEvent(ExtractionEvent.succeed)

@@ -11,6 +11,7 @@ List<Reminder> planReminders(
   Iterable<OccurrenceOverride> overrides, {
   required DateTime now,
   int horizonDays = 30,
+  Iterable<Warranty> warranties = const [],
 }) {
   final today = LocalDate.fromDateTime(now);
   final reminders = <Reminder>[];
@@ -47,6 +48,30 @@ List<Reminder> planReminders(
       );
     }
   }
+  final horizonEnd = now.add(Duration(days: horizonDays));
+  for (final warranty in warranties) {
+    for (final planned in warrantyReminders(warranty, today: today)) {
+      final at = DateTime(
+        planned.remindOn.year,
+        planned.remindOn.month,
+        planned.remindOn.day,
+        planned.minuteOfDay ~/ 60,
+        planned.minuteOfDay % 60,
+      );
+      if (!at.isAfter(now) || at.isAfter(horizonEnd)) continue;
+      reminders.add(
+        Reminder(
+          id: _stableId('warranty:${warranty.id}@${planned.remindOn}'),
+          at: at,
+          title: 'Warranty ending',
+          privateBody:
+              'A warranty ends on ${formatDate(warranty.expiresOn)}. Open the app for details.',
+          detailedBody:
+              'The warranty for ${warranty.description} ends on ${formatDate(warranty.expiresOn)}',
+        ),
+      );
+    }
+  }
   reminders.sort((a, b) => a.at.compareTo(b.at));
   return reminders;
 }
@@ -67,9 +92,15 @@ Future<void> syncReminders(
   Iterable<RecurringSchedule> schedules,
   Iterable<OccurrenceOverride> overrides, {
   required DateTime now,
+  Iterable<Warranty> warranties = const [],
 }) async {
   await notifications.cancelAll();
-  for (final reminder in planReminders(schedules, overrides, now: now)) {
+  for (final reminder in planReminders(
+    schedules,
+    overrides,
+    now: now,
+    warranties: warranties,
+  )) {
     await notifications.schedule(reminder, showDetails: reminder.showDetails);
   }
 }
