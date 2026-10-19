@@ -243,6 +243,33 @@ answer `202` with a `jobId`. `POST /v1/imports/{batchId}/rollback` voids
 the batch's untouched journals with `journal.correct` and lists edited
 ones for review. `GET /v1/imports/{batchId}?offset&limit` pages the rows.
 
+**Reports (REP 01, REP 04).** `GET /v1/reports/{kind}` computes one of the
+shared `report.compute` definitions (`spec/fixtures/reports.json`) over the
+workspace's canonical accounts, categories and journals: `income-vs-expenses`,
+`spending-by-category`, `spending-by-payee`, `net-worth-history` and
+`cash-flow` take exactly one period, `from` and `to` (inclusive
+`YYYY-MM-DD`), `financialYear=2026` (1 July 2026 to 30 June 2027, labelled
+`FY2026-27`) or `calendarYear=2026`, covering at most 100 years;
+`account-balances` takes an optional `asOf` date (all time when absent) and
+no period; `cash-flow` also needs `accountIds` (repeated or
+comma-separated). Any member, viewers included, may read reports. The
+answer is `{"kind", "title", "keyLabel", "currency", "currencyExponent",
+"range": {"start", "end", "label"} | null, "asOf", "complete", "columns":
+[{"key", "label", "kind": "money | count"}], "rows": [{"key", "label",
+"amounts": {"<column>": minor units}, "counts": {}, "journalIds": [...]}]}`,
+where `journalIds` lists the journals behind each row for drill-through.
+Only the posted ledger counts (posted and reversed journals; drafts and
+pending entries are ignored). Accounts the member may not see, and every
+journal posting to one, are removed before the report is computed (see
+"Households"), and `complete` is then `false`; it is `true` when the member
+sees every account. A server report covers only accepted commands, so it
+never includes a device's unsynchronised changes. Errors: `404
+UNKNOWN_REPORT`, `400 INVALID_PERIOD` (missing, mixed or malformed period,
+`to` before `from`, or a period for `account-balances`), `400
+INVALID_REQUEST` (`cash-flow` without `accountIds`) and `400 UNKNOWN_ACCOUNT`
+(an `accountIds` entry that does not exist or that the member may not see;
+the two are indistinguishable).
+
 **Jobs, exports and deletion.** `GET /v1/jobs/{id}` returns `{"id", "type",
 "status": "queued | running | succeeded | failed", "attempts", "result",
 "error"}`. `POST /v1/exports` returns `202 {"exportId", "jobId"}`; the job
