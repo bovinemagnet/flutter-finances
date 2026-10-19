@@ -428,7 +428,10 @@ class FinanceStore {
     if (_rawJournal(journalId) == null) {
       throw EntityNotFoundException(EntityRef(EntityTypes.journal, journalId));
     }
-    final ref = EntityRef(journalAnnotationType, journalId);
+    final ref = EntityRef(
+      journalAnnotationType,
+      journalAnnotationId(journalId),
+    );
     final current = _ctx.state.json(ref) ?? {'journalId': journalId};
     _ctx.write(
       () => _update(
@@ -466,7 +469,10 @@ class FinanceStore {
   List<Journal> _annotate(List<Journal> journals) {
     if (journals.isEmpty) return journals;
     final annotations = <String, Map<String, Object?>>{};
-    final ids = journals.map((j) => j.id).toList();
+    final journalByAnnotation = {
+      for (final j in journals) journalAnnotationId(j.id): j.id,
+    };
+    final ids = journalByAnnotation.keys.toList();
     for (var i = 0; i < ids.length; i += 500) {
       final part = ids.sublist(i, i + 500 > ids.length ? ids.length : i + 500);
       final rows = _ctx.db.select(
@@ -475,7 +481,7 @@ class FinanceStore {
         [journalAnnotationType, ...part],
       );
       for (final r in rows) {
-        annotations[r['id'] as String] =
+        annotations[journalByAnnotation[r['id']]!] =
             (jsonDecode(r['json'] as String) as Map).cast<String, Object?>();
       }
     }

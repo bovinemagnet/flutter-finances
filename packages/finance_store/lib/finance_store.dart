@@ -28,6 +28,7 @@ export 'src/db/search_index.dart'
         SearchDocument,
         SearchExtractor,
         defaultSearchDocument,
+        journalAnnotationId,
         journalAnnotationType;
 export 'src/store/entity_ref.dart';
 export 'src/store/finance_store.dart' hide changedFields;

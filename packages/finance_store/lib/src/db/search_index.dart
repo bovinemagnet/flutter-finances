@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:finance_core/finance_core.dart' show nameBasedId;
 import 'package:meta/meta.dart';
 import 'package:sqlite3/sqlite3.dart';
 
@@ -98,6 +99,16 @@ SearchDocument journalSearchDocument({
 /// Entity type holding user annotations of a journal (payee, notes, tags).
 const journalAnnotationType = 'journalAnnotation';
 
+const _journalAnnotationNamespace = '1babbe32-2e00-4fe3-9244-01533ea53450';
+
+/// The id of [journalId]'s annotation entity. Entity ids are unique across
+/// entity types in a workspace, so the annotation cannot reuse the
+/// journal's id; every device derives the same one, so concurrent
+/// annotations of a journal merge field by field (SYNC 03). Its JSON names
+/// the journal in `journalId`.
+String journalAnnotationId(String journalId) =>
+    nameBasedId(_journalAnnotationNamespace, journalId);
+
 /// Recomputes the indexed text of a journal, overlaying its annotation.
 void reindexJournal(Database db, String journalId) {
   final rows = db.select(
@@ -114,7 +125,7 @@ void reindexJournal(Database db, String journalId) {
   final annotation = db.select(
     'SELECT json FROM entities WHERE entity_type = ? AND id = ? '
     'AND deleted = 0',
-    [journalAnnotationType, journalId],
+    [journalAnnotationType, journalAnnotationId(journalId)],
   );
   if (annotation.isNotEmpty) {
     final a = jsonDecode(annotation.first['json'] as String) as Map;
