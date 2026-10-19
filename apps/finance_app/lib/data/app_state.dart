@@ -5,9 +5,11 @@ import 'package:finance_core/finance_core.dart'
 import 'package:finance_store/finance_store.dart';
 import 'package:flutter/foundation.dart';
 
+import '../features/accounts/account_editor.dart';
 import '../features/onboarding/onboarding_model.dart';
 import '../features/transactions/transaction_form_model.dart';
 import 'entity_types.dart';
+import 'receipt_service.dart';
 
 /// Application state over the encrypted local store.
 ///
@@ -20,6 +22,9 @@ class AppState extends ChangeNotifier {
 
   final FinanceStore store;
   final LocalDate Function() today;
+
+  /// Receipt capture, extraction and review over the same store.
+  late final ReceiptService receipts = ReceiptService(this);
 
   Currency get currency => store.settings.currency;
   WorkspaceSettings get settings => store.settings;
@@ -217,12 +222,12 @@ class AppState extends ChangeNotifier {
 
   // Accounts and setup ----------------------------------------------------
 
-  Future<void> saveAccount(dynamic edit) async {
-    final account = edit.account as Account;
+  Future<void> saveAccount(AccountEdit edit) async {
+    final account = edit.account;
     if (store.account(account.id) == null) {
       await store.createAccount(account);
       _chart = null;
-      final draft = edit.openingBalanceDraft() as TransactionDraft?;
+      final draft = edit.openingBalanceDraft();
       if (draft != null) await store.postTransaction(draft);
     } else {
       await store.updateAccount(account);

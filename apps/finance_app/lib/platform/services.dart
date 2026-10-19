@@ -1,18 +1,10 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:finance_core/finance_core.dart' show CaptureSource;
 import 'package:meta/meta.dart';
 
-/// Where captured receipt content came from; kept as provenance.
-enum CaptureSource {
-  documentScanner,
-  camera,
-  photoLibrary,
-  file,
-  share,
-  paste,
-  drop,
-}
+export 'package:finance_core/finance_core.dart' show CaptureSource;
 
 /// One page or file handed over by a platform service.
 @immutable
@@ -20,7 +12,7 @@ class CapturedFile {
   const CapturedFile(
     this.bytes, {
     this.fileName,
-    this.source = CaptureSource.file,
+    this.source = CaptureSource.fileImport,
   });
 
   final Uint8List bytes;

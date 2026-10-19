@@ -27,7 +27,7 @@ class PluginShareInbox implements ShareInbox {
           CapturedFile(
             await file.readAsBytes(),
             fileName: item.path.split('/').last,
-            source: CaptureSource.share,
+            source: CaptureSource.shareTarget,
           ),
         );
       }
