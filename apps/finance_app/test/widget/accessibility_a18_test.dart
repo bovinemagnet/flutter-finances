@@ -213,6 +213,11 @@ void main() {
     });
     final handle = tester.ensureSemantics();
     await pumpAt200(tester, state, ReceiptReviewScreen(receiptId: receiptId));
+    await tester.dragUntilVisible(
+      find.widgetWithText(TextField, 'Total paid'),
+      find.byType(ListView).last,
+      const Offset(0, -200),
+    );
     await tester.enterText(
       find.widgetWithText(TextField, 'Total paid'),
       '13.50',
