@@ -173,15 +173,32 @@ class OnboardingModel {
             discretionary: g.discretionary,
           ),
       ];
-      final version = budgetMode == BudgetMode.groups
-          ? BudgetVersion.fromTemplate(
-              id: newId(),
-              effectiveFrom: anchor,
-              income: pay,
-              groups: groups,
-              categoryWeights: weights,
-            )
-          : BudgetVersion(id: newId(), effectiveFrom: anchor, income: pay);
+      final template = BudgetVersion.fromTemplate(
+        id: newId(),
+        effectiveFrom: anchor,
+        income: pay,
+        groups: groups,
+        categoryWeights: weights,
+      );
+      final version = switch (budgetMode) {
+        BudgetMode.groups => template,
+        // Every dollar goes to a category; whatever the template leaves for
+        // savings shows as unassigned until the user places it.
+        BudgetMode.zeroBased => BudgetVersion(
+          id: template.id,
+          effectiveFrom: anchor,
+          income: pay,
+          allocations: [
+            for (final a in template.allocations)
+              BudgetAllocation.category(a.targetId, a.planned),
+          ],
+        ),
+        BudgetMode.categoryOnly => BudgetVersion(
+          id: newId(),
+          effectiveFrom: anchor,
+          income: pay,
+        ),
+      };
       plan = BudgetPlan(
         id: newId(),
         name: 'My budget',

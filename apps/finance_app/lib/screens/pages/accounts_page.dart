@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_scope.dart';
 import '../../data/app_state.dart';
 import '../../features/accounts/account_editor.dart';
+import '../../features/plan/debt_payoff_screen.dart';
 import '../../format/formatters.dart';
 
 /// Accounts with balances, data source and last reconciliation (FIN 01,
@@ -43,6 +44,17 @@ class AccountsPage extends StatelessWidget {
     return Scaffold(
       body: ListView(
         children: [
+          if (accounts.any((a) => a.type.isLiability && !a.archived))
+            ListTile(
+              leading: const Icon(Icons.trending_down),
+              title: const Text('Plan paying off cards and loans'),
+              subtitle: const Text(
+                'Compare avalanche, snowball and minimum payments',
+              ),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const DebtPayoffScreen()),
+              ),
+            ),
           for (final account in accounts)
             ListTile(
               leading: Icon(

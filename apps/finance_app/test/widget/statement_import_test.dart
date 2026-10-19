@@ -13,9 +13,14 @@ import 'package:intl/date_symbol_data_local.dart';
 
 import '../support/test_services.dart';
 
-const _fastKdf = Argon2idParameters(memoryKiB: 64, iterations: 1, parallelism: 1);
+const _fastKdf = Argon2idParameters(
+  memoryKiB: 64,
+  iterations: 1,
+  parallelism: 1,
+);
 
-final _ofx = Uint8List.fromList(utf8.encode('''OFXHEADER:100
+final _ofx = Uint8List.fromList(
+  utf8.encode('''OFXHEADER:100
 DATA:OFXSGML
 VERSION:102
 
@@ -24,43 +29,58 @@ VERSION:102
 <BANKTRANLIST><DTSTART>20261001<DTEND>20261031
 <STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261003<TRNAMT>-4.50<FITID>A1<NAME>COFFEE CART</STMTTRN>
 </BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>
-'''));
+'''),
+);
 
 void main() {
   setUpAll(() => initializeDateFormatting('en_AU'));
 
-  testWidgets('an OFX statement imports without column mapping', (tester) async {
+  testWidgets('an OFX statement imports without column mapping', (
+    tester,
+  ) async {
     late Directory dir;
     late AppState state;
     await tester.runAsync(() async {
       dir = await Directory.systemTemp.createTemp('ofx_import');
-      final store = await FinanceStore.create(dir,
-          keyProtection: KeyProtection.password('secret', kdf: _fastKdf));
+      final store = await FinanceStore.create(
+        dir,
+        keyProtection: KeyProtection.password('secret', kdf: _fastKdf),
+      );
       await store.createAccount(
-          const Account(id: 'bank', name: 'Everyday', type: AccountType.transaction));
+        const Account(
+          id: 'bank',
+          name: 'Everyday',
+          type: AccountType.transaction,
+        ),
+      );
       state = AppState(store, today: () => LocalDate(2026, 10, 20));
     });
     tester.view.physicalSize = const Size(800, 1600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(AppScope(
-      state: state,
-      services: testServices(),
-      child: MaterialApp(
-        home: Builder(
-          builder: (context) => Scaffold(
-            body: Center(
-              child: FilledButton(
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => ImportScreen(bytes: _ofx, fileName: 'oct.ofx'),
-                )),
-                child: const Text('Open'),
+    await tester.pumpWidget(
+      AppScope(
+        state: state,
+        services: testServices(),
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          ImportScreen(bytes: _ofx, fileName: 'oct.ofx'),
+                    ),
+                  ),
+                  child: const Text('Open'),
+                ),
               ),
             ),
           ),
         ),
       ),
-    ));
+    );
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
     expect(find.text('Date column'), findsNothing);

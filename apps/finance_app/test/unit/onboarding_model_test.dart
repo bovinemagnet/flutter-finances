@@ -66,4 +66,13 @@ void main() {
     expect(result.schedules, isEmpty);
     expect(result.categories, isNotEmpty);
   });
+
+  test('a zero-based budget reports money not yet assigned as an error', () {
+    final model = OnboardingModel(today: LocalDate(2026, 10, 19))
+      ..takeHomePay = Money(500000, aud)
+      ..budgetMode = BudgetMode.zeroBased;
+    final plan = model.build().plan!;
+    expect(plan.mode, BudgetMode.zeroBased);
+    expect(plan.versions.single.allocations, isNotEmpty);
+  });
 }

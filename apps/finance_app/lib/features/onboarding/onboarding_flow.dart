@@ -309,6 +309,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               label: Text('Needs, wants, savings'),
             ),
             ButtonSegment(
+              value: BudgetMode.zeroBased,
+              label: Text('Every dollar assigned'),
+            ),
+            ButtonSegment(
               value: BudgetMode.categoryOnly,
               label: Text('Categories only'),
             ),

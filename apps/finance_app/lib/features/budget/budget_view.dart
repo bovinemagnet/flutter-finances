@@ -39,6 +39,16 @@ class BudgetView extends StatelessWidget {
             icon: Icons.info_outline,
             text: 'No budget covers this period yet.',
           ),
+        if (evaluation.zeroBased?.isError ?? false)
+          _Banner(
+            icon: Icons.rule_outlined,
+            error: true,
+            text: evaluation.zeroBased!.difference.isNegative
+                ? 'Every dollar is assigned more than once: '
+                      '${formatMoney(-evaluation.zeroBased!.difference)} over income'
+                : 'Every dollar needs a job: '
+                      '${formatMoney(evaluation.zeroBased!.difference)} not yet assigned',
+          ),
         if (summary != null && summary.overAllocated.isPositive)
           _Banner(
             icon: Icons.warning_amber_outlined,

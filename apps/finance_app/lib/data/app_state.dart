@@ -679,6 +679,41 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  List<DebtTerms> get debtTerms =>
+      _all(AppEntityTypes.debtTerms, (j) => debtTermsFromJson(j, currency));
+
+  Future<void> saveDebtTerms(DebtTerms terms) async {
+    await _put(AppEntityTypes.debtTerms, terms.id, debtTermsToJson(terms));
+    refresh();
+  }
+
+  /// Avalanche, snowball and minimum-only payoff plans for every card and
+  /// loan with an amount owed and recorded terms; null when there are none.
+  DebtPayoffComparison? debtPayoff({Money? extraMonthly}) {
+    final terms = {for (final t in debtTerms) t.accountId: t};
+    final debts = [
+      for (final account in chart.accounts)
+        if (account.type.isLiability &&
+            !account.archived &&
+            terms.containsKey(account.id) &&
+            ledger.displayBalance(account.id).isPositive)
+          PayoffDebt(
+            id: account.id,
+            name: account.name,
+            balance: ledger.displayBalance(account.id),
+            annualRateBasisPoints: terms[account.id]!.annualRateBasisPoints,
+            minimumPayment: terms[account.id]!.minimumPayment,
+          ),
+    ];
+    if (debts.isEmpty) return null;
+    final now = today();
+    return compareDebtPayoffs(
+      debts: debts,
+      firstPaymentDate: LocalDate(now.year, now.month, 1).addMonths(1),
+      extraMonthly: extraMonthly,
+    );
+  }
+
   /// Merchants charging regularly that no schedule covers yet (P1).
   List<SubscriptionProposal> subscriptionProposals() => detectSubscriptions(
     ledger: ledger,
