@@ -34,3 +34,8 @@ finance:
     enabled: true
     poll-interval: 200ms
     base-backoff: 1s
+  bank-feeds:
+    # tool/e2e/run.sh generates a throwaway key for each run.
+    token-key: ${FINANCE_BANK_FEEDS_TOKEN_KEY}
+    sandbox:
+      enabled: true

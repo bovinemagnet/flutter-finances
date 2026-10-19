@@ -124,6 +124,7 @@ log "starting the server on $APP_PORT"
 FINANCE_DB_URL="jdbc:postgresql://127.0.0.1:$PG_PORT/finance" \
 FINANCE_S3_ENDPOINT="http://127.0.0.1:$MINIO_PORT" \
 FINANCE_E2E_PUBLIC_KEY="file:$KEYS/test-only-public.pem" \
+FINANCE_BANK_FEEDS_TOKEN_KEY="$(head -c 32 /dev/urandom | base64)" \
   java -jar "$JAR" --spring.profiles.active=e2e --server.port="$APP_PORT" \
   >"$WORK/server.log" 2>&1 &
 SERVER_PID=$!

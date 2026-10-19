@@ -505,4 +505,60 @@ void main() {
       });
     },
   );
+
+  e2eTest(
+    'bank feeds: sandbox proposals are posted only when accepted',
+    () async {
+      final s = await twoDevices();
+      final feeds = BankFeedClient.of(s.a.client);
+      final connection = await feeds.connect(
+        provider: 'sandbox',
+        purpose: 'Suggest entries from my bank transactions',
+      );
+      expect(connection.consentStatus, BankConsentStatus.active);
+      expect(connection.sharedAccounts, hasLength(2));
+
+      var proposals = <BankProposal>[];
+      final deadline = DateTime.now().add(const Duration(seconds: 30));
+      while (proposals.isEmpty && DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        proposals = await feeds.proposals(connection.id);
+      }
+      expect(proposals, isNotEmpty, reason: 'the backfill proposes entries');
+      final balanceBefore = s.a.store.displayBalance(s.chart.bank);
+
+      final purchase = proposals.firstWhere((p) => p.isMoneyOut && !p.pending);
+      final journal = await s.a.store.postTransaction(
+        s.chart.expense(
+          Money(-purchase.amountMinor, Currency.aud).toDecimalString(),
+          payee: purchase.description,
+        ),
+      );
+      await s.a.sync();
+      await feeds.accept(
+        connection.id,
+        purchase.recordId,
+        journalId: journal.id,
+      );
+      final other = proposals.firstWhere(
+        (p) => p.recordId != purchase.recordId,
+      );
+      await feeds.dismiss(connection.id, other.recordId);
+
+      final open = await feeds.proposals(connection.id);
+      expect(open.map((p) => p.recordId), isNot(contains(purchase.recordId)));
+      expect(open.map((p) => p.recordId), isNot(contains(other.recordId)));
+      expect(
+        s.a.store.displayBalance(s.chart.bank),
+        balanceBefore - Money(-purchase.amountMinor, Currency.aud),
+        reason: 'only the accepted proposal reached the ledger',
+      );
+      await expectLater(
+        feeds.accept(connection.id, purchase.recordId, journalId: journal.id),
+        throwsA(httpError(409, 'PROPOSAL_DECIDED')),
+      );
+      final revoked = await feeds.revoke(connection.id);
+      expect(revoked.consentStatus, BankConsentStatus.revoked);
+    },
+  );
 }
