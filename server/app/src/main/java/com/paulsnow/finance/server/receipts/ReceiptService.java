@@ -11,7 +11,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Timestamp;
 import java.time.Clock;
-import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
@@ -24,6 +23,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.paulsnow.finance.core.documents.ContentSniffer;
 import com.paulsnow.finance.server.common.ApiException;
 import com.paulsnow.finance.server.jobs.JobService;
 import com.paulsnow.finance.server.storage.ObjectStorage;
@@ -163,7 +163,7 @@ public class ReceiptService {
             String digest;
             try (InputStream in = storage.read(staging); OutputStream file = Files.newOutputStream(copy);
                     DigestOutputStream out = new DigestOutputStream(file, MessageDigest.getInstance("SHA-256"))) {
-                header = in.readNBytes(ContentTypes.HEADER_LENGTH);
+                header = in.readNBytes(ContentSniffer.SNIFF_BYTES);
                 out.write(header);
                 long total = header.length + in.transferTo(out);
                 if (total != asset.sizeBytes()) {
@@ -174,7 +174,7 @@ public class ReceiptService {
             if (!digest.equals(asset.sha256())) {
                 reject(staging, "CHECKSUM_MISMATCH");
             }
-            if (!asset.contentType().equals(ContentTypes.sniff(Arrays.copyOf(header, header.length)))) {
+            if (!ContentSniffer.sniffMimeType(header).filter(asset.contentType()::equals).isPresent()) {
                 reject(staging, "CONTENT_TYPE_MISMATCH");
             }
             storage.put(asset.objectKey(), copy, asset.contentType());

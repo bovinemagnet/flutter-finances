@@ -18,7 +18,7 @@ import com.paulsnow.finance.core.ledger.TransactionType;
 import com.paulsnow.finance.core.money.Money;
 import com.paulsnow.finance.server.ledger.JournalJson;
 import com.paulsnow.finance.server.sync.CommandResult;
-import com.paulsnow.finance.server.sync.EntityLookup;
+import com.paulsnow.finance.server.sync.EntityReader;
 import com.paulsnow.finance.server.sync.SyncCommand;
 import com.paulsnow.finance.server.sync.SyncCommandService;
 import com.paulsnow.finance.server.workspace.WorkspaceInfo;
@@ -47,11 +47,11 @@ class ImportCommitter {
 
     private final ImportRepository repository;
     private final SyncCommandService commands;
-    private final EntityLookup entities;
+    private final EntityReader entities;
     private final Clock clock;
     private final Counter commitFailures;
 
-    ImportCommitter(ImportRepository repository, SyncCommandService commands, EntityLookup entities, Clock clock,
+    ImportCommitter(ImportRepository repository, SyncCommandService commands, EntityReader entities, Clock clock,
             MeterRegistry meters) {
         this.repository = repository;
         this.commands = commands;

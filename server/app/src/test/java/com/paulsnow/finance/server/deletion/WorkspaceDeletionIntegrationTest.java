@@ -45,7 +45,7 @@ class WorkspaceDeletionIntegrationTest extends IntegrationTestSupport {
 
     private static final List<String> WORKSPACE_TABLES = List.of("sync_entity", "sync_change", "sync_idempotency",
             "sync_device_cursor", "ledger_journal", "ledger_posting", "receipt_document", "receipt_asset",
-            "export_archive", "membership", "device");
+            "export_archive", "import_batch", "import_row", "membership", "device");
 
     @Autowired
     JobRunner jobs;
@@ -68,6 +68,18 @@ class WorkspaceDeletionIntegrationTest extends IntegrationTestSupport {
         String objectKey = uploadReceipt(owner, receiptId);
         mvc.perform(post("/v1/exports").with(user(owner.subject()))
                 .header("X-Workspace-Id", owner.workspaceId().toString())).andExpect(status().isAccepted());
+        String income = createCategory(owner, "income");
+        String csv = "Date,Description,Amount\n01/07/2026,Rent,-1.00\n";
+        mvc.perform(post("/v1/imports/preview").with(user(owner.subject()))
+                        .header("X-Workspace-Id", owner.workspaceId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("fileName", "statement.csv",
+                                "contentBase64", java.util.Base64.getEncoder().encodeToString(csv.getBytes()),
+                                "mapping", Map.of("id", "m1", "name", "Bank", "accountId", bank,
+                                        "dateColumn", "Date", "descriptionColumn", "Description",
+                                        "amountColumn", "Amount"),
+                                "outflowCategoryId", groceries, "inflowCategoryId", income))))
+                .andExpect(status().isOk());
         jobs.runUntilIdle();
         assertThat(storage.head(objectKey)).isPresent();
 

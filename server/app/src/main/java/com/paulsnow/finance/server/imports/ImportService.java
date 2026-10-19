@@ -35,7 +35,7 @@ import com.paulsnow.finance.server.imports.ImportViews.Totals;
 import com.paulsnow.finance.server.jobs.JobService;
 import com.paulsnow.finance.server.ledger.LedgerService;
 import com.paulsnow.finance.server.ledger.LedgerService.PostingMovement;
-import com.paulsnow.finance.server.sync.EntityLookup;
+import com.paulsnow.finance.server.sync.EntityReader;
 import com.paulsnow.finance.server.workspace.CurrentMember;
 import com.paulsnow.finance.server.workspace.WorkspaceInfo;
 
@@ -71,7 +71,7 @@ class ImportService {
 
     private final ImportRepository repository;
     private final ImportCommitter committer;
-    private final EntityLookup entities;
+    private final EntityReader entities;
     private final LedgerService ledger;
     private final JobService jobs;
     private final ImportProperties properties;
@@ -80,7 +80,7 @@ class ImportService {
     private final Clock clock;
     private final Counter previewFailures;
 
-    ImportService(ImportRepository repository, ImportCommitter committer, EntityLookup entities, LedgerService ledger,
+    ImportService(ImportRepository repository, ImportCommitter committer, EntityReader entities, LedgerService ledger,
             JobService jobs, ImportProperties properties, TransactionTemplate transactions, JsonMapper json,
             Clock clock, MeterRegistry meters) {
         this.repository = repository;
@@ -334,7 +334,7 @@ class ImportService {
         } catch (RuntimeException e) {
             throw fail(ApiException.badRequest(code, "Unknown " + type + "."));
         }
-        EntityLookup.EntityView entity = entities.find(workspaceId, uuid).filter(e -> e.isLive(type))
+        EntityReader.EntityView entity = entities.find(workspaceId, uuid).filter(e -> e.isLive(type))
                 .orElseThrow(() -> fail(ApiException.badRequest(code, "Unknown " + type + ".")));
         if (kind != null && !kind.equals(entity.data().path("kind").asString())) {
             throw fail(ApiException.badRequest("WRONG_CATEGORY_KIND", "Use an " + kind + " category."));
