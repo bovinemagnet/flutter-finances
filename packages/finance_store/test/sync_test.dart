@@ -67,6 +67,7 @@ void main() {
       await seedChart(a.store);
       await a.store.postTransaction(expense('10.00'));
       expect(() => a.client.sync(), throwsA(isA<SyncNotEnabledException>()));
+      await a.register(server);
       final preview = await a.client.previewBootstrap(
         remoteWorkspaceId: server.workspaceId,
       );
@@ -99,6 +100,7 @@ void main() {
       await a.enableSync(server);
       await a.sync();
       await seedChart(b.store);
+      await b.register(server);
       final preview = await b.client.previewBootstrap(
         remoteWorkspaceId: server.workspaceId,
       );
@@ -112,6 +114,7 @@ void main() {
 
     test('a stale preview is refused', () async {
       await seedChart(a.store);
+      await a.register(server);
       final preview = await a.client.previewBootstrap(
         remoteWorkspaceId: server.workspaceId,
       );
@@ -576,4 +579,180 @@ void main() {
       expect(a.store.displayBalance('bank'), m('-8.00'));
     },
   );
+
+  test('annotations of a synced journal merge on another device', () async {
+    await bothSynced();
+    final j = await a.store.postTransaction(expense('9.00', payee: 'Shop'));
+    await a.sync();
+    await b.sync();
+    await a.store.annotateTransaction(j.id, payee: 'Corner Shop');
+    await b.store.annotateTransaction(j.id, notes: 'milk');
+    expect((await a.sync()).push.accepted, 1);
+    expect((await b.sync()).push.accepted, 1);
+    await a.sync();
+    for (final device in [a, b]) {
+      final journal = device.store.journal(j.id)!;
+      expect(journal.payee, 'Corner Shop');
+      expect(journal.notes, 'milk');
+      expect(device.store.searchTransactions('milk').single.id, j.id);
+    }
+    expect(server.entity('journal', j.id)!.data['payee'], 'Shop');
+  });
+
+  test(
+    'entity ids are unique across types; owned entities derive theirs',
+    () async {
+      await bothSynced();
+      final j = await a.store.postTransaction(expense('9.00'));
+      await a.sync();
+      await a.store.upsertEntity('transactionReview', j.id, {'reviewed': true});
+      final clash = await a.sync();
+      expect(clash.push.rejected, 1);
+      expect(
+        a.store.openReviewItems().single.errors,
+        contains('ENTITY_TYPE_MISMATCH'),
+      );
+
+      final id = ownedEntityId('transactionReview', j.id);
+      expect(id, ownedEntityId('transactionReview', j.id));
+      expect(id, isNot(ownedEntityId('otherType', j.id)));
+      await a.store.upsertEntity('transactionReview', id, {
+        'journalId': j.id,
+        'reviewed': true,
+      });
+      expect((await a.sync()).push.accepted, 1);
+    },
+  );
+
+  group('remote workspaces and devices', () {
+    test('a workspace is created with the local currency and timezone '
+        'and listed only for its members', () async {
+      final created = await a.client.createRemoteWorkspace(name: 'Home');
+      expect(created.name, 'Home');
+      expect(created.currencyCode, 'AUD');
+      expect(created.timezone, a.store.settings.timezone);
+      expect(
+        RegExp(
+          r'^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$',
+        ).hasMatch(created.id),
+        isTrue,
+      );
+      expect(
+        (await b.client.listRemoteWorkspaces()).map((w) => w.id),
+        containsAll([server.workspaceId, created.id]),
+      );
+      final stranger = await Device.create(
+        temp,
+        'stranger',
+        server,
+        user: 'stranger',
+      );
+      addTearDown(stranger.close);
+      expect(await stranger.client.listRemoteWorkspaces(), isEmpty);
+      await expectLater(
+        stranger.client.registerDevice(
+          workspaceId: created.id,
+          name: 'Phone',
+          platform: 'android',
+        ),
+        throwsA(
+          isA<SyncHttpException>().having(
+            (e) => e.errorCode,
+            'errorCode',
+            'WORKSPACE_NOT_FOUND',
+          ),
+        ),
+      );
+    });
+
+    test('creating a workspace survives a lost response', () async {
+      server
+        ..dropPath = '/v1/workspaces'
+        ..dropResponses = 1;
+      final created = await a.client.createRemoteWorkspace(name: 'Home');
+      final mine = await a.client.listRemoteWorkspaces();
+      expect(mine.where((w) => w.name == 'Home'), [created]);
+    });
+
+    test('registering is idempotent and required before syncing', () async {
+      await expectLater(
+        a.client.previewBootstrap(remoteWorkspaceId: server.workspaceId),
+        throwsA(
+          isA<SyncHttpException>().having(
+            (e) => e.errorCode,
+            'errorCode',
+            'DEVICE_NOT_AUTHORISED',
+          ),
+        ),
+      );
+      for (var i = 0; i < 2; i++) {
+        await a.client.registerDevice(
+          workspaceId: server.workspaceId,
+          name: 'Laptop',
+          platform: 'linux',
+        );
+      }
+      expect(server.devices, hasLength(1));
+      expect(
+        server.devices[a.store.settings.deviceId]!.workspaceId,
+        server.workspaceId,
+      );
+      await a.client.enableSync(
+        await a.client.previewBootstrap(remoteWorkspaceId: server.workspaceId),
+      );
+      await a.sync();
+      server.revokeDevice(a.store.settings.deviceId);
+      await expectLater(
+        a.sync(),
+        throwsA(
+          isA<SyncHttpException>().having(
+            (e) => e.errorCode,
+            'errorCode',
+            'DEVICE_REVOKED',
+          ),
+        ),
+      );
+    });
+
+    test('API calls name the device and workspace; object storage calls '
+        'carry no credentials', () async {
+      await bothSynced();
+      final assetId = await saveReceipt(a, id: newId());
+      await a.sync();
+      await b.sync();
+      await b.client.downloadAsset(assetId);
+      final api = server.received.where((r) => r.url.host == 'sync.test');
+      final objects = server.received.where((r) => r.url.host != 'sync.test');
+      expect(objects.map((r) => r.method), containsAll(['PUT', 'GET']));
+      for (final r in objects) {
+        expect(
+          r.headers.keys.map((k) => k.toLowerCase()),
+          isNot(
+            anyOf(
+              contains('authorization'),
+              contains('x-device-id'),
+              contains('x-workspace-id'),
+            ),
+          ),
+        );
+      }
+      for (final r in api) {
+        expect(r.headers['authorization'], 'Bearer user');
+        expect(r.headers['x-device-id'], isNotNull, reason: '${r.url}');
+        if (r.url.path.startsWith('/v1/sync/') ||
+            r.url.path.startsWith('/v1/receipts/')) {
+          expect(r.headers['x-workspace-id'], server.workspaceId);
+        }
+      }
+      final previews = api.where(
+        (r) =>
+            r.url.path == '/v1/sync/changes' &&
+            r.url.queryParameters['limit'] == '1',
+      );
+      expect(previews, hasLength(2));
+      for (final r in previews) {
+        expect(r.headers['x-workspace-id'], server.workspaceId);
+      }
+    });
+  });
 }

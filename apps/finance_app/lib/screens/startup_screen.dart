@@ -6,14 +6,22 @@ import '../data/app_state.dart';
 import '../data/workspace_gate.dart';
 import '../features/onboarding/onboarding_flow.dart';
 import '../features/onboarding/onboarding_model.dart';
+import '../data/sync_controller.dart';
+import 'connect_screen.dart';
 import 'restore_screen.dart';
 
 /// Opens the local workspace, or runs first-time setup when there is none.
 class StartupScreen extends StatefulWidget {
-  const StartupScreen({super.key, required this.gate, required this.onReady});
+  const StartupScreen({
+    super.key,
+    required this.gate,
+    required this.onReady,
+    required this.createSync,
+  });
 
   final WorkspaceGate gate;
-  final ValueChanged<AppState> onReady;
+  final void Function(AppState state, {SyncController? sync}) onReady;
+  final SyncController Function(AppState state) createSync;
 
   @override
   State<StartupScreen> createState() => _StartupScreenState();
@@ -126,21 +134,43 @@ class _StartupScreenState extends State<StartupScreen> {
             Positioned(
               right: 16,
               top: MediaQuery.paddingOf(context).top + 8,
-              child: TextButton.icon(
-                icon: const Icon(Icons.restore),
-                label: const Text('Restore from a backup'),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => RestoreScreen(
-                      gate: widget.gate,
-                      needsPassword: _needsPassword,
-                      onRestored: (store) {
-                        Navigator.of(context).pop();
-                        widget.onReady(AppState(store, today: _today));
-                      },
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  TextButton.icon(
+                    icon: const Icon(Icons.cloud_download_outlined),
+                    label: const Text('Use my synced data'),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => ConnectScreen(
+                          gate: widget.gate,
+                          needsPassword: _needsPassword,
+                          createSync: widget.createSync,
+                          onConnected: (state, sync) {
+                            Navigator.of(context).pop();
+                            widget.onReady(state, sync: sync);
+                          },
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  TextButton.icon(
+                    icon: const Icon(Icons.restore),
+                    label: const Text('Restore from a backup'),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => RestoreScreen(
+                          gate: widget.gate,
+                          needsPassword: _needsPassword,
+                          onRestored: (store) {
+                            Navigator.of(context).pop();
+                            widget.onReady(AppState(store, today: _today));
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

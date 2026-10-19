@@ -12,7 +12,19 @@ final Map<String, FixtureOp> documentsOps = {
   'csv.fingerprint': _csvFingerprint,
   'csv.sanitise': _csvSanitise,
   'content.sniff': _contentSniff,
+  'pdf.inspect': _pdfInspect,
 };
+
+void _pdfInspect(Map<String, dynamic> input, Map<String, dynamic> expected) {
+  final info = inspectPdf(
+    Uint8List.fromList(base64.decode(input['base64'] as String)),
+  );
+  expect({
+    'readable': info.readable,
+    'encrypted': info.encrypted,
+    'pageCount': info.pageCount,
+  }, expected);
+}
 
 void _csvParse(Map<String, dynamic> input, Map<String, dynamic> expected) {
   final mapping = csvMappingFromJson(

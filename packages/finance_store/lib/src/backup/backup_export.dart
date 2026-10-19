@@ -284,7 +284,7 @@ List<Map<String, Object?>> _relationships(
     if (e['entityType'] == journalAnnotationType)
       {
         'from': '$journalAnnotationType:${e['id']}',
-        'to': 'journal:${e['id']}',
+        'to': 'journal:${(e['json'] as Map)['journalId']}',
         'type': 'annotates',
       },
 ];

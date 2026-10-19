@@ -27,3 +27,8 @@ create table receipt_asset (
     scanned_at timestamptz
 );
 create index receipt_asset_workspace_idx on receipt_asset (workspace_id, status);
+
+--changeset "Paul Snow":receipts-2
+-- Pages each completed asset holds (an image is one), for the per-receipt
+-- page limit (REC 05).
+alter table receipt_asset add column page_count int check (page_count > 0);

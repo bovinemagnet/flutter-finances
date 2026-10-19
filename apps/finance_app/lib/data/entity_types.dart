@@ -15,4 +15,11 @@ abstract final class AppEntityTypes {
   static const appPreferences = 'appPreferences';
   static const categorisationRule = 'categorisationRule';
   static const entryDraft = 'entryDraft';
+
+  /// The workspace's single `appPreferences` entity. Synchronised entity
+  /// ids must be UUIDs.
+  static const appPreferencesId = '3dadac2a-0869-488b-a88b-f280642c4fc1';
+
+  /// The single interrupted-entry draft (UX 02).
+  static const entryDraftId = '6a1d1c34-7f53-4c55-9a3e-2f0f3f5b8b21';
 }

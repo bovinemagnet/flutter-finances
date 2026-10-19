@@ -17,6 +17,6 @@ class ReceiptsConfiguration {
     @Bean
     @ConditionalOnMissingBean(DocumentScanner.class)
     DocumentScanner structuralDocumentScanner(ReceiptProperties properties) {
-        return new StructuralDocumentScanner(properties.maxImageDimension());
+        return new StructuralDocumentScanner(properties.maxImageSide(), properties.maxImagePixels());
     }
 }

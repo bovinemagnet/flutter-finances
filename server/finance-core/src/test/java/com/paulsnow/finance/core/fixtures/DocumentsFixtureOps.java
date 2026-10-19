@@ -12,6 +12,7 @@ import java.util.Optional;
 
 import com.paulsnow.finance.core.documents.ContentSniffer;
 import com.paulsnow.finance.core.documents.DocumentContentType;
+import com.paulsnow.finance.core.documents.PdfInspector;
 import com.paulsnow.finance.core.imports.CsvMapping;
 import com.paulsnow.finance.core.imports.CsvParseResult;
 import com.paulsnow.finance.core.imports.CsvSanitiser;
@@ -40,6 +41,7 @@ final class DocumentsFixtureOps {
         ops.put("csv.fingerprint", DocumentsFixtureOps::csvFingerprint);
         ops.put("csv.sanitise", DocumentsFixtureOps::csvSanitise);
         ops.put("content.sniff", DocumentsFixtureOps::contentSniff);
+        ops.put("pdf.inspect", DocumentsFixtureOps::pdfInspect);
         return Map.copyOf(ops);
     }
 
@@ -112,6 +114,15 @@ final class DocumentsFixtureOps {
         Map<String, String> want = new LinkedHashMap<>();
         expected.properties().forEach(e -> want.put(e.getKey(), e.getValue().asString()));
         assertThat(actual).isEqualTo(want);
+    }
+
+    private static void pdfInspect(JsonNode input, JsonNode expected) {
+        PdfInspector.PdfInfo info = PdfInspector.inspect(Base64.getDecoder().decode(input.path("base64").asString()));
+        Map<String, Object> actual = new LinkedHashMap<>();
+        actual.put("readable", info.readable());
+        actual.put("encrypted", info.encrypted());
+        actual.put("pageCount", info.pageCount());
+        assertThat(actual).isEqualTo(toMap(expected));
     }
 
     /** Converts a JSON object to plain Java values (strings, integers, booleans). */

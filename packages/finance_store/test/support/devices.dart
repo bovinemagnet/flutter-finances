@@ -21,6 +21,7 @@ class Device {
     FakeSyncServer server, {
     int uploadConcurrency = 2,
     int pageSize = 500,
+    String user = FakeSyncServer.defaultUser,
   }) async {
     final store = await newStore(temp.sub(name), keys: MemoryKeyStore());
     return wrap(
@@ -29,23 +30,26 @@ class Device {
       server,
       uploadConcurrency: uploadConcurrency,
       pageSize: pageSize,
+      user: user,
     );
   }
 
-  /// A device around an existing [store].
+  /// A device around an existing [store], signed in as [user] (the fake
+  /// server treats the bearer token as the subject).
   static Device wrap(
     String name,
     FinanceStore store,
     FakeSyncServer server, {
     int uploadConcurrency = 2,
     int pageSize = 500,
+    String user = FakeSyncServer.defaultUser,
   }) {
     final sleeps = <Duration>[];
     final client = SyncClient(
       store,
       httpClient: server.client,
       baseUri: FakeSyncServer.base,
-      accessToken: () async => 'token-$name',
+      accessToken: () async => user,
       retry: const RetryPolicy(
         maxAttempts: 4,
         initialDelay: Duration(milliseconds: 10),
@@ -58,8 +62,16 @@ class Device {
     return Device._(name, store, client, sleeps);
   }
 
-  /// Previews and enables sync against the server workspace.
+  /// Registers this device in the server workspace.
+  Future<void> register(FakeSyncServer server) => client.registerDevice(
+    workspaceId: server.workspaceId,
+    name: 'Device $name',
+    platform: 'test',
+  );
+
+  /// Registers, previews and enables sync against the server workspace.
   Future<SyncBootstrapPreview> enableSync(FakeSyncServer server) async {
+    await register(server);
     final preview = await client.previewBootstrap(
       remoteWorkspaceId: server.workspaceId,
     );

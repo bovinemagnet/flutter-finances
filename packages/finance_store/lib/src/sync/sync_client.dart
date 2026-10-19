@@ -10,8 +10,11 @@ import '../store/store_context.dart';
 import '../store/workspace.dart';
 import '../vault/asset_record.dart';
 import 'asset_sync.dart';
+import 'remote_workspace.dart';
 import 'sync_engine.dart';
 import 'transport.dart';
+
+export 'remote_workspace.dart';
 
 class SyncNotEnabledException implements Exception {
   @override
@@ -146,6 +149,7 @@ class SyncClient {
          client: httpClient,
          baseUri: baseUri,
          accessToken: accessToken,
+         scope: () => _scopeHeaders(store.context),
          retry: retry,
          timeout: timeout,
          sleep: sleep,
@@ -175,6 +179,17 @@ class SyncClient {
     final result = _lock.then((_) => action());
     _lock = result.then((_) {}, onError: (_) {});
     return result;
+  }
+
+  /// Every API call names this device; once synced it also names the
+  /// remote workspace, which is then the local workspace id.
+  static Map<String, String> _scopeHeaders(StoreContext ctx) {
+    final settings = ctx.settings;
+    return {
+      deviceIdHeader: settings.deviceId,
+      if (settings.syncMode == SyncMode.synced)
+        workspaceIdHeader: settings.workspaceId,
+    };
   }
 
   void _requireSynced() {
@@ -339,9 +354,66 @@ class SyncClient {
       ChangeRecord.fromJson(c.cast<String, Object?>()),
   ];
 
+  // Remote workspaces and devices -------------------------------------------
+
+  /// The server workspaces the signed-in user belongs to.
+  Future<List<RemoteWorkspace>> listRemoteWorkspaces() async => [
+    for (final w in await transport.getJsonList('/v1/workspaces'))
+      RemoteWorkspace.fromJson((w! as Map).cast<String, Object?>()),
+  ];
+
+  /// Creates a server workspace owned by the signed-in user with this
+  /// workspace's currency and timezone. The id is generated here, so a
+  /// retry after a lost response finds the workspace instead of creating a
+  /// second one.
+  Future<RemoteWorkspace> createRemoteWorkspace({required String name}) async {
+    final settings = _ctx.settings;
+    final id = newId();
+    final response = await transport.send(
+      () => transport.postRequest('/v1/workspaces', {
+        'id': id,
+        'name': name,
+        'currency': settings.currency.code,
+        'timezone': settings.timezone,
+      }),
+      acceptStatus: (s) => s == 409,
+    );
+    if (response.statusCode == 409) {
+      final error = SyncHttpException(
+        response.statusCode,
+        response.body,
+        'POST /v1/workspaces',
+      );
+      if (error.errorCode != 'WORKSPACE_EXISTS') throw error;
+      // An earlier attempt created it and its answer was lost.
+      return RemoteWorkspace.fromJson(
+        await transport.getJson('/v1/workspaces/$id'),
+      );
+    }
+    return RemoteWorkspace.fromJson(SyncTransport.decodeObject(response));
+  }
+
+  /// Registers this device (the store's device id) in [workspaceId], which
+  /// the user must belong to. Registering again is harmless; a revoked
+  /// device answers `409 DEVICE_REVOKED`.
+  Future<void> registerDevice({
+    required String workspaceId,
+    required String name,
+    required String platform,
+  }) async {
+    await transport.postJson('/v1/devices', {
+      'deviceId': _ctx.settings.deviceId,
+      'workspaceId': workspaceId,
+      'name': name,
+      'platform': platform,
+    });
+  }
+
   // Bootstrap ----------------------------------------------------------------
 
-  /// Describes what enabling sync against [remoteWorkspaceId] will do.
+  /// Describes what enabling sync against [remoteWorkspaceId] will do. The
+  /// device ([deviceId], by default the store's) must already be registered
+  /// in that workspace with [registerDevice].
   Future<SyncBootstrapPreview> previewBootstrap({
     required String remoteWorkspaceId,
     String? deviceId,
@@ -352,6 +424,10 @@ class SyncClient {
     final remote = await transport.getJson(
       '/v1/sync/changes',
       query: {'cursor': '', 'limit': '1'},
+      extraHeaders: {
+        deviceIdHeader: deviceId ?? _ctx.settings.deviceId,
+        workspaceIdHeader: remoteWorkspaceId,
+      },
     );
     return SyncBootstrapPreview(
       remoteWorkspaceId: remoteWorkspaceId,

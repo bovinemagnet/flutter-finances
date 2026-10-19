@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "area": "documents",
-  "notes": "CSV import, fingerprints, export sanitisation and content sniffing. See the Documents operations section of README.md. Amounts are integer minor units; csv.parse uses exponent 2 unless the input gives one.",
+  "notes": "CSV import, fingerprints, export sanitisation, content sniffing and PDF inspection. See the Documents operations section of README.md. Amounts are integer minor units; csv.parse uses exponent 2 unless the input gives one.",
   "cases": [
     {
       "id": "csv-parse-signed-quoted-reference",
@@ -217,6 +217,12 @@
     {"id": "sniff-gif-unsupported", "op": "content.sniff", "input": {"base64": "R0lGODlhAQABAA=="}, "expect": {"error": "UNSUPPORTED_TYPE"}},
     {"id": "sniff-csv-text-unsupported", "op": "content.sniff", "input": {"base64": "RGF0ZSxBbW91bnQK"}, "expect": {"error": "UNSUPPORTED_TYPE"}},
     {"id": "sniff-near-miss-pdf", "op": "content.sniff", "input": {"base64": "JVBEWC0xLjcK"}, "expect": {"error": "UNSUPPORTED_TYPE"}},
-    {"id": "sniff-empty", "op": "content.sniff", "input": {"base64": ""}, "expect": {"error": "EMPTY_FILE"}}
+    {"id": "sniff-empty", "op": "content.sniff", "input": {"base64": ""}, "expect": {"error": "EMPTY_FILE"}},
+    {"id": "pdf-one-page", "op": "pdf.inspect", "input": {"base64": "JVBERi0xLjQKMSAwIG9iaiA8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4gZW5kb2JqCjIgMCBvYmogPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4gZW5kb2JqCjMgMCBvYmogPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiA+PiBlbmRvYmoKdHJhaWxlciA8PCAvUm9vdCAxIDAgUiA+PgpzdGFydHhyZWYKMAolJUVPRgo="}, "expect": {"readable": true, "encrypted": false, "pageCount": 1}},
+    {"id": "pdf-count-beats-visible-pages", "op": "pdf.inspect", "input": {"base64": "JVBERi0xLjQKMSAwIG9iaiA8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4gZW5kb2JqCjIgMCBvYmogPDwgL1R5cGUgL1BhZ2VzIC9Db3VudCAxMiA+PiBlbmRvYmoKMyAwIG9iaiA8PCAvVHlwZSAvUGFnZSAvUGFyZW50IDIgMCBSID4+IGVuZG9iago0IDAgb2JqIDw8IC9UeXBlIC9QYWdlIC9QYXJlbnQgMiAwIFIgPj4gZW5kb2JqCnRyYWlsZXIgPDwgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjAKJSVFT0YK"}, "expect": {"readable": true, "encrypted": false, "pageCount": 12}},
+    {"id": "pdf-visible-pages-beat-count", "op": "pdf.inspect", "input": {"base64": "JVBERi0xLjQKMSAwIG9iaiA8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4gZW5kb2JqCjIgMCBvYmogPDwgL1R5cGUgL1BhZ2VzIC9Db3VudCAyID4+IGVuZG9iagozIDAgb2JqIDw8IC9UeXBlIC9QYWdlIC9QYXJlbnQgMiAwIFIgPj4gZW5kb2JqCjQgMCBvYmogPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiA+PiBlbmRvYmoKNSAwIG9iaiA8PCAvVHlwZSAvUGFnZSAvUGFyZW50IDIgMCBSID4+IGVuZG9iago2IDAgb2JqIDw8IC9UeXBlIC9QYWdlIC9QYXJlbnQgMiAwIFIgPj4gZW5kb2JqCjcgMCBvYmogPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiA+PiBlbmRvYmoKOCAwIG9iaiA8PCAvVHlwZSAvUGFnZSAvUGFyZW50IDIgMCBSID4+IGVuZG9iago5IDAgb2JqIDw8IC9UeXBlIC9QYWdlIC9QYXJlbnQgMiAwIFIgPj4gZW5kb2JqCjEwIDAgb2JqIDw8IC9UeXBlIC9QYWdlIC9QYXJlbnQgMiAwIFIgPj4gZW5kb2JqCjExIDAgb2JqIDw8IC9UeXBlIC9QYWdlIC9QYXJlbnQgMiAwIFIgPj4gZW5kb2JqCjEyIDAgb2JqIDw8IC9UeXBlIC9QYWdlIC9QYXJlbnQgMiAwIFIgPj4gZW5kb2JqCjEzIDAgb2JqIDw8IC9UeXBlIC9QYWdlIC9QYXJlbnQgMiAwIFIgPj4gZW5kb2JqCnRyYWlsZXIgPDwgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjAKJSVFT0YK"}, "expect": {"readable": true, "encrypted": false, "pageCount": 11}},
+    {"id": "pdf-encrypted", "op": "pdf.inspect", "input": {"base64": "JVBERi0xLjQKMSAwIG9iaiA8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4gZW5kb2JqCjIgMCBvYmogPDwgL1R5cGUgL1BhZ2VzIC9Db3VudCAxID4+IGVuZG9iagozIDAgb2JqIDw8IC9UeXBlIC9QYWdlIC9QYXJlbnQgMiAwIFIgPj4gZW5kb2JqCnRyYWlsZXIgPDwgL1Jvb3QgMSAwIFIgL0VuY3J5cHQgOSAwIFIgPj4Kc3RhcnR4cmVmCjAKJSVFT0YK"}, "expect": {"readable": true, "encrypted": true, "pageCount": 1}},
+    {"id": "pdf-truncated", "op": "pdf.inspect", "input": {"base64": "JVBERi0xLjQKMSAwIG9iaiA8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4gZW5kb2JqCjIgMCBvYmogPDwgL1R5cGUgL1BhZ2VzIC9Db3VudCAzID4+IGVuZG9iagozIDAgb2JqIDw8IC9UeXBlIC9QYWdlIC9QYXJlbnQgMiAwIFIgPj4gZW5kb2JqCg=="}, "expect": {"readable": false, "encrypted": false, "pageCount": 3}},
+    {"id": "pdf-page-tree-in-object-streams", "op": "pdf.inspect", "input": {"base64": "JVBERi0xLjQKMSAwIG9iaiA8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4gZW5kb2JqCjQgMCBvYmogPDwgL1R5cGUgL09ialN0bSAvTiAzIC9GaXJzdCAyMCA+PiBzdHJlYW0KeHh4eAplbmRzdHJlYW0gZW5kb2JqCnRyYWlsZXIgPDwgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjAKJSVFT0YK"}, "expect": {"readable": true, "encrypted": false, "pageCount": null}}
   ]
 }

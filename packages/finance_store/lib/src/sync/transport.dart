@@ -11,6 +11,16 @@ typedef Sleep = Future<void> Function(Duration delay);
 /// Supplies the current OIDC access token, or null when signed out.
 typedef AccessTokenProvider = Future<String?> Function();
 
+/// Supplies the device and workspace headers that scope an API call, keyed
+/// by lower-case header name.
+typedef ScopeHeaders = Map<String, String> Function();
+
+/// Names the calling device; required by every `/v1/sync/*` endpoint.
+const deviceIdHeader = 'x-device-id';
+
+/// Names the workspace; without it the server uses the device's workspace.
+const workspaceIdHeader = 'x-workspace-id';
+
 /// Exponential backoff with optional full jitter.
 @immutable
 class RetryPolicy {
@@ -91,6 +101,7 @@ class SyncTransport {
     required this.client,
     required this.baseUri,
     this.accessToken,
+    this.scope,
     this.retry = const RetryPolicy(),
     this.timeout = const Duration(seconds: 30),
     Sleep? sleep,
@@ -99,6 +110,9 @@ class SyncTransport {
   final http.Client client;
   final Uri baseUri;
   final AccessTokenProvider? accessToken;
+
+  /// Device and workspace headers sent with every API call.
+  final ScopeHeaders? scope;
   final RetryPolicy retry;
   final Duration timeout;
   final Sleep sleep;
@@ -106,13 +120,15 @@ class SyncTransport {
   Uri resolve(String path, [Map<String, String>? query]) =>
       baseUri.replace(path: path, queryParameters: query);
 
-  /// JSON and authorisation headers for the sync API (not for presigned
-  /// object storage URLs).
+  /// JSON, authorisation, device and workspace headers for the API, with
+  /// [extra] taking precedence. Never used for presigned object storage
+  /// URLs: they carry their own signature and must not see the token.
   Future<Map<String, String>> headers([Map<String, String>? extra]) async {
     final token = await accessToken?.call();
     return {
       'accept': 'application/json',
       'authorization': ?(token == null ? null : 'Bearer $token'),
+      ...?scope?.call(),
       ...?extra,
     };
   }
@@ -120,26 +136,45 @@ class SyncTransport {
   Future<Map<String, Object?>> getJson(
     String path, {
     Map<String, String>? query,
-  }) async => _decode(
+    Map<String, String>? extraHeaders,
+  }) async => decodeObject(
     await send(
       () async =>
           http.Request('GET', resolve(path, query))
-            ..headers.addAll(await headers()),
+            ..headers.addAll(await headers(extraHeaders)),
     ),
   );
 
-  Future<Map<String, Object?>> postJson(String path, Object body) async =>
-      _decode(
-        await send(
-          () async => http.Request('POST', resolve(path))
-            ..headers.addAll(
-              await headers({'content-type': 'application/json'}),
-            )
-            ..body = jsonEncode(body),
-        ),
-      );
+  /// A GET whose answer is a JSON array.
+  Future<List<Object?>> getJsonList(String path) async {
+    final response = await send(
+      () async =>
+          http.Request('GET', resolve(path))..headers.addAll(await headers()),
+    );
+    return jsonDecode(response.body) as List<Object?>;
+  }
 
-  Map<String, Object?> _decode(http.Response response) {
+  Future<Map<String, Object?>> postJson(
+    String path,
+    Object body, {
+    Map<String, String>? extraHeaders,
+  }) async => decodeObject(
+    await send(() async => postRequest(path, body, extraHeaders)),
+  );
+
+  /// A JSON POST of [body] with the API headers.
+  Future<http.Request> postRequest(
+    String path,
+    Object body, [
+    Map<String, String>? extraHeaders,
+  ]) async => http.Request('POST', resolve(path))
+    ..headers.addAll(
+      await headers({...?extraHeaders, 'content-type': 'application/json'}),
+    )
+    ..body = jsonEncode(body);
+
+  /// The JSON object in [response], or an empty map for an empty body.
+  static Map<String, Object?> decodeObject(http.Response response) {
     if (response.body.isEmpty) return const {};
     return (jsonDecode(response.body) as Map).cast<String, Object?>();
   }

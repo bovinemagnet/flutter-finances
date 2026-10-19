@@ -144,6 +144,10 @@ class LocalState {
 
   /// Physically removes a row, for entities that never reached the server.
   void remove(EntityRef ref) {
+    // An annotation names its journal only in its JSON.
+    final annotation = ref.type == journalAnnotationType
+        ? snapshot(ref)?.json
+        : null;
     final table = _table(ref.type);
     if (table == 'entities') {
       db.execute('DELETE FROM entities WHERE entity_type = ? AND id = ?', [
@@ -153,7 +157,7 @@ class LocalState {
     } else {
       db.execute('DELETE FROM $table WHERE id = ?', [ref.id]);
     }
-    _afterWrite(ref, null, true);
+    _afterWrite(ref, annotation, true);
   }
 
   String _table(String type) => switch (type) {
@@ -166,8 +170,11 @@ class LocalState {
   void _afterWrite(EntityRef ref, Map<String, Object?>? json, bool deleted) {
     switch (ref.type) {
       case EntityTypes.journal:
-      case journalAnnotationType:
         reindexJournal(db, ref.id);
+      case journalAnnotationType:
+        if (json?['journalId'] case final String journalId) {
+          reindexJournal(db, journalId);
+        }
       case EntityTypes.account:
       case EntityTypes.category:
         chartVersion++;

@@ -52,4 +52,21 @@ void main() {
       expect(sorted, ids);
     });
   });
+
+  group('nameBasedId', () {
+    test('matches the RFC 9562 version 5 example', () {
+      expect(
+        nameBasedId('6ba7b810-9dad-11d1-80b4-00c04fd430c8', 'www.example.com'),
+        '2ed6657d-e927-568b-95e1-2665a8aea6a2',
+      );
+    });
+
+    test('is stable per name and differs from the name', () {
+      final id = newId();
+      final derived = nameBasedId(id, 'annotation');
+      expect(nameBasedId(id, 'annotation'), derived);
+      expect(nameBasedId(id, 'other'), isNot(derived));
+      expect(derived, isNot(id));
+    });
+  });
 }

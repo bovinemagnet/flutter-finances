@@ -8,7 +8,13 @@ import 'package:path_provider/path_provider.dart';
 import 'app/app_lock.dart';
 import 'app/app_scope.dart';
 import 'app/theme.dart';
+import 'background_sync.dart';
 import 'data/app_state.dart';
+import 'data/oidc.dart';
+import 'data/sync_controller.dart';
+import 'features/sync/sync_section.dart';
+import 'platform/adapters/background.dart';
+import 'platform/adapters/browser_sign_in.dart';
 import 'data/platform_key_store.dart';
 import 'data/workspace_gate.dart';
 import 'platform/adapters/file_importer.dart';
@@ -69,6 +75,45 @@ class FinanceApp extends StatefulWidget {
 
 class _FinanceAppState extends State<FinanceApp> {
   AppState? _state;
+  SyncController? _sync;
+
+  SyncController _createSync(AppState state) {
+    final capabilities = widget.services.capabilities;
+    return SyncController(
+      state,
+      tokens: SecureTokenStore(PlatformSecureKeyStore()),
+      settingsStore: FileSyncSettingsStore(
+        File(
+          '${widget.services.workspaceDirectory.parent.path}/sync-settings.json',
+        ),
+      ),
+      redirectUri: redirectUriFor(capabilities),
+      browserSignIn: (session) => signInWithBrowser(session, capabilities),
+      platform: Platform.operatingSystem,
+      deviceName: Platform.localHostname,
+    );
+  }
+
+  Future<void> _ready(AppState state, {SyncController? sync}) async {
+    final capabilities = widget.services.capabilities;
+    sync ??= _createSync(state);
+    setState(() {
+      _state = state;
+      _sync = sync;
+    });
+    await sync.start();
+    if (capabilities.backgroundWork && sync.isSynced) {
+      await WorkmanagerScheduler(backgroundSyncDispatcher)
+          .schedulePeriodicSync(const Duration(hours: 1))
+          .catchError((Object _) {});
+    }
+  }
+
+  @override
+  void dispose() {
+    _sync?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -89,12 +134,13 @@ class _FinanceAppState extends State<FinanceApp> {
       home: _state == null
           ? StartupScreen(
               gate: widget.gate,
-              onReady: (state) => setState(() => _state = state),
+              onReady: _ready,
+              createSync: _createSync,
             )
           : AppLockGate(
               enabled: _state!.appLockEnabled,
               authenticator: widget.services.authenticator,
-              child: const HomeScreen(),
+              child: HomeScreen(syncSection: SyncSection(controller: _sync!)),
             ),
     );
     return AppScope(state: _state, services: widget.services, child: app);

@@ -274,6 +274,31 @@ class SyncCommandsIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    void mergesAFieldTheServerNeverHadWhateverTheBase() throws Exception {
+        Actor phone = newActor();
+        Actor tablet = secondDevice(phone);
+        String id = Ids.newId();
+        submitOne(phone, upsert(phone, "goal", id, 0, Map.of("name", "Car")));
+        submitOne(phone, upsert(phone, "goal", id, 1, Map.of("name", "New car")));
+
+        // Never changed on the server, so not a conflict (SYNC 03).
+        JsonNode added = submitOne(tablet, upsert(tablet, "goal", id, 1, Map.of("notes", "by June")));
+        assertThat(added.path("status").asString()).isEqualTo("applied");
+        assertThat(added.path("revision").asLong()).isEqualTo(3);
+
+        // Two devices creating the same derived entity offline merge too.
+        String annotation = Ids.newId();
+        submitOne(phone, upsert(phone, "journalAnnotation", annotation, 0, Map.of("payee", "Corner Shop")));
+        JsonNode second = submitOne(tablet, upsert(tablet, "journalAnnotation", annotation, 0,
+                Map.of("notes", "milk")));
+        assertThat(second.path("status").asString()).isEqualTo("applied");
+        JsonNode same = submitOne(tablet, upsert(tablet, "journalAnnotation", annotation, 0,
+                Map.of("payee", "Other Shop")));
+        assertThat(same.path("status").asString()).isEqualTo("conflict");
+        assertThat(texts(same.path("conflict").path("fields"))).containsExactly("payee");
+    }
+
+    @Test
     void validatesAccountsAndCategoriesAndProtectsReferencedOnes() throws Exception {
         Actor actor = newActor();
         assertThat(errorsOf(submitOne(actor, upsert(actor, "account", Ids.newId(), 0, Map.of("name", "x")))))
@@ -316,10 +341,17 @@ class SyncCommandsIntegrationTest extends IntegrationTestSupport {
     @Test
     void acceptsTheClientsDocumentAssetAndJournalAnnotationEntities() throws Exception {
         Actor actor = newActor();
+        String bank = createAccount(actor, "transaction");
+        String groceries = createCategory(actor, "expense");
         String journalId = Ids.newId();
-        assertThat(submitOne(actor, upsert(actor, "journalAnnotation", journalId, 0,
-                Map.of("payee", "Corner shop", "tags", List.of("weekly")))).path("status").asString())
-                .isEqualTo("applied");
+        submitOne(actor, postJournal(actor, expenseJournal(journalId, bank, groceries, 100, "posted"), 0));
+        // Entity ids are unique across types: an annotation has its own id
+        // (the client derives it from the journal's) and names the journal.
+        assertThat(errorsOf(submitOne(actor, upsert(actor, "journalAnnotation", journalId, 0,
+                Map.of("journalId", journalId, "payee", "Corner shop"))))).containsExactly("ENTITY_TYPE_MISMATCH");
+        assertThat(submitOne(actor, upsert(actor, "journalAnnotation", Ids.newId(), 0,
+                Map.of("journalId", journalId, "payee", "Corner shop", "tags", List.of("weekly"))))
+                .path("status").asString()).isEqualTo("applied");
         assertThat(submitOne(actor, upsert(actor, "documentAsset", Ids.newId(), 0,
                 Map.of("ownerId", Ids.newId(), "kind", "source", "contentType", "image/jpeg")))
                 .path("status").asString()).isEqualTo("applied");

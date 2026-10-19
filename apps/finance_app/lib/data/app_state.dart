@@ -104,8 +104,14 @@ class AppState extends ChangeNotifier {
 
   Set<String> get reviewedJournalIds => {
     for (final record in store.entities(AppEntityTypes.transactionReview))
-      if (!record.deleted && record.json['reviewed'] == true) record.ref.id,
+      if (!record.deleted && record.json['reviewed'] == true)
+        _reviewedJournal(record),
   };
+
+  /// The entry a `transactionReview` belongs to; its id is derived from
+  /// the entry's because entity ids are unique across types.
+  static String _reviewedJournal(EntityRecord record) =>
+      record.json['journalId'] as String? ?? record.ref.id;
 
   /// Posted and pending entries the user has not reviewed yet (Journey C).
   Set<String> get unreviewedJournalIds {
@@ -172,10 +178,12 @@ class AppState extends ChangeNotifier {
     String journalId,
     Map<String, Object?> fields,
   ) async {
-    final existing = store.entity(AppEntityTypes.transactionReview, journalId);
-    await _put(AppEntityTypes.transactionReview, journalId, {
+    final id = ownedEntityId(AppEntityTypes.transactionReview, journalId);
+    final existing = store.entity(AppEntityTypes.transactionReview, id);
+    await _put(AppEntityTypes.transactionReview, id, {
       ...?existing?.json,
-      'id': journalId,
+      'id': id,
+      'journalId': journalId,
       ...fields,
     });
   }
@@ -195,7 +203,7 @@ class AppState extends ChangeNotifier {
   Map<String, CategorySource> get categorySources => {
     for (final record in store.entities(AppEntityTypes.transactionReview))
       if (!record.deleted && record.json['categorySource'] != null)
-        record.ref.id: CategorySource.values.byName(
+        _reviewedJournal(record): CategorySource.values.byName(
           record.json['categorySource'] as String,
         ),
   };
@@ -304,13 +312,18 @@ class AppState extends ChangeNotifier {
   }
 
   Map<String, Object?> get _preferences =>
-      store.entity(AppEntityTypes.appPreferences, 'preferences')?.json ??
+      store
+          .entity(
+            AppEntityTypes.appPreferences,
+            AppEntityTypes.appPreferencesId,
+          )
+          ?.json ??
       const {};
 
   Future<void> _setPreferences(Map<String, Object?> fields) => _put(
     AppEntityTypes.appPreferences,
-    'preferences',
-    {..._preferences, 'id': 'preferences', ...fields},
+    AppEntityTypes.appPreferencesId,
+    {..._preferences, 'id': AppEntityTypes.appPreferencesId, ...fields},
   );
 
   /// Saved changes to financial data, ignoring preferences and drafts.
@@ -375,16 +388,25 @@ class AppState extends ChangeNotifier {
 
   /// Fields of an entry interrupted before saving (UX 02).
   Map<String, Object?>? get entryDraft {
-    final record = store.entity(AppEntityTypes.entryDraft, 'current');
+    final record = store.entity(
+      AppEntityTypes.entryDraft,
+      AppEntityTypes.entryDraftId,
+    );
     return record == null || record.deleted ? null : record.json;
   }
 
-  Future<void> saveEntryDraft(Map<String, Object?> fields) =>
-      _put(AppEntityTypes.entryDraft, 'current', {'id': 'current', ...fields});
+  Future<void> saveEntryDraft(Map<String, Object?> fields) => _put(
+    AppEntityTypes.entryDraft,
+    AppEntityTypes.entryDraftId,
+    {'id': AppEntityTypes.entryDraftId, ...fields},
+  );
 
   Future<void> clearEntryDraft() async {
     if (entryDraft != null) {
-      await store.deleteEntity(AppEntityTypes.entryDraft, 'current');
+      await store.deleteEntity(
+        AppEntityTypes.entryDraft,
+        AppEntityTypes.entryDraftId,
+      );
     }
   }
 
@@ -564,7 +586,7 @@ class AppState extends ChangeNotifier {
     final payday = nextPayday();
     final preferences = store.entity(
       AppEntityTypes.appPreferences,
-      'preferences',
+      AppEntityTypes.appPreferencesId,
     );
     final buffer = preferences?.json['minimumBufferMinor'] as int?;
     return estimateDiscretionary(
