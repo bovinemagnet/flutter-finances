@@ -1,0 +1,18 @@
+WOOLWORTHS
+Town Hall Metro 2000
+ABN 88 000 014 675
+TAX INVOICE
+Store 1234  POS 05  Trans 4471
+BANANAS CAVENDISH          2.84
+ 0.71 kg @ $4.00/kg
+MILK FULL CREAM 2L         3.10
+*BREAD WHOLEMEAL 700G      4.50
+EGGS FREE RANGE 12PK       6.90
+CHEESE TASTY 500G          8.00
+SUBTOTAL                  25.34
+TOTAL                     25.34
+EFTPOS                    25.34
+GST INCLUDED IN TOTAL      0.41
+Items 5
+19/10/2026 08:42  Op 112
+* denotes GST applies

@@ -1,0 +1,18 @@
+COSTCO WHOLESALE
+Lidcombe Warehouse #580
+Member 111234567890
+E  1234567  KS TOILET PAPER     27.99
+E  2234567  KS WATER 40PK        9.99
+E  3234567  SALMON PORTIONS     34.99
+   4234567  DISHWASHER TABS     29.99 A
+   5234567  INSTANT DISCOUNT    -6.00 A
+E  6234567  CHICKEN ROAST        7.99
+E  7234567  BLUEBERRIES 1KG     13.99
+   8234567  LAUNDRY 5L          24.99 A
+SUBTOTAL                       143.93
+TAX                              4.45
+**** TOTAL                     143.93
+AMEX                           143.93
+CHANGE                           0.00
+TOTAL NUMBER OF ITEMS SOLD = 7
+11/01/2026 19:27 0580 012 088 341

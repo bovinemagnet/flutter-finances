@@ -1,0 +1,10 @@
+THE RUSSIAN HOTEL
+ABN 33 444 555 666
+SCHOONER PALE ALE x3     30.30
+CHIPS                     9.00
+SUBTOTAL                 39.30
+ROUNDING                 -0.05
+TOTAL                    39.25
+CASH                     50.00
+CHANGE                   10.75
+Date: 16/10/2026

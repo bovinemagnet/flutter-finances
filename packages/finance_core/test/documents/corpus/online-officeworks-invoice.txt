@@ -1,0 +1,13 @@
+TAX INVOICE
+Sold by: Officeworks Ltd
+ABN 36 004 763 526
+Order number: OW123456789
+Order date: 07/10/2026
+Item                     Qty   Price
+Printer paper A4 5 ream   1    32.00
+Ink cartridge black       2    58.00
+Subtotal                       90.00
+Delivery                        6.95
+Order total                    96.95
+GST included                    8.81
+Payment: PayPal                96.95

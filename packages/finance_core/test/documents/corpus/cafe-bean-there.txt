@@ -1,0 +1,12 @@
+Welcome to Bean There Cafe
+Shop 2, 15 King St Newtown
+ABN 51 824 753 556
+Table 7
+Flat White Lg          5.50
+Long Black             4.50
+Banana Bread           6.00
+Total (inc GST)       16.00
+GST                    1.45
+Paid Visa             16.00
+12 Oct 2026 08:14
+Thank you!

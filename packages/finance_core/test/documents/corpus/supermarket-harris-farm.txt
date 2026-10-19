@@ -1,0 +1,12 @@
+HARRIS FARM MARKETS
+Bondi Junction
+ABN 12 003 456 789
+AVOCADO HASS x3            6.00
+STRAWBERRIES 250G          4.99
+SALMON FILLET              18.40
+SUB-TOTAL                  29.39
+ROUNDING                    0.01
+TOTAL DUE                  29.40
+VISA CREDIT                29.40
+GST                         0.00
+Date 21 Sep 2026  10:51
