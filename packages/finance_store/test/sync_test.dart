@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:finance_core/finance_core.dart';
+import 'package:finance_core/finance_core.dart' hide AssetKind;
 import 'package:finance_store/finance_store.dart';
 import 'package:test/test.dart';
 
