@@ -1,0 +1,181 @@
+= Receipts
+Paul Snow
+:revnumber: 0.0.0
+
+A receipt is a captured document plus the values the user confirmed from it. A receipt is _evidence_, not money: attaching or creating from a receipt never posts a second expense on its own. The code lives in `packages/finance_core/lib/src/documents/` (`receipts`, `validation`, `extraction`), with server-side checks in `server/app/src/main/java/com/paulsnow/finance/server/receipts`. Capturing the image on a device is covered in xref:platform:receipt-capture.adoc[].
+
+== Model
+
+* `Receipt` holds the capture time (UTC), the `CaptureSource` (`camera`, `documentScanner`, `photoLibrary`, `shareTarget`, `fileImport`, `paste`, `dragAndDrop`), the extraction state, the _confirmed_ fields, the latest extraction id, the review outcome, notes, tags and an optional `deletedAt` tombstone.
+* `ReceiptFields` are merchant, date, total, tax and a refund flag. The total is a positive magnitude in the receipt's currency.
+* `ReceiptPage` numbers the pages of a receipt from 1. A multi-page PDF has one page per source page index, all sharing one source asset.
+* `DocumentAsset` is one stored file, either the `source` as captured or imported, or a `readableDerivative` (cropped, deskewed or enhanced). It records the lower-case SHA-256, size, page count and upload state.
+
+Extraction candidates are never written to the receipt. They live on a separate, immutable `Extraction` record, so running extraction again can add suggestions but can never overwrite something the user confirmed.
+
+== States and the state machine
+
+Two state machines run independently (`receipt_states.dart`). A receipt can be reviewed while its image is still uploading, and an extraction failure never affects the stored document.
+
+=== Extraction and review
+
+[source,mermaid]
+----
+include::example$receipt-lifecycle.mmd[]
+----
+
+An event that is not listed for the current state raises `IllegalTransitionException`; for example, reviewing a receipt that is `extracting` is rejected.
+
+[cols="1,3"]
+|===
+|Event |Meaning
+
+|`queue` |Hand a captured receipt to the extraction queue.
+|`start` |A worker picks the receipt up.
+|`succeed` |Extraction produced candidates that now need review.
+|`fail` |Extraction failed; the document is kept.
+|`retry` |Try a failed extraction again.
+|`interrupt` |The worker stopped (for example the app was closed); the receipt is queued again.
+|`review` |The user confirmed the fields, by review or manual entry. Allowed from `captured`, `extractionQueued`, `needsReview` and `extractionFailed`, so a receipt can always be completed by hand.
+|`rerun` |Run extraction again, for example with a newer engine. Allowed from `needsReview` and `reviewed`; confirmed fields are kept.
+|===
+
+=== Upload
+
+Each `DocumentAsset` has its own upload state (`UploadState`): `localOnly`, `uploadQueued`, `uploading`, `uploaded`, `uploadFailed`. Events are `queue`, `start`, `complete`, `fail`, `retry` and `interrupt` (a stopped transfer is queued again). `uploaded` has no outgoing transitions. `localOnly` is the state while sync is off.
+
+A receipt shows the most urgent state of its assets, in the order failed, uploading, queued, local only, uploaded. A receipt with no assets (for example metadata that synced before its image) has no upload state.
+
+An asset's local bytes may be evicted from the cache only when the asset is present, `uploaded` and its cloud copy is confirmed (`evictionStatus`). An unsynced original is never evicted.
+
+== Validation limits
+
+`validateDocument` checks a document from its bytes alone; the file extension never decides the type. Checks run in this order: empty, size, type, then type-specific structure, encryption, page count and image dimensions.
+
+[cols="2,3"]
+|===
+|Limit (`ContentLimits` default) |Value
+
+|Maximum file size |20 MiB (`20 * 1024 * 1024` bytes)
+|Maximum pages per receipt |10
+|Longest image edge |16384 pixels
+|Largest decoded area |50,000,000 pixels (about 200 MB decoded at four bytes per pixel, which stops decompression bombs)
+|===
+
+Supported formats are JPEG, PNG, HEIC, HEIF and PDF, identified from magic bytes:
+
+* JPEG: `FF D8 FF` at offset 0.
+* PNG: the 8-byte PNG signature at offset 0.
+* HEIC and HEIF: `ftyp` at offset 4. The HEVC brands `heic`, `heix`, `hevc`, `hevx`, `heim`, `heis`, `hevm` and `hevs` give HEIC; `mif1` and `msf1` give HEIF; any other brand is unsupported.
+* PDF: `%PDF-` within the first 1024 bytes.
+
+PDF inspection reads raw syntax only and never decompresses streams. It reports whether the file is readable (an `%%EOF` marker near the end, a `startxref`, and at least one page or a hidden page tree), whether an `/Encrypt` dictionary is named in a trailer or cross-reference stream, and a conservative page count (the larger of the visible `/Page` objects and the largest `/Count`). When the page tree is inside compressed object streams the count is unknown and a warning asks the platform renderer to confirm it. Image dimensions are read from the header (JPEG SOF, PNG IHDR, HEIF `ispe`, taking the largest) without decoding pixels.
+
+Issues carry a stable code, an actionable message and a severity. `isAccepted` is true when there are no errors.
+
+[cols="2,1,3"]
+|===
+|Code |Severity |Cause
+
+|`EMPTY_FILE` |error |No bytes.
+|`FILE_TOO_LARGE` |error |Over the size limit.
+|`UNSUPPORTED_TYPE` |error |Not JPEG, PNG, HEIC, HEIF or PDF.
+|`ENCRYPTED_PDF` |error |PDF is password protected or encrypted.
+|`UNREADABLE_PDF` |error |PDF is truncated or has no recognisable structure.
+|`TOO_MANY_PAGES` |error |More than 10 pages. `checkReceiptPageLimit` applies the same rule when pages are added to an existing receipt.
+|`UNREADABLE_IMAGE` |error |JPEG or PNG header not found.
+|`IMAGE_TOO_LARGE` |error |An edge or the area is beyond the limits.
+|`DIMENSIONS_UNVERIFIED` |warning |HEIC or HEIF size cannot be read from the header; the device confirms it on decode.
+|`PAGE_COUNT_UNVERIFIED` |warning |PDF page count is hidden in object streams.
+|===
+
+=== Server checks
+
+The server repeats the checks when an upload completes, then scans it. Uploads go to a per-asset staging key. Completion verifies the checksum and the content type against the magic bytes (`CHECKSUM_MISMATCH`, `CONTENT_TYPE_MISMATCH`) and moves the asset to `quarantined`. A scan job then releases it (`available`) or marks it `rejected`. The default `StructuralDocumentScanner` rejects `TRUNCATED` and `MALFORMED` files, images beyond the configured dimension, and PDFs containing `/JavaScript`, `/JS`, `/Launch`, `/EmbeddedFile(s)`, `/XFA` or `/RichMedia` (`ACTIVE_CONTENT`). It is not a malware scanner; a deployment can supply its own `DocumentScanner` bean.
+
+The server limits are configured under `finance.receipts`: `max-size-bytes` (default 26,214,400, which is 25 MiB) and `max-image-dimension` (default 20,000 pixels).
+
+NOTE: The server defaults are looser than the client's `ContentLimits` (25 MiB against 20 MiB, and 20,000 against 16,384 pixels per side). The client rejects first, so a document accepted on the device is within the server limits.
+
+== Extraction, provenance and uncertainty
+
+Text recognition sits behind a single boundary, `ExtractionProvider`, which returns an `OcrResult` (recognised text and geometry) and nothing more. Its `ProviderDataUse` states whether consent is required, the retention and the processing region. That text is untrusted: the deterministic `parseReceipt` function turns it into candidates, arithmetic and ledger validation stay local, and only the user can confirm fields, approve a match or post an entry.
+
+Each `Extraction` records the original engine output (including engine name and version), the parser version (`receipt-parser/1`), and ordered candidates (best first) for merchant, date, total, tax and currency, plus optional subtotal, cash tendered and change. Every `FieldCandidate` carries its provenance: the indexes of the OCR lines that produced it and their joined text.
+
+=== Confidence
+
+Confidence is a category, never a percentage.
+
+* `high`: corroborated by independent evidence (arithmetic, a payment line, a label) with nothing competing.
+* `medium`: found by a keyword or position but not corroborated.
+* `low`: inferred without a keyword, or competing values exist.
+
+=== Parser heuristics
+
+* Rows are rebuilt from geometry when every line has a box; a label row followed by an amount-only row is merged.
+* Amounts need exactly two decimal places; percentages, quantities and dates are ignored; the last amount on a row counts.
+* Totals come from rows labelled total. Cash tendered, change and cash-out rows are never totals. A candidate scores 8 when subtotal, discounts, charges, rounding (and tax, if exclusive) add up to it, 6 when a card payment row shows it, 6 when cash less change equals it, 2 for a strong label such as `total due`, 1 when printed more than once and 1 when it is the last total row. The best score wins and ties go to the earlier row.
+* With no total row, the total is inferred from a payment row, then cash less change, then the subtotal, then the largest amount, and is marked `TOTAL_INFERRED`.
+* Dates prefer labelled rows and skip due, expiry and validity dates. An all-numeric date with both parts at most 12 is ambiguous unless the merchant has a chosen convention; the workspace default is day-month. The other reading is kept as an alternative, and a reading in the future gives way to one that is not.
+* The merchant is a labelled value (`Sold by:`, `Merchant:`) with high confidence, otherwise the first heading-like row with medium confidence.
+* Currency is reported only when printed as a code or prefixed symbol such as `AUD`, `A$` or `US$`; a bare `$` is not explicit.
+
+=== Uncertainty reasons
+
+`UncertaintyReason` codes mark a value, or the whole extraction (`reviewReasons`), as needing a careful look before anything is posted.
+
+[cols="2,3"]
+|===
+|Code |Meaning
+
+|`AMBIGUOUS_DATE` |Day-month and month-day readings are both plausible.
+|`FUTURE_DATE` |The date is after today in the workspace timezone.
+|`CONFLICTING_DATES` |Several different dates compete.
+|`MULTIPLE_PLAUSIBLE_TOTALS` |Competing total candidates.
+|`TOTAL_INFERRED` |No total row; the total was derived.
+|`ARITHMETIC_MISMATCH` |Printed subtotal, charges and tax do not add up to the total.
+|`CURRENCY_NOT_EXPLICIT` |No currency code printed; the workspace currency is assumed.
+|`FOREIGN_CURRENCY` |An explicit currency differs from the workspace currency.
+|`CONFLICTING_CURRENCIES` |More than one currency is printed.
+|`REFUND_RECEIPT` |The receipt appears to be a refund.
+|`MERCHANT_GUESSED` |Merchant taken from a heading rather than a label.
+|`TAX_IMPLAUSIBLE` |Printed tax is not plausible for the total.
+|`MISSING_MERCHANT`, `MISSING_DATE`, `MISSING_TOTAL` |Nothing was found for the field.
+|===
+
+=== What the review screen shows
+
+`buildReceiptReview` merges the confirmed values with the latest extraction. Confirmed values always win and are never highlighted. An extracted value is highlighted when it is not high confidence or has a reason; a missing value is always highlighted. Other candidates are offered as alternatives.
+
+== Review outcomes
+
+`reviewReceipt` completes review with the user's confirmed fields and one `ReviewDecision`. It first applies the `review` event (so it fails with `IllegalTransitionException` while the receipt is extracting), merges the fields, then records a `ReviewOutcome`.
+
+[cols="1,3"]
+|===
+|Decision and outcome |Behaviour
+
+|`AttachToTransaction` -> `attachedToTransaction`
+|Links the receipt to an existing entry; nothing is posted (acceptance scenario A07). The allocation defaults to the receipt total only when it equals the entry amount; otherwise the user must confirm a partial allocation (`ALLOCATION_REQUIRED`).
+
+|`CreateExpense` -> `expenseCreated`
+|Builds a `TransactionDraft` (a refund type for refund receipts) from the confirmed fields, validates it by building the journal once and discarding it, and returns the draft and a link to it. Posting is a separate, explicit step through the normal command path.
+
+|`KeepDocumentOnly` -> `documentOnly`
+|Keeps the document with no financial entry.
+|===
+
+Review errors (`ReviewErrorCode`): `MISSING_TOTAL`, `MISSING_DATE`, `CURRENCY_MISMATCH`, `UNKNOWN_ACCOUNT`, `CASH_ACCOUNT_REQUIRED` (a cash purchase must use a cash account), `CASH_ACCOUNT_UNCONFIRMED` (a cash account must be explicitly confirmed), `ALLOCATION_REQUIRED`, `INVALID_LINK` and `INVALID_DRAFT`.
+
+A `ReceiptTransactionLink` records the user-confirmed relationship and the allocated amount. `LinkError` codes are `NON_POSITIVE_ALLOCATION`, `CURRENCY_MISMATCH`, `AMOUNT_MISMATCH`, `DUPLICATE_LINK`, `JOURNAL_NOT_LINKABLE`, `EXCEEDS_TRANSACTION_AMOUNT` and `EXCEEDS_RECEIPT_TOTAL`. Finding the entry for a receipt is described in xref:matching-and-deduplication.adoc[].
+
+== Retention and deletion
+
+Documents are kept until the user deletes them deliberately. `planDocumentDeletion` produces a plan and does not touch the ledger.
+
+* The receipt is marked deleted with `deletedAt` (UTC) and kept as a tombstone for sync.
+* The plan lists the assets, pages and links to remove.
+* `journalIdsKept` lists the journals that lose their link, so the interface can say that the financial transaction is unchanged. Journals are never part of the plan.
+
+Cache eviction of local bytes is separate from deletion and is described under Upload above. The server removes a deleted workspace's receipt records through `ReceiptsPurger`; see xref:operations:data-deletion.adoc[]. There is no time-based automatic retention policy in the code.

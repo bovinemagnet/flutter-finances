@@ -1,0 +1,113 @@
+= Developer guide
+Paul Snow
+:revnumber: 0.0.0
+
+This guide lists the commands for working in the repository. All commands are run from the repository root unless a directory is given.
+
+== Prerequisites
+
+* The Dart and Flutter SDKs. The workspace needs Dart `^3.13.0` and Flutter `>=3.47.0` (see `pubspec.yaml` and `apps/finance_app/pubspec.yaml`).
+* A JDK that supports Java 25, because the server projects compile with `options.release = 25`, and the `gradle25w` wrapper script on the path.
+* For the sync service in local mode: PostgreSQL, an S3-compatible object store such as MinIO, and an OpenID Connect provider. See <<run-the-server>>.
+* Optional: `tesseract` with English data, to try desktop text recognition. See xref:platform:receipt-capture.adoc[].
+
+== Install dependencies
+
+The repository is a Dart workspace listing `packages/finance_core`, `packages/finance_store` and `apps/finance_app`. One command at the root resolves them all:
+
+[source,shell]
+----
+dart pub get
+----
+
+== Run the tests
+
+The shared packages are plain Dart packages:
+
+[source,shell]
+----
+cd packages/finance_core && dart test
+cd packages/finance_store && dart test
+----
+
+The Flutter client has unit and widget tests under `apps/finance_app/test`:
+
+[source,shell]
+----
+cd apps/finance_app && flutter test
+----
+
+The server tests run as part of the Gradle build, described below.
+
+NOTE: End-to-end synchronisation tests are planned and are being added under `tool/e2e`. That directory does not exist yet, so there is no command for them.
+
+== Run the client
+
+[source,shell]
+----
+cd apps/finance_app && flutter run -d linux
+----
+
+Linux is the desktop target that has been run and tested in this repository. Other targets must be built on their own operating system. See xref:platform:building-and-releasing.adoc[].
+
+== Build and run the server
+
+The root Gradle build includes the `server:finance-core` and `server:app` projects.
+
+[source,shell]
+----
+gradle25w build
+----
+
+[[run-the-server]]
+To start the sync service with the local developer profile:
+
+[source,shell]
+----
+SPRING_PROFILES_ACTIVE=local gradle25w :server:app:bootRun
+----
+
+The `local` profile (`server/app/src/main/resources/application-local.yml`) runs the API and the worker in one process. It expects the following, each overridable with an environment variable:
+
+[cols="2,2,2",options="header"]
+|===
+| Setting | Variable | Default
+
+| PostgreSQL URL | `FINANCE_DB_URL` | `jdbc:postgresql://localhost:5432/finance`
+| Database user | `FINANCE_DB_USERNAME` | `finance`
+| Database password | `FINANCE_DB_PASSWORD` | `finance`
+| OIDC issuer | `FINANCE_OIDC_ISSUER_URI` | `http://localhost:8180/realms/finance`
+| S3 endpoint | `FINANCE_S3_ENDPOINT` | `http://localhost:9000`
+| S3 access key | `FINANCE_S3_ACCESS_KEY` | `minioadmin`
+| S3 secret key | `FINANCE_S3_SECRET_KEY` | `minioadmin`
+| S3 bucket | `FINANCE_S3_BUCKET` | `finance-local`
+| Run the worker | `FINANCE_WORKER_ENABLED` | `true`
+|===
+
+The bucket is created on start-up (`create-bucket: true`). See xref:operations:running-locally.adoc[] for how to run the service and its dependencies.
+
+== Build this documentation
+
+[source,shell]
+----
+gradle25w antora
+----
+
+The task runs the Antora build with the playbook `antora-playbook.yml` and reports any errors. The sources are under `src/docs`, in the component `finance` with the modules ROOT, architecture, domain, sync, platform and operations.
+
+== Where to look
+
+[cols="1,2",options="header"]
+|===
+| Area | Location
+
+| Shared domain code | `packages/finance_core`
+| Local store, vault and backups | `packages/finance_store`
+| Client application | `apps/finance_app`
+| Server | `server/app` and `server/finance-core`
+| Shared test fixtures | `spec/fixtures`
+| Sync protocol specification | `spec/sync/protocol.md`
+| Product requirements | `docs/prd/initial.md`
+|===
+
+See xref:architecture:repository-layout.adoc[] and xref:architecture:shared-fixtures.adoc[] for more.

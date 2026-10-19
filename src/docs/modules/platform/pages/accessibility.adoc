@@ -2,7 +2,7 @@
 Paul Snow
 :revnumber: 0.0.0
 
-IMPORTANT: These are commitments from the product requirements (UX 01). Verification with screen readers on all release targets is planned.
+IMPORTANT: These are commitments from the product requirements (UX 01). Text scaling at 200% is exercised by automated widget tests (see Acceptance below). Verification with screen readers on all release targets is planned and has not been done.
 
 == UX 01 commitments
 
@@ -21,3 +21,5 @@ IMPORTANT: These are commitments from the product requirements (UX 01). Verifica
 == Acceptance
 
 Scenario A18: using a screen reader and 200% text on a tablet, entry, review and receipt linking complete without hidden actions or clipped controls.
+
+The widget test `apps/finance_app/test/widget/accessibility_a18_test.dart` renders the entry form, the review queue and receipt review with linking at a 200% text scale and applies Flutter's labelled tap target and Android tap target guidelines, checking that key actions (such as Mark reviewed, Attach and Confirm) are reachable. It does not replace testing with a real screen reader.

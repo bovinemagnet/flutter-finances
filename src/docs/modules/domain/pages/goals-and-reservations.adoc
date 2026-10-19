@@ -1,0 +1,82 @@
+= Goals and reservations
+Paul Snow
+:revnumber: 0.0.0
+
+Savings goals, sinking funds, reservations and loan summaries describe where money is being set aside or paid down. The code is in `packages/finance_core/lib/src/planning` (`goals.dart`, `savings_allocation.dart`, `reservations.dart`, `debt.dart`). These types exist only in the Dart package; the Java mirror in `server/finance-core` does not include them apart from the `Reservation` type used by the forecast.
+
+The central rule is that three different things are kept apart: money _allocated_ to a goal (a plan), money actually _moved_ (a ledger transfer) and money _reserved_ (set aside inside an account).
+
+== Goals and sinking funds
+
+A `Goal` has a target amount and optionally a target date, a linked account where the money is kept, a planned contribution with a frequency, and an archived flag. Its `GoalKind` is:
+
+`savings`:: A savings goal such as a holiday or deposit.
+`sinkingFund`:: A fund for an irregular expense such as insurance. It can name the expense `categoryId` it pays for.
+
+== Savings allocations
+
+A `SavingsAllocation` counts money toward a goal in the Savings plan (BUD 04). It records the goal, a date, an amount, an optional note and an optional `transferJournalId`.
+
+* An allocation is never an expense, and it never moves money.
+* Moving money is an ordinary ledger transfer. When one exists, the allocation references it through `transferJournalId`; that link is how allocated savings are distinguished from money actually moved.
+* A negative amount releases an allocation.
+
+Budget evaluation sums the allocations dated within a period for a goal target (see xref:domain:budgeting.adoc[Budgeting]), so a goal appears in the budget without any expense being created.
+
+== Goal progress
+
+`goalProgress` summarises a goal from its allocations, the ledger and a reservation assessment.
+
+[cols="1,3",options="header"]
+|===
+| Figure | Meaning
+
+| `allocated` | The sum of the goal's allocation records
+| `moved` | The part of `allocated` whose transfer journal is in the posted ledger (posted or reversed status)
+| `notYetMoved` | `allocated` less `moved`
+| `remainingToTarget` | Target less allocated, never negative
+| `reserved` | Confirmed reservations for the goal that are backed by money
+| `unfundedReservation` | Reservations for the goal that no money backs
+| `fundingGap` | Target less `reserved`, never negative
+| `allocatedBasisPoints` | Allocated share of the target, rounded down and capped at 10000
+|===
+
+Allocation ids and the posted transfer journal ids are kept for drill-through. A draft or pending transfer does not count as moved.
+
+== Reservations
+
+A `Reservation` is money held in an account and set aside for a goal or sinking fund (BUD 05). Only confirmed reservations reserve anything; unconfirmed ones are proposals.
+
+`assessReservations` funds confirmed reservations from each account's posted balance in the order given:
+
+. The available money for an account is its balance as a user reads it (optionally as of a date). A liability account, or an account with a negative balance, provides nothing, so money owed never funds a reservation.
+. Each reservation is funded up to the money left. The remainder is its _unfunded_ amount.
+. The money used is deducted before the next reservation on the same account.
+
+A dollar is therefore never reserved twice. When an account's money is used up, later reservations against it are marked unfunded rather than silently double counting. The assessment can report whether any reservation is unfunded, the total reserved in an account, the funded and unfunded totals per goal, and the accounts that are over-reserved together with the excess.
+
+For example, an account holding $1,000 with reservations of $600 for goal A, $600 for goal B and $100 for goal C funds A in full, funds B with $400 (leaving $200 unfunded) and leaves C entirely unfunded.
+
+Reservations also affect other calculations: the cash forecast subtracts confirmed reservations held in eligible accounts on the first day (see xref:domain:planning.adoc[Planning and forecasting]), and a reservation in an account that is excluded from forecasts is not subtracted.
+
+== Loans: principal, interest and fees
+
+`summariseLoan` separates a loan account's activity in a date range into principal, interest and fees (BUD 06). Only posted-ledger journals dated within the range are considered, and the account must be of type loan or an `ArgumentError` is thrown.
+
+[cols="1,3",options="header"]
+|===
+| Figure | How it is found
+
+| `principalRepaid` | Postings to the loan from journals that touch only owned accounts (transfers and their reversals). It is a cash commitment that reduces the liability and is never an expense.
+| `interest` | Postings to the supplied interest categories in journals charged to the loan. It is an expense.
+| `fees` | Postings to the supplied fee categories in journals charged to the loan. It is an expense.
+| `outstanding` | The loan's balance as a user reads it at the end of the range
+|===
+
+Each figure comes with the journal ids behind it. A loan principal can be a budget allocation target (a `loanPrincipal` allocation, whose posted figure is the principal repaid), so it can sit in a group such as Savings without being reclassified as consumption. The code does not itself classify principal into a group; the group is chosen on the allocation. Credit cards cannot be a debt-reduction target: their purchases were already counted as spending, so a card repayment is never counted twice.
+
+== See also
+
+* xref:domain:budgeting.adoc[Budgeting] for allocations and the 50/30/20 template.
+* xref:domain:reports-and-insights.adoc[Reports and insights] for the goals report.
+* xref:domain:net-worth.adoc[Net worth] for how asset and liability balances are totalled.

@@ -1,0 +1,57 @@
+= Sign-in
+Paul Snow
+:revnumber: 0.0.0
+
+Synced mode signs in with an OpenID Connect (OIDC) identity provider using the authorisation code flow with PKCE (SEC 01). Local-only mode needs no account. The client code is in `apps/finance_app/lib/data/oidc.dart` and `apps/finance_app/lib/platform/adapters/browser_sign_in.dart`.
+
+[NOTE]
+====
+*Implemented:* the OIDC session, PKCE generation, token storage and browser adapter, with unit tests (`apps/finance_app/test/unit/oidc_test.dart`). *Not yet wired:* nothing in the application shell constructs an `OidcConfig` or calls `signInWithBrowser`, so there is no sign-in screen and no configured issuer or client identifier in the application today. Multi-factor authentication, passkeys and account recovery are provided by the identity provider and are not part of this repository.
+====
+
+== Public client, no secret
+
+The application is a public client. `OidcConfig` holds the issuer, the client identifier, the redirect URI and the scopes (default `openid profile offline_access`). There is no client secret in the application, and the server holds none either: it only validates access tokens.
+
+== The flow
+
+. The client fetches `<issuer>/.well-known/openid-configuration` and caches it for the session.
+. It generates a PKCE pair (RFC 7636, method `S256`): a 64-character random verifier from the unreserved character set, and its SHA-256 challenge, base64url-encoded without padding. It also generates a 32-character random `state`.
+. It builds the authorisation URL with `response_type=code`, `client_id`, `redirect_uri`, `scope`, `state`, `code_challenge` and `code_challenge_method=S256`, and opens it in the system browser through `flutter_web_auth_2`. Credentials are entered in the browser, never in the application.
+. The browser returns to the redirect URI. The client rejects an `error` parameter or a `state` that does not match the request, and requires a `code`.
+. The client posts the code, redirect URI, client identifier and `code_verifier` to the token endpoint. It keeps the access token in memory and the refresh token in the token store.
+
+== Redirect URIs
+
+[cols="1,2,2",options="header"]
+|===
+| Platform | Redirect URI | Mechanism
+
+| Desktop | `+http://localhost:43823/callback+` | Loopback listener on port 43823
+| Mobile | `com.paulsnow.finance.app:/oauth` | Custom URL scheme. On Android, `CallbackActivity` in `AndroidManifest.xml` receives the scheme.
+|===
+
+Both redirect URIs must be registered with the identity provider for the client. The server's local profile expects an issuer at `+http://localhost:8180/realms/finance+` (see xref:operations:running-locally.adoc[]).
+
+== Access and refresh tokens
+
+* The access token is short lived. `accessToken()` returns the cached token until 30 seconds before its `expires_in` (default 300 seconds when absent), then refreshes it.
+* Refresh uses the `refresh_token` grant with the public client identifier. Refresh tokens rotate: whenever the token response carries a new refresh token, it replaces the stored one.
+* If the refresh is refused, the stored token is deleted, the cached access token is cleared and `AuthenticationRequiredException` is thrown, which tells the user to sign in again. The sync transport raises the same exception for a `401` response.
+* `signOut()` clears the access token and deletes the stored refresh token. It does not call a provider logout endpoint.
+
+== Where the refresh token is kept
+
+`SecureTokenStore` keeps the refresh token in the platform key store under the name `finance_app/oidc/refresh-token`. When the key store is not available (for example, a Linux desktop without a key store service), the token lives only in memory and the user signs in again after a restart. It is never written to a plaintext file. See xref:platform:capabilities.adoc[] for key store availability by platform.
+
+== What the server checks
+
+The server is an OAuth 2 resource server (`server/app/.../common/SecurityConfiguration.java`):
+
+* The JWT is validated with Spring Security's default resource server settings against `spring.security.oauth2.resourceserver.jwt.issuer-uri`, set from `FINANCE_OIDC_ISSUER_URI`. The setting is required, and start-up fails without it.
+* No audience or custom claim check is configured. The `sub` claim identifies the user, and a user record is created on first use.
+* The service is stateless, with CSRF protection off because it accepts bearer tokens only.
+* A missing or invalid token gets `401 UNAUTHENTICATED`.
+* The workspace and device a caller may act on come from membership and device registration, not from token claims. See xref:sync:protocol.adoc[].
+
+Revoking a device (`DELETE /v1/devices/+++{id}+++`) blocks that device's sync calls with `403 DEVICE_REVOKED` even while its access token is still valid.

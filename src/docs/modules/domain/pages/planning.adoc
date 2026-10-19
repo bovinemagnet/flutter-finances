@@ -1,0 +1,185 @@
+= Planning and forecasting
+Paul Snow
+:revnumber: 0.0.0
+
+Planning looks forward from the ledger: recurring bills and income, whether they have been paid, a day-by-day cash projection, what-if scenarios, and an explainable estimate of discretionary spending. The code is in `packages/finance_core/lib/src/planning` (`recurrence.dart`, `schedules.dart`, `payments.dart`, `reminders.dart`, `forecast.dart`, `scenario.dart`, `discretionary.dart`) with a Java mirror in `server/finance-core/src/main/java/com/paulsnow/finance/core/planning`.
+
+Nothing on this page posts a transaction. Schedules, forecasts and scenarios are plans; an occurrence becomes actual history only when it is linked to a journal the user confirmed.
+
+== Recurring schedules
+
+A `RecurringSchedule` is a bill, income or transfer with a `Recurrence` (the start is the first due date and `until` or `count` end it), a positive amount, a paying account and optional category, payee and reminder preference.
+
+[cols="1,3",options="header"]
+|===
+| Kind | Cash effect on the forecast
+
+| `expense` | Removes the amount from the account
+| `income` | Adds the amount to the account
+| `transfer` | Removes from the account and adds to the counter account; a transfer needs a different counter account
+|===
+
+The supported frequencies are daily, weekly, fortnightly, monthly, quarterly and annually, each with an `interval` of at least 1 for custom repeats (every 3 weeks, for example). Day-based units advance by 7 or 14 days; month-based units advance by whole calendar months under the end-of-month rule described in xref:domain:budgeting.adoc#_the_end_of_month_rule[Budgeting]. A schedule flagged `isEstimate` (a variable utility bill, say) marks every occurrence as an estimate.
+
+A schedule that is not `confirmed` is a proposal: it is left out of forecasts and of the discretionary estimate.
+
+=== Editing a schedule
+
+* *This occurrence.* An `OccurrenceOverride` is keyed by the occurrence's original date. It can move the due date, change the amount, or skip the occurrence. Skipped occurrences are still returned by `occurrencesBetween` (flagged) so a calendar can show them. An override whose original date is not an occurrence of the series is ignored, and a moved occurrence appears where its new due date falls. Each occurrence has a stable key of `scheduleId@originalDate`.
+* *This and future.* `splitFrom(date, newId:)` ends the current series the day before the chosen occurrence and starts a new schedule on it, linked back through `previousScheduleId`. The intended day of month is carried across so a series continued from a clamped 28 February still returns to the 31st. Bounded `count` series are divided between the two halves.
+
+== Payments and occurrence status
+
+`OccurrencePayment` links an occurrence to the journal that paid it. Several links record partial payments, and `settles` marks the occurrence paid even when the amount differs. `assessOccurrence` counts a link only when its journal is posted or pending; draft, reversed and unknown journals are ignored.
+
+[cols="1,3",options="header"]
+|===
+| Status | Meaning
+
+| `skipped` | Skipped by a "this occurrence" edit
+| `paid` | Counted links reach the expected amount, or a counted link settles the occurrence
+| `partiallyPaid` | Some money is linked; the rest is outstanding
+| `upcoming` | Due after today
+| `due` | Due today
+| `unpaid` | Past due, no payment, and the account data is known to be complete up to the due date
+| `unknown` | Past due, no payment, but the account data is stale or missing
+|===
+
+A missed date therefore does not prove a bill is unpaid when the account data is stale. `OccurrenceState` exposes the expected amount, the paid total, the `difference` (non-zero shows a changed amount) and the `outstanding` amount, which is zero once paid or skipped.
+
+`linkPayment` enforces that a journal pays at most one occurrence and that an already-paid occurrence cannot be paid again. This is what allows a paid bill to move from forecast into actual history with a single cash effect (acceptance scenario A13): the old commitment is consumed rather than counted again.
+
+== Reminders
+
+`ReminderPreference` holds whether reminders are enabled (default on), the lead time in days (default 1), the minute of the local day to remind (default 9:00, minute 540), optional quiet hours and whether to show details. `planReminder` produces a `PlannedReminder` for an occurrence, or nothing when reminders are off or the occurrence is skipped. A reminder that would fall inside quiet hours is moved to the end of the quiet period, handling overnight windows. Notification text hides the schedule name, amount and merchant unless `showDetails` is set, for example "A scheduled payment is due on 2026-07-10".
+
+Delivery is best effort because the operating system controls it; the in-app calendar remains the authoritative record.
+
+== Cash forecast
+
+`buildCashForecast` projects cash day by day from today. The default horizon is 90 days (`horizonDays`), or it ends on a given date. A horizon that would end before today is rejected.
+
+=== Eligible accounts
+
+Only liquid accounts count: an account must have `includeInForecast` set, be of type transaction, savings or cash, and not be archived. Credit cards, loans, property, investments and superannuation never count.
+
+=== Forecast certainty
+
+Every line carries a `ForecastCertainty` and a `ForecastSource`, shown and exported separately:
+
+[cols="1,2,2",options="header"]
+|===
+| Certainty | Meaning | Sources
+
+| `actual` | Recorded in the ledger | `posted` journals dated after today; `pending` journals
+| `committed` | Planned and confirmed | Confirmed `reservation` entries; confirmed `schedule` occurrences
+| `hypothetical` | Produced or changed by a scenario | `schedule` occurrences changed or added by a scenario; `scenario` one-off changes
+|===
+
+=== How the projection is built
+
+. *Opening balance:* the sum of postings to eligible accounts in posted journals (posted and reversed) dated on or before today.
+. *Actual lines:* posted journals dated after today add their net eligible postings on their date. Pending journals add them on their date, or today if that is earlier. Drafts are ignored, so a pending entry that becomes posted is counted once.
+. *Committed lines:* each confirmed reservation in an eligible account subtracts its amount today. Each confirmed schedule occurrence in the horizon adds its _outstanding_ amount on the due date (overdue occurrences, found with `overdueLookbackDays`, are placed on today). Occurrences linked to posted or pending journals are consumed. Only the eligible side of a transfer produces a line.
+. *Hypothetical lines:* whatever the scenario adds or changes.
+. *Closing balance:* each `ForecastDay` closes at its opening plus its lines.
+
+`CashForecast` reports the opening balance, the lowest closing balance over the horizon and the earliest date it occurs, and whether any hypothetical data is included.
+
+== Scenarios
+
+A `Scenario` is a named list of changes applied to a forecast. It changes only the projection: it never creates journals or edits schedules. Every line a change produces or alters is tagged hypothetical.
+
+[cols="1,3",options="header"]
+|===
+| Change | Effect
+
+| `OneOffChange` | A single signed cash movement on an eligible account within the horizon
+| `ScheduleAmountChange` | Projects a schedule's occurrences at a different amount (an override amount still wins)
+| `RemoveScheduleChange` | Leaves a schedule out of the projection
+| `AddScheduleChange` | Projects an additional schedule
+|===
+
+NOTE: These forecast scenarios are unrelated to the acceptance scenarios (A01 and so on) described on xref:domain:scenarios.adoc[Acceptance scenarios].
+
+== Discretionary spending estimate
+
+`estimateDiscretionary` answers "how much can I spend until the next payday?" with two limits and the inputs behind them (BUD 07). The horizon runs from today to `horizonEnd`, normally the day before the next selected payday.
+
+[source,mermaid]
+----
+include::example$discretionary-estimate.mmd[]
+----
+
+Budget limit:: Remaining-after-pending of the discretionary targets in the budget period containing today, less the outstanding amount of confirmed expense occurrences in those categories due from today to the earlier of the horizon end and the period end. Discretionary targets are the allocations in groups flagged `discretionary`, unless the caller names them. Pending card purchases count here because category pending ignores the paying account, even when the card repayment falls outside the horizon.
+Cash limit:: The lowest closing balance of the cash forecast over the horizon, less the minimum buffer. Only confirmed income is projected, and reservations in excluded accounts are not subtracted.
+
+The displayed `estimate` is the smaller of the two limits (the cash limit alone when there is no budget), clamped at zero. When the smaller limit is negative the `shortfall` is its magnitude and is shown beside the zero estimate rather than hidden. A linked occurrence that is already posted is consumed in both limits.
+
+=== Missing and stale inputs
+
+The result lists inputs that are missing, and `complete` is true only when the list is empty. In order they are: `budget` (no plan, no version for today, or no discretionary target); `minimumBuffer`; then, per eligible account in ascending id order, `accountData:<id>` when no "data complete to" date is known or `staleAccountData:<id>` when it is older than `staleAfterDays` (default 3) before today. Any additional caller-supplied inputs follow. `sourceFreshness` is the oldest data-complete date among eligible accounts.
+
+=== Worked example (BUD 07)
+
+This is the PRD example, case `BUD07-prd-worked-example` in `spec/fixtures/planning.json`, reproduced by `test/planning/forecast_test.dart` and the fixture runner. Today is 2026-07-03, the horizon ends 2026-07-16, the monthly budget period runs 1 to 31 July, and the minimum buffer is $500.
+
+.Inputs
+[cols="2,1,3",options="header"]
+|===
+| Item | Amount | Notes
+
+| Bank account (eligible) | $4,250.00 | Opening balance
+| Dining purchase, 2 July | $250.00 | Posted; reduces the bank balance to $4,000
+| Dining purchase, today | $100.00 | Pending
+| Rent schedule, 10 July | $1,050.00 | Housing (Needs group, not discretionary)
+| Streaming schedule, 12 July | $150.00 | Streaming (Wants group)
+| Reservation on the bank account | $500.00 | Confirmed
+| Reservation on a savings account | $800.00 | Savings account is excluded from forecasts, so it is not subtracted
+| Planned Dining | $950.00 | Wants group, discretionary
+| Planned Streaming | $150.00 | Wants group, discretionary
+|===
+
+.Cash limit
+[cols="2,1,1",options="header"]
+|===
+| Date | Movement | Closing balance
+
+| 3 July (today) | -$100 pending, -$500 reservation | $3,400.00
+| 10 July | -$1,050 rent | $2,350.00
+| 12 July | -$150 streaming | $2,200.00
+|===
+
+The lowest balance is $2,200.00 on 12 July. The cash limit is $2,200 - $500 buffer = *$1,700.00*.
+
+.Budget limit
+[cols="2,1",options="header"]
+|===
+| Step | Amount
+
+| Dining remaining after pending: 950 - 250 - 100 | $600.00
+| Streaming remaining after pending: 150 - 0 - 0 | $150.00
+| Less unposted streaming commitment due 12 July | -$150.00
+| Rent is in a non-discretionary group | not included
+| Budget limit | *$600.00*
+|===
+
+The estimate is the smaller of $600.00 and $1,700.00, so *$600.00*, with no shortfall. The fixture also covers these variations:
+
+[cols="3,1,1,1",options="header"]
+|===
+| Variation | Budget limit | Cash limit | Estimate
+
+| Buffer raised to $2,500 | $600.00 | -$300.00 | $0.00, shortfall $300.00
+| Dining already $1,100 posted | -$250.00 | $1,700.00 | $0.00, shortfall $250.00
+| No budget | none | $1,700.00 | $1,700.00, incomplete (`budget`)
+| A pending $80 card purchase in dining | $520.00 | $1,700.00 | $520.00
+|===
+
+In the card variation the cash limit is unchanged because the card is not an eligible cash account, yet the purchase reduces the budget limit.
+
+== See also
+
+* xref:domain:budgeting.adoc[Budgeting] for periods, versions and the budget arithmetic the budget limit uses.
+* xref:domain:goals-and-reservations.adoc[Goals and reservations] for how reservations are funded.
+* xref:domain:reports-and-insights.adoc[Reports and insights] for the low-cash insight built from a forecast.

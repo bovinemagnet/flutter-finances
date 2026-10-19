@@ -9,9 +9,34 @@ This component documents a personal finance application that helps a person unde
 
 The product targets iPhone, iPad, Android phones and tablets, Windows, macOS and Linux. Phone workflows favour quick capture; tablet and desktop workflows support planning, reconciliation and detailed review.
 
-The proposed implementation is a Flutter client with an encrypted local SQLite database, and optional cloud synchronisation through a Java and Spring Boot modular monolith backed by PostgreSQL and private object storage.
+The implementation is a Flutter client with an encrypted local SQLite database, and optional cloud synchronisation through a Java and Spring Boot modular monolith backed by PostgreSQL and private object storage.
 
-NOTE: The technology choices are proposed product decisions, subject to the decision register in the product requirements. See xref:architecture:adr-001-technology-stack.adoc[ADR 001].
+NOTE: The technology choices are product decisions recorded in the decision register of the product requirements. See xref:architecture:adr-001-technology-stack.adoc[ADR 001].
+
+== Implemented and proposed
+
+The repository is a Dart workspace (`finance_core`, `finance_store` and the `finance_app` Flutter client) plus a Gradle build for the Spring Boot server. See xref:architecture:repository-layout.adoc[].
+
+[cols="1,3",options="header"]
+|===
+| Status | Contents
+
+| Implemented in the repository
+a| * Shared domain code in `packages/finance_core`: money, ledger, planning, document validation and the sync model.
+* The encrypted local store, receipt vault and backup code in `packages/finance_store`.
+* The Flutter client in `apps/finance_app`, with feature areas for onboarding, accounts, transactions, budget, goals, plan, receipts, reports, imports and settings, an adaptive shell, bill reminders, verified restore on a fresh device, and OIDC sign-in with PKCE.
+* Receipt capture with a scanner and camera fallback, file, paste and drag and drop, metadata stripping, and ML Kit or Tesseract text recognition. See xref:platform:receipt-capture.adoc[].
+* A Spring Boot server in `server/app` and `server/finance-core`, organised into modules for sync, receipts, jobs, imports, exports, deletion, storage, workspace and ledger.
+* This documentation site, built with `gradle25w antora`.
+
+| Planned or not yet complete
+a| * The iOS share extension target, release signing and notarisation, and continuous integration. See xref:platform:building-and-releasing.adoc[].
+* End-to-end synchronisation tests, being added under `tool/e2e`; that directory does not exist yet.
+* Screen reader verification on all release targets. See xref:platform:accessibility.adoc[].
+* Android, iOS, macOS and Windows builds; only Linux has been run and tested here.
+|===
+
+Individual pages state when a behaviour is a requirement only rather than something the code does.
 
 == Local first
 
@@ -54,9 +79,10 @@ P0 does not include payments, bank credential storage, stock trading, financial 
 |===
 | Module | Contents
 
-| xref:architecture:overview.adoc[Architecture] | Components, responsibilities, repository layout, the technology decision and shared fixtures
-| xref:domain:money.adoc[Domain] | Money, the ledger model, journal status and corrections, reconciliation, net worth and worked acceptance scenarios
-| xref:sync:protocol.adoc[Sync] | Command envelope, revisions, conflicts, change feed and receipt document flow
-| xref:platform:capabilities.adoc[Platform] | Capability matrix, adaptive layout and accessibility commitments
-| xref:operations:observability-and-security.adoc[Operations] | Observability signals and security and privacy requirements
+| xref:developer-guide.adoc[Developer guide] | Commands to install dependencies, run tests, run the client and the server, and build this site
+| xref:architecture:overview.adoc[Architecture] | Components, responsibilities, the client application, local store, sync service, repository layout, the technology decision and shared fixtures
+| xref:domain:money.adoc[Domain] | Money, the ledger model, journal status and corrections, reconciliation, net worth, scenarios, budgeting, planning, goals, reports, receipts, matching, imports, categorisation rules, and exports and backups
+| xref:sync:protocol.adoc[Sync] | Command envelope, revisions, conflicts, change feed, sign-in and offline behaviour
+| xref:platform:capabilities.adoc[Platform] | Capability matrix, xref:platform:receipt-capture.adoc[receipt capture], xref:platform:building-and-releasing.adoc[building and releasing], adaptive layout and accessibility commitments
+| xref:operations:observability-and-security.adoc[Operations] | Observability and security, running locally, the job worker, metrics, backup and restore, and data deletion
 |===

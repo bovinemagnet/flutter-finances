@@ -1,0 +1,67 @@
+= Backup and restore
+Paul Snow
+:revnumber: 0.0.0
+
+There are two separate things to protect: the workspace on each device, which is the primary store, and the server data once cloud sync is in use. The client backup is implemented. For the server there is a user-facing export; infrastructure backups of PostgreSQL and object storage are not defined in this repository.
+
+See xref:domain:exports-and-backups.adoc[] for the product view of exports and backups.
+
+== Device backup (implemented)
+
+The code is in `packages/finance_store/lib/src/backup`.
+
+=== Container format
+
+A backup is a single encrypted file (DATA 01):
+
+* It starts with the 8 ASCII bytes `FSBACKUP`, a 4-byte big-endian header length and a JSON header. The header is not secret. It names the format (`finance_store.backup`), container version (1), cipher (AES-256-GCM), Argon2id parameters, salt, nonce prefix and chunk size.
+* The key is derived from the recovery secret with Argon2id, using 64 MiB of memory, 3 passes and 4 lanes by default, and a random 16-byte salt.
+* The body is a sequence of 1 MiB chunks. Each chunk's nonce is the nonce prefix plus its index, and its authenticated data is the SHA-256 of the header plus a final-chunk flag. Chunks therefore cannot be reordered, dropped, moved between archives or truncated without detection.
+* The archive is written to a `.partial` file, flushed and renamed into place on completion. A failure removes the partial file, so a half-written backup never replaces a good one.
+
+An empty recovery secret is refused. Losing the recovery secret makes the backup unreadable; there is no recovery path for it.
+
+=== Contents
+
+The entries, in order, are `data/workspace.json`, `data/accounts.json`, `data/categories.json`, `data/journals.json`, `data/entities.json`, `data/assets.json`, `pending_commands.json`, `files/<assetId>` for each receipt file present on the device, optional `csv/transactions.csv` and `csv/accounts.csv`, and `manifest.json` last.
+
+* Records carry the last revision the server accepted, where `0` means never synchronised.
+* Local commands that the server had not accepted are stored in `pending_commands.json`, separately from accepted state.
+* The manifest holds the format and schema versions, creation time, workspace settings, the change cursor reached, counts, relationships (reversals, replacements, refunds, asset owners, annotations), the SHA-256 and size of every file, and a list of any unbalanced journals.
+* Receipt files that were not on the device (evicted or never downloaded) are not in the archive. The summary reports them as unavailable.
+* CSV cells beginning with `=`, `+`, `-`, `@`, tab or carriage return are prefixed with a quote to neutralise spreadsheet formulas. The CSV files are views for convenience and are not a backup on their own.
+
+=== Restore
+
+Restore never writes into a live workspace (DATA 03). It runs in two steps.
+
+. *Stage.* `stageRestore` opens the archive with the recovery secret, rebuilds the workspace in an isolated `<target>.restore-staging` directory and verifies it. A wrong secret or a damaged archive fails authentication.
+. *Activate.* `activate()` moves the staged workspace into place, and is refused unless every check passed. `discard()` deletes the staging directory.
+
+The verification covers:
+
+* every entry's SHA-256 against the manifest, and entries that are missing from or not listed in it;
+* format and schema version compatibility (a newer version than the application supports is refused);
+* the restored counts against the manifest counts;
+* every journal's postings balance; and
+* receipt files the archive should contain but does not, or that failed verification.
+
+The preview also reports the source workspace id, creation time, the cursor reached, assets that were never on the exporting device and the pending local commands.
+
+The restored workspace is a new workspace: it gets a new workspace id and device id and starts local only. Its outbox is rebuilt from the restored state in dependency order, so enabling sync uploads it as a new workspace. The old pending commands are shown but never replayed. A receipt whose file is absent is shown as "Image pending" and is never fabricated. Restoring over a target that already holds a workspace is refused.
+
+The server cooperates with this design. It refuses to reuse the id of a deleted workspace (`409 WORKSPACE_DELETED`), so a restore never reintroduces deleted data under its old identity. See xref:operations:data-deletion.adoc[].
+
+=== Guidance
+
+* Take a backup before large imports, before a restore, and before deleting a workspace.
+* Keep the recovery secret somewhere other than the device. Test a restore by staging it and reading the preview.
+* After a restore, review the preview's unavailable assets and pending commands before activating.
+
+== Server data
+
+Server state lives in two places: PostgreSQL (workspaces, the change log, ledger rows, jobs, import batches, receipt metadata) and the object storage bucket (receipt documents and export archives under `workspaces/<workspaceId>/`).
+
+* *User export (implemented).* Any workspace member can request a complete JSON export (`POST /v1/exports`). It contains every live entity, the original receipt documents and a manifest with checksums and the accepted change sequence. Download uses a presigned URL valid for 5 minutes. See xref:sync:protocol.adoc[]. This archive is a different format from the device backup and the application does not restore from it.
+* *Infrastructure backups (not defined here).* This repository contains no backup job, schedule, retention setting or restore procedure for PostgreSQL or the bucket. The product requirements propose expiry from rolling backups within 35 days and a deletion suppression record so a restored backup cannot reintroduce deleted data; see xref:operations:observability-and-security.adoc[]. The suppression record exists in the database (`workspace_deletion_suppression`), but the backup tooling that would consult it does not.
+* When restoring a database from an infrastructure backup, deletions that happened after the backup was taken have to be replayed. The deletion records and suppression entries show which workspaces were deleted.

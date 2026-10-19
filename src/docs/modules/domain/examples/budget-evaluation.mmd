@@ -1,0 +1,17 @@
+flowchart TD
+    A[Date] --> B[PeriodSchedule.periodContaining]
+    B --> C[BudgetPlan.versionFor period]
+    C --> D[For each allocation]
+    D --> E{Target kind}
+    E -->|category| F[Posted and pending net from the ledger]
+    E -->|goal| G[Savings allocations dated in the period]
+    E -->|loan principal| H[Principal repaid by owned-account transfers]
+    F --> I[budgetRemaining]
+    G --> I
+    H --> I
+    J[Previous period remaining] --> K[Rollover policy nextOpening]
+    K --> I
+    L[Approved adjustments] --> I
+    I --> M[BudgetLine remaining and remainingAfterPending]
+    M --> N[Group totals]
+    C --> O[Unbudgeted expense categories with activity]

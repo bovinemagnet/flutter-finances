@@ -1,0 +1,45 @@
+= Building and releasing
+Paul Snow
+:revnumber: 0.0.0
+
+This page records how the client is built and what is, and is not, automated. The repository contains no continuous integration configuration and no release scripts: there is no `.github` directory and no shell scripts. Everything below is a manual step unless stated otherwise.
+
+== Build targets
+
+The Flutter application in `apps/finance_app` has platform folders for `android`, `ios`, `linux`, `macos` and `windows`. Flutter builds each target with the toolchain of that operating system, so each must be built on its own system.
+
+[cols="1,2,2",options="header"]
+|===
+| Target | Build host | Status
+
+| Linux | Linux | Run and tested here with `flutter run -d linux` and `flutter test`
+| Android | Host with the Android SDK | Platform folder present; not built or verified in this workflow
+| iOS | macOS with Xcode | Must be built on macOS; not verified here
+| macOS | macOS with Xcode | Must be built on macOS; not verified here
+| Windows | Windows with Visual Studio | Must be built on Windows; not verified here
+|===
+
+Release builds use the standard Flutter commands, run in `apps/finance_app`, for example `flutter build linux`, `flutter build appbundle`, `flutter build ios`, `flutter build macos` and `flutter build windows`. The repository does not wrap these in scripts. For the development workflow see xref:ROOT:developer-guide.adoc[].
+
+NOTE: Flutter does not guarantee that a plugin works on every target. Native dependencies, minimum operating system versions and architectures (x64 and ARM64) still need validating on each platform before support is advertised. See xref:capabilities.adoc[].
+
+== Host dependencies
+
+* *Linux key store:* a Secret Service provider is checked at runtime. Without one the password-based fallback is used (SEC 02).
+* *Desktop OCR:* the `tesseract` command with English data (`eng`) is optional and detected at start-up. See xref:receipt-capture.adoc[].
+* *macOS:* both entitlement files in `apps/finance_app/macos/Runner` enable the app sandbox, network client access and user-selected file read and write access.
+* *Android:* the manifest in `apps/finance_app/android/app/src/main` declares the `INTERNET`, `CAMERA` and `POST_NOTIFICATIONS` permissions.
+
+== Known gaps before a release
+
+* *iOS share extension.* Sharing a file into the app on iOS needs a separate extension target in Xcode with an App Group. The Flutter side that reads shared files exists (`PluginShareInbox`), but the target has not been added to `apps/finance_app/ios`.
+* *Signing.* Code signing for Android, iOS, macOS and Windows is not configured or automated in the repository.
+* *Notarisation.* macOS notarisation is a release step that is not automated.
+* *Distribution.* No store submission, installer packaging or update mechanism is defined.
+* *Continuous integration.* Builds and tests on each operating system are not automated.
+
+The release steps are therefore performed by hand, on each operating system, with that platform's signing and notarisation tools.
+
+== Server and documentation builds
+
+The optional sync service is built with Gradle (`gradle25w build`) and compiles for Java 25. The documentation site is built with `gradle25w antora`. See xref:ROOT:developer-guide.adoc[].

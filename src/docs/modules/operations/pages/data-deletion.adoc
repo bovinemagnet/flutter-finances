@@ -1,0 +1,54 @@
+= Workspace data deletion
+Paul Snow
+:revnumber: 0.0.0
+
+Deleting a synced workspace revokes access at once and erases the server data in a tracked, resumable job (SEC 05, SEC 06). The code is in `server/app/src/main/java/com/paulsnow/finance/server/deletion`. Deleting data held only on a device is a device action and is not covered here.
+
+== Requesting a deletion
+
+`+DELETE /v1/workspaces/{workspaceId}+` returns `202 Accepted` with the deletion:
+
+[source,json]
+----
+{
+  "deletionId": "uuid", "workspaceId": "uuid", "jobId": "uuid",
+  "status": "pending", "steps": {},
+  "requestedAt": "2026-07-01T02:03:04Z", "completedAt": null
+}
+----
+
+* Only a workspace owner can delete it. Any other member gets `403 OWNER_REQUIRED`, and a caller who is not a member gets `404 WORKSPACE_NOT_FOUND`.
+* Repeating the request returns the existing deletion rather than starting another.
+
+In one transaction the request:
+
+. marks the workspace `deleting`, which hides it from every API;
+. revokes every device, so sync calls fail with `403 DEVICE_REVOKED`;
+. records a deletion suppression entry (`workspace_deletion_suppression`), which stays after the deletion completes; and
+. creates the deletion record and queues a `deletion.workspace` job with up to 20 attempts.
+
+Creating a workspace with a suppressed id is refused with `409 WORKSPACE_DELETED`.
+
+== Progress
+
+`+GET /v1/workspaces/{workspaceId}/deletion+` reports the deletion to the user who requested it, and to no one else (`404 DELETION_NOT_FOUND`). It works after the workspace itself has been removed. `status` is `pending` until the job finishes, then `completed`, and `steps` lists each finished step with the number of rows or objects removed and when it finished. The `finance.deletion.backlog` gauge counts deletions not yet completed (see xref:operations:metrics.adoc[]).
+
+== What the job erases
+
+The job runs on the worker (see xref:operations:job-worker.adoc[]), so a deletion makes no progress if no worker is enabled. It runs these steps in order:
+
+. `objects`: every object under `workspaces/<workspaceId>/` in the bucket, which holds receipt documents and export archives;
+. one step for each module that stores workspace data, each in its own transaction: `exports`, `imports`, `ledger`, `receipts` and `sync` (the change log, entity rows, idempotency records, device cursors and purge watermark);
+. `jobs`: the workspace's other queued jobs; and
+. `workspace`: the workspace row with its memberships and devices.
+
+Each step is recorded in the deletion record as it completes and is skipped if the job is retried, so a failure partway through resumes where it stopped. The purgers are idempotent. A module that stores workspace data adds a `WorkspaceDataPurger`, which the job discovers automatically.
+
+== Retention
+
+IMPORTANT: The retention targets are requirements, not implemented behaviour. Only the first two items below describe the code.
+
+* *Implemented:* access is revoked and the workspace hidden immediately; the erasure job removes data from the primary database and object storage; a suppression entry prevents the workspace id being reused.
+* *Requirement, not enforced by code:* deletion from active systems within 30 days (proposed) depends on a worker running; there is no alert tied to this target beyond the deletion backlog gauge.
+* *Requirement, not implemented:* expiry from rolling backups within 35 days (proposed). No backup tooling exists in the repository.
+* *Requirement, not implemented:* checking the suppression record when a backup is restored. See xref:operations:backup-and-restore.adoc[].

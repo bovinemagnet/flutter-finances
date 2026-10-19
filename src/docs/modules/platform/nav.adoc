@@ -1,4 +1,6 @@
 .Platform
 * xref:platform:capabilities.adoc[Capability matrix]
+* xref:platform:receipt-capture.adoc[Receipt capture]
+* xref:platform:building-and-releasing.adoc[Building and releasing]
 * xref:platform:adaptive-layout.adoc[Adaptive layout]
 * xref:platform:accessibility.adoc[Accessibility]

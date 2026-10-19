@@ -1,3 +1,4 @@
 .Synchronisation
 * xref:sync:protocol.adoc[Sync protocol]
+* xref:sync:sign-in.adoc[Sign-in]
 * xref:sync:offline.adoc[Offline behaviour]

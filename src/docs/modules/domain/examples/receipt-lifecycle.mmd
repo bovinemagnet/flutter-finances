@@ -1,0 +1,14 @@
+stateDiagram-v2
+    [*] --> captured
+    captured --> extractionQueued: queue
+    captured --> reviewed: review (manual entry)
+    extractionQueued --> extracting: start
+    extractionQueued --> reviewed: review
+    extracting --> needsReview: succeed
+    extracting --> extractionFailed: fail
+    extracting --> extractionQueued: interrupt
+    needsReview --> reviewed: review
+    needsReview --> extractionQueued: rerun
+    reviewed --> extractionQueued: rerun
+    extractionFailed --> extractionQueued: retry
+    extractionFailed --> reviewed: review

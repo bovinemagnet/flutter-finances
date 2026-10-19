@@ -1,5 +1,8 @@
 .Architecture
 * xref:architecture:overview.adoc[Overview]
+** xref:architecture:client-application.adoc[Client application]
+** xref:architecture:local-store.adoc[Local store]
+** xref:architecture:sync-service.adoc[Sync service]
 ** xref:architecture:repository-layout.adoc[Repository layout]
 ** xref:architecture:adr-001-technology-stack.adoc[ADR 001: Technology stack]
 ** xref:architecture:shared-fixtures.adoc[Shared fixtures]

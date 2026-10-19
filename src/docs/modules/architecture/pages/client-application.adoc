@@ -1,0 +1,73 @@
+= Client application
+Paul Snow
+:revnumber: 0.0.0
+
+The Flutter client lives in `apps/finance_app` and targets Linux, Windows, macOS, iOS and Android. It is a thin application layer over two Dart packages: `finance_core` (financial rules) and `finance_store` (persistence, vault, backup and sync client; see xref:architecture:local-store.adoc[]).
+
+== Layering
+
+.Client layering
+[source,mermaid]
+----
+include::example$client-layering.mmd[]
+----
+
+[cols="1,1,3",options="header"]
+|===
+| Layer | Location (`apps/finance_app/lib`) | Responsibility
+
+| Platform adapters | `platform/` | Interfaces in `platform/services.dart` (`ReceiptScanner`, `FileImporter`, `ShareInbox`, `Notifications`, `BackgroundScheduler`) and `platform/text_recognition.dart` (`TextRecogniser`), plus `PlatformCapabilities` (`platform/capabilities.dart`). Implementations are in `platform/adapters/` (`scanners.dart`, `file_importer.dart`, `share_inbox.dart`, `notifications.dart`, `background.dart`, `browser_sign_in.dart`). No finance code checks the operating system; it asks the adapter or the capability flags.
+| Data layer | `data/` | `AppState` (a `ChangeNotifier` over `FinanceStore`), `ReceiptService`, `ImportService`, `WorkspaceGate`, `PlatformSecureKeyStore`, the OIDC client (`oidc.dart`), bill reminders (`reminders.dart`) and the app's entity type names (`entity_types.dart`).
+| Features | `features/` | Feature-specific widgets and form models: accounts, budget, goals, imports, onboarding, overview, plan, receipts, reports, settings and transactions.
+| Screens | `screens/` and `screens/pages/` | `StartupScreen`, `RestoreScreen`, `HomeScreen` and the seven pages (overview, transactions, budget, plan, accounts, reports, settings).
+| Shell and shared UI | `app/`, `widgets/`, `format/` | Adaptive shell and breakpoints (`app/shell.dart`, `app/breakpoints.dart`), theme including high-contrast variants, amount fields and formatters. See xref:platform:adaptive-layout.adoc[].
+|===
+
+Dependencies point downwards: screens and features use `AppState`; `AppState` uses `FinanceStore` and `finance_core`; platform adapters are injected through `AppServices` and are the only code that touches operating system plugins (`cunning_document_scanner`, `image_picker`, `file_selector`, `receive_sharing_intent`, `flutter_local_notifications`, `workmanager`, `flutter_secure_storage`, `google_mlkit_text_recognition`, `flutter_web_auth_2`).
+
+== State management
+
+State is held in `AppState`, a `ChangeNotifier`, and exposed to the widget tree by `AppScope`, an `InheritedNotifier<AppState>` (`app/app_scope.dart`). Widgets call `AppScope.of(context)` and rebuild when the notifier fires; device services are read with `AppScope.servicesOf(context)`.
+
+[NOTE]
+====
+The product requirements document proposes Riverpod as the state management choice, subject to a prototype. The plain notifier was chosen instead as the simpler option: the application has a single workspace-wide state object and the framework's own `InheritedNotifier` is enough to share it. Riverpod is not a dependency of `finance_app`.
+====
+
+Every write goes through `FinanceStore`, which saves the change and its outbox command in one transaction; `AppState` then drops its derived caches (the `Chart` of accounts and categories and the `LedgerProjection`) and notifies listeners. Figures are always recomputed from journals and persisted plans, never stored as editable balances. `AppState.refresh()` is called after anything outside the class changes the store, such as a sync pull. `AppState.unsyncedCount` and `isUnsynced` expose outbox state so screens can show the unsynced indicator.
+
+== Dependency wiring
+
+`main()` in `lib/main.dart` builds the dependencies once:
+
+. Detects `PlatformCapabilities`.
+. Resolves the workspace directory as `<application support directory>/workspace`.
+. Builds `AppServices`: a `FallbackReceiptScanner` (native document scanner, falling back to a basic camera or library picker), `PlatformFileImporter`, a `PluginShareInbox` when the platform has a share target (otherwise an empty one), `LocalNotifications`, and a text recogniser (ML Kit on mobile, Tesseract on desktop, or an unavailable stub when no on-device OCR exists).
+. Creates a `WorkspaceGate` over the directory and `PlatformSecureKeyStore`.
+
+`FinanceApp` shows `StartupScreen` until it supplies an `AppState`, then `HomeScreen`. The `AppScope` wraps the whole `MaterialApp`, with locale `en_AU` and supported locales `en_AU`, `en_GB` and `en_US`.
+
+== Startup, onboarding and restore
+
+`StartupScreen` asks `WorkspaceGate.inspect()` what is on disk, by reading the plaintext `workspace.json` descriptor:
+
+[cols="1,3",options="header"]
+|===
+| Status | Behaviour
+
+| `none` | No workspace. The gate checks `newWorkspaceNeedsPassword()` (true when the platform key store fails its write and read probe, as on a Linux desktop without a Secret Service provider) and starts the five-step onboarding flow. On finishing, `WorkspaceGate.create` selects key protection, `FinanceStore.create` makes the workspace, and `AppState.applyOnboarding` writes the chosen categories, accounts, opening balances, budget plan and recurring schedules through the normal store commands.
+| `platformProtected` | The data key is in the platform key store. The workspace opens without a prompt. If the key is unavailable the screen fails with a message directing the user to restore from a backup.
+| `locked` | The data key is wrapped with a password (Argon2id). The user enters the password to unlock.
+|===
+
+The restore path (`RestoreScreen`) is offered from the startup screen. The user picks a backup file and enters the recovery secret; `WorkspaceGate.stageBackup` calls `stageRestore`, which restores into an isolated staging directory and verifies it. The screen shows the preview (counts, checksum failures, missing assets) and only offers activation when the preview allows it. Details are in xref:architecture:local-store.adoc#restore-staging[Restore staging] and xref:operations:backup-and-restore.adoc[].
+
+Backups are exported from the settings page with `exportBackup` (see xref:domain:exports-and-backups.adoc[]).
+
+== Sync in the client
+
+The sync client (`SyncClient`) and a `BackgroundScheduler` interface exist, as does building blocks for the authorisation code flow with PKCE (`oidc.dart` with `Pkce`, `OidcSession` and token stores, and `platform/adapters/browser_sign_in.dart`). At the time of writing the application does not construct a `SyncClient`, nothing calls `BackgroundScheduler.schedulePeriodicSync` (the mobile adapter registers a Workmanager task; the desktop `ForegroundOnlyScheduler` is a no-op), and no screen drives the sign-in flow. The workspace's `SyncMode` is chosen during onboarding and stored, but only local-only operation is fully wired through the user interface. See xref:sync:sign-in.adoc[] and xref:sync:offline.adoc[] for the designed behaviour.
+
+== Testing
+
+Tests are in `apps/finance_app/test` under `unit`, `widget` and `support`.

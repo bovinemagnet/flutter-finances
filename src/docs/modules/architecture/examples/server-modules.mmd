@@ -1,0 +1,34 @@
+flowchart LR
+    common[common: security, errors, correlation]
+    workspace[workspace: users, devices, membership]
+    sync[sync: commands, change feed]
+    ledger[ledger: journals, postings]
+    receipts[receipts: upload intents, scan]
+    imports[imports: CSV preview and commit]
+    exports[exports: archive job]
+    jobs[jobs: job table and runner]
+    deletion[deletion: workspace erasure]
+    storage[storage: S3 presigned URLs]
+    core[server/finance-core: shared rules]
+
+    workspace --> common
+    jobs --> workspace
+    sync --> ledger
+    ledger --> core
+    receipts --> sync
+    receipts --> jobs
+    receipts --> storage
+    imports --> sync
+    imports --> ledger
+    imports --> jobs
+    exports --> sync
+    exports --> receipts
+    exports --> jobs
+    exports --> storage
+    deletion --> jobs
+    deletion --> storage
+    sync -.->|purger| deletion
+    ledger -.->|purger| deletion
+    receipts -.->|purger| deletion
+    imports -.->|purger| deletion
+    exports -.->|purger| deletion

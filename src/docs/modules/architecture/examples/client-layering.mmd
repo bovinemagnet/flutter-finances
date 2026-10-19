@@ -1,0 +1,11 @@
+flowchart TB
+    subgraph app[apps/finance_app/lib]
+        S[screens and features] --> D[data: AppState and services]
+        S --> W[widgets and format]
+        D --> P[platform: interfaces and adapters]
+    end
+    D --> FS[packages/finance_store]
+    D --> FC[packages/finance_core]
+    FS --> FC
+    P --> OS[Operating system plugins]
+    FS --> SQ[SQLite3MultipleCiphers]

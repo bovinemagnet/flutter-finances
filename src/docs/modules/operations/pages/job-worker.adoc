@@ -1,0 +1,65 @@
+= Job worker
+Paul Snow
+:revnumber: 0.0.0
+
+Long-running work in the sync service runs as jobs in a PostgreSQL table, processed by a polling worker. The code is in `server/app/src/main/java/com/paulsnow/finance/server/jobs`.
+
+== Deployment shape
+
+The API and the worker are the same application. The worker is switched on with `finance.worker.enabled=true` (environment variable `FINANCE_WORKER_ENABLED`). Without it, no polling and no scheduled maintenance run. The intended production shape is to deploy the API with the worker off and a separate worker workload, from the same image, with it on. The `local` profile turns the worker on so one process does both; see xref:operations:running-locally.adoc[].
+
+== Job types
+
+[cols="1,3",options="header"]
+|===
+| Type | Work
+
+| `receipts.scan` | Structural check of an uploaded receipt document, moving it from `quarantined` to `available` or `rejected`
+| `imports.commit` | Commits a large CSV import (more than 1,000 new rows)
+| `exports.archive` | Builds the export ZIP and stores it in object storage
+| `deletion.workspace` | Erases a workspace; see xref:operations:data-deletion.adoc[]
+|===
+
+A job of any other type fails at once with `NO_HANDLER`. Payloads hold identifiers only, never financial data.
+
+== Queueing
+
+A job is inserted by the request that needs it, inside the same database transaction, so it is visible only once that work has committed (a transactional outbox). Clients poll `+GET /v1/jobs/{id}+` for `status` (`queued`, `running`, `succeeded` or `failed`), `attempts`, `result` and `error`.
+
+== Claiming and leases
+
+[cols="2,1,3",options="header"]
+|===
+| Setting | Default | Meaning
+
+| `finance.worker.poll-interval` | `2s` | Delay between polls (fixed delay)
+| `finance.worker.batch-size` | `10` | Jobs claimed per poll
+| `finance.worker.lease` | `5m` | How long a claim lasts
+| `finance.worker.max-attempts` | `5` | Default attempts before a job fails
+| `finance.worker.base-backoff` | `10s` | Delay after the first failure, doubling per attempt
+|===
+
+Each poll claims due jobs with `FOR UPDATE SKIP LOCKED`, so several workers never run the same job, and keeps going until none are due. A job is due when it is `queued` and its `run_after` has passed, or when it is `running` and its lease has expired, which recovers work from a worker that died. A worker identifies itself by host name and a random identifier.
+
+== Failure and retry
+
+* A handler that finishes records its result and the job becomes `succeeded`.
+* A `PermanentJobFailure` fails the job at once.
+* Any other runtime exception is logged and the job is requeued with a backoff of `base-backoff x 2^(attempts - 1)` (the shift is capped at 16), until `attempts` reaches `max_attempts`, when the job becomes `failed`.
+* The stored error is the exception class name or failure code, redacted and truncated to 500 characters. Workspace deletion allows 20 attempts.
+
+Handlers are written to be safe to repeat: the export rebuilds the same archive, import commits use identifiers derived from the batch and row, and deletion records each completed step.
+
+== Scheduled maintenance
+
+When the worker is enabled, `SyncMaintenance` runs the tombstone purge daily at 03:17 UTC (`finance.sync.purge-cron`). It:
+
+* removes change records older than the horizon (90 days) that a later change of the same entity supersedes;
+* removes delete records older than the horizon and records the highest removed sequence per workspace as a purge watermark, which expires any older cursor; and
+* clears the data of tombstoned entities older than the horizon, keeping the row so a pending command cannot resurrect them.
+
+The latest change of every live entity is always kept. If the worker is never enabled, this purge never runs.
+
+== Monitoring
+
+The worker exposes `finance.jobs.backlog` and `finance.jobs.backlog.age`. Alert on a growing backlog or backlog age. See xref:operations:metrics.adoc[].

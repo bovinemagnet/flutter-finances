@@ -1,0 +1,65 @@
+= Categorisation rules
+Paul Snow
+:revnumber: 0.0.0
+
+Categorisation rules assign categories to entries by pattern. They are deterministic, ordered and reviewable. The code is in `packages/finance_core/lib/src/documents/rules`.
+
+== Rules
+
+A `CategorisationRule` has an id, a name, a target category, a priority (default 100), an `enabled` flag and one or more conditions. Every condition given must hold. A rule with no condition is rejected, as is a minimum amount above the maximum.
+
+[cols="1,3"]
+|===
+|Condition |Matches when
+
+|`merchant` |Every word of its normalised merchant name (see xref:matching-and-deduplication.adoc[]) is a word of the subject's normalised merchant.
+|`descriptionContains` |Its normalised text appears in the subject's normalised description on word boundaries.
+|`accountIds` |The subject's account is one of them.
+|`minAmount`, `maxAmount` |The magnitude of the amount, in the same currency, is within the inclusive bounds.
+|`tags` |The subject has all of them.
+|===
+
+The subject is a `RuleSubject`: merchant (payee), description (statement description or notes), account, amount, tags, current category and category source.
+
+== Precedence
+
+Two orderings apply.
+
+.Who decided the category (`CategorySource`), highest first
+. `user`: an explicit user category is kept and rules never override it.
+. `rule`: the first matching enabled rule.
+. `suggestion`: the general suggestion.
+. `none`: nothing has decided yet.
+
+.Which rule wins
+* Enabled rules are tried in ascending `priority`, ties broken by rule id. The first match decides.
+* A disabled rule never matches.
+
+`categorise` applies the first ordering for a single subject and returns the category, its source and the rule id, or nothing. For statement imports, `ruleCategoryChooser` supplies the category of the first matching rule, using the row description as both merchant and description.
+
+== Preview
+
+`previewRuleApplication` lists what bulk application would change, for the person to review before anything happens. It never changes data. For each eligible entry with a matching rule it proposes a `RuleChange` (journal, from category, to category, rule). Reversed entries, reversals and transfers are not eligible. Entries a rule matched but that are left alone are listed as `RuleSkip` with a reason.
+
+[cols="1,3"]
+|===
+|Reason |Why
+|`userCategorised` |The person chose the category explicitly.
+|`splitEntry` |The entry is split across categories; rules do not rewrite splits.
+|`incompatibleCategory` |The rule's category is of the other kind (income versus expense).
+|===
+
+An entry already in the rule's category is neither a change nor a skip.
+
+== Applying
+
+`applyRuleChanges` applies a reviewed preview.
+
+* A posted entry is never mutated. It is corrected with a reversal and a replacement that only moves the category posting, so account balances, journal balance and reconciled totals are unchanged. `carryClearedJournals` carries cleared state to the reversal and replacement, and receipt links move with `relinkAfterCorrection`.
+* A pending or draft entry is replaced in place with the same id.
+* The new category source is `rule`.
+* The result includes a `RuleUndoRecord` with, for each change, the original and new journal ids, previous and new category, previous source, the rule and whether it was in place.
+
+== Undo
+
+`undoRuleApplication` reverses an application from its record, again through corrections for posted entries and in place for pending ones. It restores the previous category and the previous category source. An entry that has changed since the rules ran (it is missing, already reversed, or no longer in the applied category) is not touched and is reported in `conflicts` for the person to resolve.

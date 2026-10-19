@@ -4,7 +4,7 @@ Paul Snow
 
 == Components and responsibilities
 
-The client reads from its local database and writes local commands into a durable outbox. The sync service validates commands, commits canonical changes and exposes a cursor-based change feed. Receipt bytes travel directly to private object storage through short-lived authorised upload URLs; they do not travel through the financial command payload.
+The client reads from its local database and writes local commands into a durable outbox. The sync service validates commands, commits canonical changes and exposes a cursor-based change feed. Receipt bytes travel directly to private object storage through short-lived presigned URLs; they do not travel through the financial command payload.
 
 .Component diagram
 [source,mermaid]
@@ -16,34 +16,56 @@ include::example$component-diagram.mmd[]
 |===
 | Component | Responsibility
 
-| Flutter client | Adaptive UI, local projections, input validation, platform capture, OCR adapters, outbox and sync coordinator
-| Encrypted SQLite and protected files | Local journals, plans, receipt metadata, search indexes, queued commands and receipt originals
-| Spring Boot service | Identity integration, workspace authorisation, financial validation, command deduplication, revisions, sync feed, imports and reports
-| PostgreSQL | Canonical journals and metadata, constraints, idempotency records, change log, audit events and job state
-| Private object storage | Receipt sources, derivatives, encrypted export archives, upload checksums and retention lifecycle
-| Background worker | File validation, malware scanning, optional OCR jobs, exports, notification scheduling and deletion jobs
+| Flutter client (`apps/finance_app`) | Adaptive screens, application state, platform adapters (scanner, file import, share inbox, notifications, text recognition), sign-in. See xref:architecture:client-application.adoc[].
+| `finance_core` (`packages/finance_core`) | Pure Dart financial rules: money, journals, projection, budgets, plans, reconciliation, codecs. No Flutter, no IO.
+| `finance_store` (`packages/finance_store`) | Encrypted SQLite database, outbox, receipt vault, backup container and the sync client. See xref:architecture:local-store.adoc[].
+| Sync service (`server/app`) | Spring Boot API: identity integration, workspace authorisation, command validation and deduplication, revisions, change feed, receipts, imports, exports and workspace deletion. See xref:architecture:sync-service.adoc[].
+| Job worker | The same Spring Boot image started with `finance.worker.enabled=true`; runs jobs from the PostgreSQL job table. See xref:operations:job-worker.adoc[].
+| `finance-core` (`server/finance-core`) | Java implementation of the shared financial rules, held to the Dart behaviour by the fixtures in `spec/fixtures`.
+| PostgreSQL | Canonical entities, journals and postings, idempotency records, change log, device cursors, receipt, import, export and job tables. Schema is managed by Liquibase.
+| Private object storage | Receipt sources, derivatives and export archives, reached through presigned URLs (S3-compatible; MinIO in the developer profile).
+| OIDC provider | Issues the access tokens the service validates as an OAuth2 resource server. The client signs in with the authorisation code flow and PKCE (see xref:sync:sign-in.adoc[]).
 |===
 
 == Modular monolith
 
-The backend is a modular monolith with explicit module boundaries, not an initial microservice estate. The API and worker are deployed from the same codebase with independently controlled workloads. A PostgreSQL job table and a transactional outbox are sufficient initially; a dedicated queue is introduced only when measured workload justifies it.
+The backend is a modular monolith with explicit module boundaries, not a microservice estate. The API and worker are deployed from the same codebase and image with independently controlled workloads (`finance.worker.enabled`). A PostgreSQL job table, claimed with `FOR UPDATE SKIP LOCKED`, is the only queue; a dedicated queue is introduced only when measured workload justifies it.
 
-The planned server modules are workspace, sync, ledger, receipts, imports, exports and jobs (see xref:architecture:repository-layout.adoc[]).
+The server modules are `common`, `workspace`, `sync`, `ledger`, `receipts`, `imports`, `exports`, `jobs`, `deletion` and `storage`. They are declared as Spring Modulith application modules, and `server/finance-core` is a separate Gradle subproject. See xref:architecture:sync-service.adoc[] and xref:architecture:repository-layout.adoc[].
 
 == Data flow
 
-. A user action is validated locally and saved with its outbox command in one SQLite transaction. The local projection updates immediately with an unsynced indicator.
-. When sync is enabled, the client posts batches of commands to the server.
-. The server validates each command and commits canonical state, its idempotency record and a change record in one transaction.
-. The client pulls changes with an opaque cursor and applies them transactionally, keeping pending commands as overlays.
-. Receipt files are uploaded separately and directly to object storage, then completed through the API.
+.Local save and synchronisation
+[source,mermaid]
+----
+include::example$local-save-sync-sequence.mmd[]
+----
+
+. A user action is validated locally and saved with its outbox command in one SQLite transaction (`BEGIN IMMEDIATE`, write-ahead log, `synchronous = FULL`). The local projection updates immediately and the entry shows an unsynced indicator.
+. When the workspace is in synced mode, the sync client takes pending outbox commands in order, in batches of up to 500, and posts them to `POST /v1/sync/commands`. Each command keeps its `commandId` for life, so a retry is idempotent.
+. The server validates each command and commits canonical state, its idempotency record and a change record in one transaction. Each command receives a result status: `applied`, `previously_applied`, `conflict`, `validation_failed` or `permission_denied`.
+. The client records the results on the outbox entries (conflicts and rejections become review items), then pulls `GET /v1/sync/changes` with an opaque cursor and applies each page and the new cursor in one transaction. If the cursor is older than the tombstone horizon, the client rebuilds from `GET /v1/sync/snapshot`.
+. Receipt files are saved to the encrypted vault first. The sync client then requests an upload intent (`POST /v1/receipts/upload-intents`), `PUT`s the file bytes to the presigned URL, and completes the upload (`+POST /v1/receipts/{receiptId}/complete+`). The server checks size, checksum and content type before the document is released.
 
 The protocol is described in xref:sync:protocol.adoc[].
 
+[NOTE]
+====
+`SyncClient` is implemented and tested in `finance_store`, but the application in `apps/finance_app/lib` does not yet construct one: the screens read and write through `AppState` and `FinanceStore`, and the background-sync adapter is a placeholder. Local-only operation is therefore the complete path in the application today. The OIDC code (`lib/data/oidc.dart`) is likewise present but not yet connected to a sign-in screen.
+====
+
 == API style
 
-The initial offline command protocol, imports and document lifecycle use REST with OpenAPI, versioned command envelopes and explicit idempotency keys. GraphQL may later serve complex read views but must not become a second set of mutation semantics.
+The offline command protocol, imports, receipts, exports and workspace deletion use REST under `/v1`, with OpenAPI generated by springdoc (`/v3/api-docs`), versioned command envelopes and explicit idempotency keys. GraphQL may later serve complex read views but must not become a second set of mutation semantics.
 
 == Client structure
 
-Business rules live in a pure Dart package (`finance_core`) with no Flutter and no IO. Persistence, platform services and UI are separate. Platform interfaces keep operating system conditionals out of finance code; see xref:platform:capabilities.adoc[].
+Business rules live in a pure Dart package (`finance_core`) with no Flutter and no IO. Persistence (`finance_store`), platform services and UI are separate. Platform interfaces keep operating system conditionals out of finance code; see xref:platform:capabilities.adoc[] and xref:architecture:client-application.adoc[].
+
+== Related pages
+
+* xref:architecture:client-application.adoc[]
+* xref:architecture:local-store.adoc[]
+* xref:architecture:sync-service.adoc[]
+* xref:operations:running-locally.adoc[]
+* xref:operations:metrics.adoc[]

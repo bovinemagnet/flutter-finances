@@ -1,0 +1,72 @@
+= Matching and deduplication
+Paul Snow
+:revnumber: 0.0.0
+
+Matching proposes relationships; it never creates them. In this phase nothing links automatically: a person confirms every receipt link and every statement-row match. Duplicate detection only warns and never deletes. The code is in `packages/finance_core/lib/src/documents/matching` and `.../text/normalise.dart`.
+
+== Text normalisation
+
+`normaliseText` lower-cases text, replaces every run of characters other than ASCII `a`-`z` and `0`-`9` with one space and trims. Non-ASCII letters become separators, so `Café` becomes `caf`. The rule is part of the shared fixture contract (`csv.fingerprint`; see xref:architecture:shared-fixtures.adoc[]).
+
+`normaliseMerchant` applies `normaliseText`, then drops noise words and any word containing a digit (store numbers, card digits, dates). Noise words are legal suffixes (`pty`, `ltd`, `limited`, `co`, `inc`, `the`), Australian locations (`au`, `aus`, `australia`, `nsw`, `vic`, `qld`, `wa`, `sa`, `tas`, `act`, `nt`), web words (`www`, `com`, `net`, `org`) and payment words (`visa`, `mastercard`, `purchase`, `eftpos`, `pos`, `card`, `debit`, `credit`, `tap`, `contactless`, `sq`, `sp`, `pp`, `paypal`, `sumup`). If nothing would remain, the plain normalised text is used.
+
+`merchantSimilarity` returns a ranking aid between 0 and 1, never a probability:
+
+* 1 when the normalised names are equal.
+* 0.9 when every word of one name appears in the other.
+* At least 0.8 when both names start with the same word of four or more letters.
+* Otherwise the Dice coefficient of character bigrams.
+
+== Receipt to entry
+
+`rankMatchCandidates` lists entries that may be the purchase on a receipt.
+
+.Eligibility
+* The entry is `posted` or `pending` (not a draft or a reversed original), and is not a reversal.
+* The direction matches: refund entries for refund receipts, other types otherwise.
+* When the receipt has a date, the entry is within `dateWindowDays` (default 3) of it.
+* The amount is exactly the receipt total in the same currency, or the payee is at least `minimumMerchantSimilarity` (default 0.5) similar.
+
+.Ordering
+. `linkable` entries first: same currency, exact amount, and not already fully covered by another receipt.
+. Merchant similarity, highest first.
+. Entries on the suggested account.
+. Date proximity.
+. Journal id, for a stable order.
+
+Each candidate carries plain-language `MatchReason` values with a code: `sameAmount`, `amountMismatch`, `currencyMismatch`, `alreadyLinked`, `merchantMatches`, `merchantSimilar`, `accountHint`, `sameDay`, `dateNear` and `receiptEntry`. Even a `linkable` candidate must be confirmed. `confirmMatch` turns a confirmed candidate into a `ReceiptTransactionLink` and refuses a currency or amount mismatch (a `LinkException`); links and their errors are listed on xref:receipts.adoc[].
+
+== Statement row to existing entry
+
+When a statement is previewed, `proposeSourceMatches` asks whether a row is evidence for an entry that already exists, for example one created from a receipt (acceptance scenario A08: one economic purchase with both sources).
+
+* The entry's amount on the account must equal the row amount exactly, and its date must be within 3 days. A changed amount is never proposed.
+* Drafts, reversed originals, reversals and entries already matched to another source record are skipped.
+* Receipt-created entries rank first, then the nearest date.
+* Confirming adds the bank record as evidence instead of creating a second purchase.
+
+== Pending to posted
+
+`matchPendingToPosted` finds the pending source record that a posted record replaces.
+
+* A provider-supplied `pendingReference` equal to a pending record's reference wins and is authoritative.
+* Otherwise a heuristic considers pending records on the same account, not rolled back, with merchant similarity of at least 0.8, a posting date from 0 to 7 days after the pending date, the same currency and direction, and an amount within 20 percent (tips, final fuel amounts).
+* Exact amounts rank first, then the nearest date; the other candidates are returned as alternatives.
+* A heuristic proposal `requiresReview` when the amount or date changed or alternatives exist, so unrelated entries are never merged silently.
+
+== Duplicate warnings
+
+`DuplicateWarning` has three kinds. They are warnings only: legitimate repeated purchases remain possible and the person decides.
+
+[cols="1,3"]
+|===
+|Kind |Detection
+
+|`identicalFile` |Another asset with the same lower-case SHA-256 (`sha256Hex`).
+|`similarImage` |Another receipt's image whose perceptual hash is within a Hamming distance of 10 of 64 bits (configurable). This tolerates recompression and slight crops.
+|`economic` |Another receipt with the same normalised merchant, date and total. Receipts missing any of the three are never compared.
+|===
+
+The perceptual hash is a difference hash (`differenceHash`) over 8 rows of 9 greyscale values (the app resizes the image to 9 by 8). Bit `row * 8 + col` is 1 when `pixels[row][col] > pixels[row][col + 1]`, written row by row, most significant first, as 16 lower-case hexadecimal digits.
+
+For statement rows, duplicate handling uses fingerprints rather than these warnings; see xref:imports.adoc[].

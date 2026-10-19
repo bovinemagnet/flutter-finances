@@ -2,11 +2,11 @@
 Paul Snow
 :revnumber: 0.0.0
 
-IMPORTANT: Everything on this page is a requirement taken from the product requirements. None of it describes delivered behaviour. Values marked as proposed are product policies to confirm before release.
+IMPORTANT: This page separates two kinds of statement. *Requirement* means taken from the product requirements and not necessarily built. *Implemented* means present in the code today, with the source named. Values marked as proposed are product policies to confirm before release.
 
 == Observability signals
 
-Measure:
+*Requirement.* Measure:
 
 * sync backlog age;
 * command conflict rate;
@@ -19,18 +19,47 @@ Measure:
 
 Use opaque correlation identifiers. Alert on growing queues and checksum failures without logging merchants, amounts, document contents, tokens or full account numbers. Define an incident owner before enabling cloud sync outside a development environment.
 
+*Implemented.* The server registers meters for six of the eight signals, plus job queue gauges. Extraction latency and backup success have no meter. The names, tags and meanings are on xref:operations:metrics.adoc[]. No alert rules, dashboards or incident owner are defined in the repository.
+
+=== Logging and correlation (implemented)
+
+* `CorrelationIdFilter` runs before security. It echoes a valid `X-Correlation-Id` request header, or generates a UUID, sets it on every response, and puts it in the logging context. Background jobs run with the identifier `job-<jobId>`.
+* `logback-spring.xml` prints a UTC timestamp, level, thread, correlation identifier, logger and message. Messages and stack traces pass through redacting converters.
+* `Redactor` masks bearer tokens, JWTs, signed URL credentials, e-mail addresses, money amounts, numbers of six or more digits and database key details. It is a safety net: pattern matching cannot recognise a merchant name, so code must still never log one.
+* Error responses are `{error, message, correlationId}`. The framework settings `server.error.include-message` and `include-stacktrace` are `never`. Job errors are stored redacted and truncated to 500 characters.
+* Job payloads hold identifiers only.
+
 == Security and privacy requirements
 
-[cols="1,3",options="header"]
-|===
-| Requirement | Summary
+The table gives each requirement as written, followed by what the code does today.
 
-| SEC 01 Modes and identity | Local-only mode needs no online account. Synced mode uses the OIDC authorisation code flow with PKCE through the system browser, revocable device sessions, short-lived access tokens and rotated refresh tokens where supported. No client secret is embedded in an app. MFA or passkeys come from the selected identity provider; account recovery is tested.
-| SEC 02 Local protection | Encrypt the database, receipt files, OCR text, thumbnails and search indexes at rest. Wrap data keys using the platform key store or a user-supplied secret. Biometrics unlock a protected key and are not the encryption scheme. Detect Linux key store availability and otherwise require the password fallback rather than writing a plaintext key. Keep secrets out of logs and crash reports.
-| SEC 03 Cloud protection | TLS, managed encryption keys, scoped service identities, private buckets, short-lived signed access, server-side authorisation and redacted operational logs. The sync service can read authorised data for processing; this is not end-to-end encryption.
-| SEC 04 File safety | Validate bytes as well as extensions, bound image dimensions and PDF processing resources, quarantine suspect files, isolate document parsing workers and prevent cross-workspace file access. Receipt images and text must not appear in notifications, analytics payloads or third-party error attachments.
-| SEC 05 Privacy controls | No advertising SDKs, sale of financial data or model training on receipts. Cloud sync and optional external extraction have separate consent controls. Australian residency for cloud data and backups is proposed, with any exception disclosed first. Deleting a workspace revokes sessions and triggers a tracked deletion job.
-| SEC 06 Retention and deletion | Proposed targets: deletion from active systems within 30 days and expiry from rolling backups within 35 days, except for a documented obligation. Keep a deletion suppression record so a restored backup cannot reintroduce deleted data. Proposed audit and security event retention is 12 months with minimised content.
+[cols="1,3,3",options="header"]
+|===
+| Requirement | Requirement summary | Implemented today
+
+| SEC 01 Modes and identity
+| Local-only mode needs no online account. Synced mode uses the OIDC authorisation code flow with PKCE through the system browser, revocable device sessions, short-lived access tokens and rotated refresh tokens where supported. No client secret is embedded in an app. MFA or passkeys come from the selected identity provider; account recovery is tested.
+| Client PKCE flow, loopback and custom-scheme redirects, rotating refresh token in the key store and no secret: implemented in the client library but not yet wired into the application shell (see xref:sync:sign-in.adoc[]). The server validates JWTs from the configured issuer and supports device revocation (`DELETE /v1/devices/+++{id}+++`). MFA and recovery are the identity provider's and are not tested here.
+
+| SEC 02 Local protection
+| Encrypt the database, receipt files, OCR text, thumbnails and search indexes at rest. Wrap data keys using the platform key store or a user-supplied secret. Biometrics unlock a protected key and are not the encryption scheme. Detect Linux key store availability and otherwise require the password fallback rather than writing a plaintext key. Keep secrets out of logs and crash reports.
+| See xref:architecture:local-store.adoc[] and xref:platform:capabilities.adoc[]. The OIDC refresh token is kept in the key store, and in memory only if no key store is available.
+
+| SEC 03 Cloud protection
+| TLS, managed encryption keys, scoped service identities, private buckets, short-lived signed access, server-side authorisation and redacted operational logs. The sync service can read authorised data for processing; this is not end-to-end encryption.
+| Server-side authorisation by workspace membership on every request, presigned URLs that last 15 minutes (upload) and 5 minutes (download), redacted logs, and the default AWS credential chain when no static keys are set. TLS termination, encryption keys and bucket privacy are deployment concerns and are not configured in the repository. The service can read all synced data.
+
+| SEC 04 File safety
+| Validate bytes as well as extensions, bound image dimensions and PDF processing resources, quarantine suspect files, isolate document parsing workers and prevent cross-workspace file access. Receipt images and text must not appear in notifications, analytics payloads or third-party error attachments.
+| Content type is checked by magic bytes against the declared type, size is limited to 25 MiB, assets stay `quarantined` until the scan job passes them, the default scan rejects oversized images and PDFs with active content, and cross-workspace access returns `404`. The scan is structural, not a malware scanner, and the worker is not isolated from the rest of the application. See xref:sync:protocol.adoc[].
+
+| SEC 05 Privacy controls
+| No advertising SDKs, sale of financial data or model training on receipts. Cloud sync and optional external extraction have separate consent controls. Australian residency for cloud data and backups is proposed, with any exception disclosed first. Deleting a workspace revokes sessions and triggers a tracked deletion job.
+| Deletion is implemented: see xref:operations:data-deletion.adoc[]. The storage region defaults to `ap-southeast-2`, which is a default and not an enforced residency control. Consent controls are not part of the server.
+
+| SEC 06 Retention and deletion
+| Proposed targets: deletion from active systems within 30 days and expiry from rolling backups within 35 days, except for a documented obligation. Keep a deletion suppression record so a restored backup cannot reintroduce deleted data. Proposed audit and security event retention is 12 months with minimised content.
+| The suppression record is kept and blocks id reuse. Erasure from the database and bucket is implemented. Backup expiry, the restore-time suppression check and audit event retention are not implemented. Tombstones are compacted after 90 days (see xref:operations:job-worker.adoc[]).
 |===
 
-Related topics are covered in xref:sync:protocol.adoc[] (workspace scoping and quarantine of uploads) and xref:platform:capabilities.adoc[] (key store availability).
+Related topics are covered in xref:sync:protocol.adoc[] (workspace scoping and quarantine of uploads), xref:platform:capabilities.adoc[] (key store availability) and xref:operations:backup-and-restore.adoc[].
