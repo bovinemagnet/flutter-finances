@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:finance_app/data/app_state.dart';
 import 'package:finance_app/data/receipt_service.dart';
+import 'package:finance_app/platform/image_tools.dart';
 import 'package:finance_app/platform/services.dart';
 import 'package:finance_app/platform/text_recognition.dart';
 import 'package:finance_core/finance_core.dart';
@@ -234,4 +235,35 @@ void main() {
       expect(receipts.search(const ReceiptQuery(text: 'petrol')), isEmpty);
     },
   );
+
+  test('warns about the same file saved twice without blocking it', () async {
+    final bytes = photo();
+    final first = await receipts.capture([CapturedFile(bytes, source: CaptureSource.fileImport)]);
+    final second = await receipts.capture([CapturedFile(bytes, source: CaptureSource.fileImport)]);
+    final warnings = await receipts.warningsFor(second.id);
+    expect(warnings.map((w) => w.otherReceiptId), contains(first.id));
+    expect(receipts.receipts(), hasLength(2));
+  });
+
+  test('a readable copy is saved beside the untouched original', () async {
+    final receipt = await receipts.capture([CapturedFile(photo(), source: CaptureSource.camera)]);
+    final page = receipts.pagesFor(receipt.id).single;
+    final original = await state.store.vault.readAsset(page.sourceAssetId);
+    await receipts.saveReadableCopy(page, const ImageEdits(quarterTurns: 1, enhanceContrast: true));
+    final updated = receipts.pagesFor(receipt.id).single;
+    expect(updated.derivativeAssetId, isNotNull);
+    expect(await state.store.vault.readAsset(updated.sourceAssetId), original);
+  });
+
+  test('a multi-receipt document can be split by page (REC 05)', () async {
+    final receipt = await receipts.capture([
+      CapturedFile(photo(), source: CaptureSource.camera),
+      CapturedFile(photo(), source: CaptureSource.camera),
+      CapturedFile(photo(), source: CaptureSource.camera),
+    ]);
+    final created = await receipts.splitPages(receipt.id, [[1, 3], [2]]);
+    expect(receipts.pagesFor(receipt.id).map((p) => p.pageNumber), [1, 2]);
+    expect(receipts.pagesFor(created.single.id), hasLength(1));
+    expect(receipts.receipts(), hasLength(2));
+  });
 }

@@ -1,3 +1,4 @@
+import 'package:finance_store/finance_store.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
@@ -80,6 +81,17 @@ Future<void> saveCapturedReceipt(
         ),
       );
     }
+  } on StorageWriteException catch (e) {
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          e.lowStorage
+              ? 'Not saved: this device is out of storage. Free some space and try again.'
+              : 'Not saved: the receipt could not be written to storage.',
+        ),
+        duration: const Duration(seconds: 10),
+      ),
+    );
   } on ReceiptRejectedException catch (e) {
     messenger.showSnackBar(SnackBar(content: Text(e.messages.join('\n'))));
   } on Exception catch (e) {

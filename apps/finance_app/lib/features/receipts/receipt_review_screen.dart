@@ -7,6 +7,8 @@ import '../../app/app_scope.dart';
 import '../../app/breakpoints.dart';
 import '../../data/app_state.dart';
 import '../../format/formatters.dart';
+import '../../platform/image_tools.dart';
+import 'image_edit_screen.dart';
 
 const uncertaintyText = {
   UncertaintyReason.ambiguousDate: 'the date could be day/month or month/day',
@@ -170,6 +172,79 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
               ),
             ),
           ),
+        FutureBuilder(
+          future: service.warningsFor(receipt.id),
+          builder: (context, snapshot) => Column(
+            children: [
+              for (final warning in snapshot.data ?? const [])
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.warning_amber_outlined),
+                    title: Text(warning.message),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Wrap(
+          spacing: 8,
+          children: [
+            if (pages.isNotEmpty)
+              OutlinedButton.icon(
+                icon: const Icon(Icons.auto_fix_high_outlined),
+                label: const Text('Improve readability'),
+                onPressed: () async {
+                  final page = pages.first;
+                  final record = state.store.vault.asset(page.sourceAssetId);
+                  if (record == null ||
+                      record.contentType == 'application/pdf') {
+                    return;
+                  }
+                  final bytes = await state.store.vault.readAsset(
+                    page.sourceAssetId,
+                  );
+                  if (!context.mounted) return;
+                  final edits = await Navigator.of(context).push<ImageEdits>(
+                    MaterialPageRoute(
+                      builder: (_) => ImageEditScreen(source: bytes),
+                    ),
+                  );
+                  if (edits != null && !edits.isEmpty) {
+                    await service.saveReadableCopy(page, edits);
+                  }
+                },
+              ),
+            if (pages.length > 1)
+              OutlinedButton.icon(
+                icon: const Icon(Icons.call_split),
+                label: const Text('Separate pages'),
+                onPressed: () async {
+                  final page = await showDialog<int>(
+                    context: context,
+                    builder: (context) => SimpleDialog(
+                      title: const Text('Make a page its own receipt'),
+                      children: [
+                        for (final p in pages.skip(1))
+                          SimpleDialogOption(
+                            onPressed: () =>
+                                Navigator.of(context).pop(p.pageNumber),
+                            child: Text('Page ${p.pageNumber}'),
+                          ),
+                      ],
+                    ),
+                  );
+                  if (page == null) return;
+                  await service.splitPages(receipt.id, [
+                    [
+                      for (final p in pages)
+                        if (p.pageNumber != page) p.pageNumber,
+                    ],
+                    [page],
+                  ]);
+                },
+              ),
+          ],
+        ),
         _ReviewedField(
           label: 'Merchant',
           field: review.merchant,

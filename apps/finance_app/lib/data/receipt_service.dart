@@ -4,6 +4,7 @@ import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart' as store;
 
 import '../platform/image_metadata.dart';
+import '../platform/image_tools.dart';
 import '../platform/services.dart';
 import '../platform/text_recognition.dart';
 import 'app_state.dart';
@@ -21,6 +22,14 @@ abstract final class ReceiptEntityTypes {
   static const page = 'receiptPage';
   static const link = 'receiptLink';
   static const extraction = 'extraction';
+  static const fingerprint = 'imageFingerprint';
+}
+
+/// Something worth checking about a captured receipt; never blocks saving.
+class CaptureWarning {
+  const CaptureWarning(this.message, {this.otherReceiptId});
+  final String message;
+  final String? otherReceiptId;
 }
 
 /// Receipt capture, extraction, review and retention (section 7).
@@ -122,6 +131,19 @@ class ReceiptService {
         contentType: result.contentType!.mimeType,
         bytes: bytes,
       );
+      if (result.contentType != DocumentContentType.pdf) {
+        try {
+          final hash = differenceHash(differenceHashMatrix(bytes));
+          await _store.upsertEntity(ReceiptEntityTypes.fingerprint, asset.id, {
+            'id': asset.id,
+            'receiptId': receiptId,
+            'assetId': asset.id,
+            'dHash': hash,
+          });
+        } on FormatException {
+          // Images the decoder cannot read are still kept.
+        }
+      }
       final count = result.pageCount ?? 1;
       for (var index = 0; index < count; index++) {
         pages.add(
@@ -205,6 +227,169 @@ class ReceiptService {
     await _putReceipt(current);
     state.refresh();
     return current;
+  }
+
+  /// Quality and duplicate warnings for a saved receipt (REC 02, MATCH 02).
+  Future<List<CaptureWarning>> warningsFor(String receiptId) async {
+    final warnings = <CaptureWarning>[];
+    final own = _store.vault.assetsFor(ReceiptEntityTypes.receipt, receiptId);
+    final others = [
+      for (final r in receipts())
+        if (r.id != receiptId)
+          for (final a in _store.vault.assetsFor(
+            ReceiptEntityTypes.receipt,
+            r.id,
+          ))
+            (r.id, a),
+    ];
+    for (final asset in own) {
+      for (final (otherId, other) in others) {
+        if (other.sha256 == asset.sha256) {
+          warnings.add(
+            CaptureWarning(
+              'This exact file is already saved as another receipt',
+              otherReceiptId: otherId,
+            ),
+          );
+        }
+      }
+      if (asset.kind == store.VaultAssetKind.source &&
+          asset.contentType != 'application/pdf') {
+        final quality = assessQuality(await _store.vault.readAsset(asset.id));
+        if (quality.likelyBlurred) {
+          warnings.add(
+            const CaptureWarning(
+              'The photo looks blurred; check the details are readable',
+            ),
+          );
+        }
+        if (quality.lowResolution) {
+          warnings.add(
+            const CaptureWarning(
+              'The photo is small; the text may be hard to read',
+            ),
+          );
+        }
+      }
+    }
+    final fingerprints = [
+      for (final r in _store.entities(ReceiptEntityTypes.fingerprint))
+        if (!r.deleted)
+          ImageFingerprint(
+            receiptId: r.json['receiptId'] as String,
+            assetId: r.json['assetId'] as String,
+            dHash: r.json['dHash'] as String,
+          ),
+    ];
+    final live = {for (final r in receipts()) r.id};
+    for (final mine in fingerprints.where((f) => f.receiptId == receiptId)) {
+      for (final warning in findSimilarImages(
+        mine,
+        fingerprints.where(
+          (f) => f.receiptId != receiptId && live.contains(f.receiptId),
+        ),
+      )) {
+        if (warnings.any((w) => w.otherReceiptId == warning.otherReceiptId)) {
+          continue;
+        }
+        warnings.add(
+          CaptureWarning(
+            'This looks like a photo of a receipt already saved',
+            otherReceiptId: warning.otherReceiptId,
+          ),
+        );
+      }
+    }
+    return warnings;
+  }
+
+  /// Saves an edited, readable copy of a page alongside its original
+  /// (REC 02); the source stays exactly as captured.
+  Future<void> saveReadableCopy(ReceiptPage page, ImageEdits edits) async {
+    final source = await _store.vault.readAsset(page.sourceAssetId);
+    final derivative = await _store.vault.saveAsset(
+      ownerType: ReceiptEntityTypes.receipt,
+      ownerId: page.receiptId,
+      kind: store.VaultAssetKind.derivative,
+      contentType: 'image/jpeg',
+      bytes: applyEdits(source, edits),
+    );
+    final previous = page.derivativeAssetId;
+    final updated = ReceiptPage(
+      id: page.id,
+      receiptId: page.receiptId,
+      pageNumber: page.pageNumber,
+      sourceAssetId: page.sourceAssetId,
+      sourcePageIndex: page.sourcePageIndex,
+      derivativeAssetId: derivative.id,
+    );
+    await _store.upsertEntity(
+      ReceiptEntityTypes.page,
+      page.id,
+      receiptPageToJson(updated),
+    );
+    if (previous != null) await _store.vault.deleteAsset(previous);
+    state.refresh();
+  }
+
+  /// Splits a multi-receipt document manually (REC 05): each group of page
+  /// numbers after the first becomes a new receipt sharing the same source
+  /// file. Returns the new receipts.
+  Future<List<Receipt>> splitPages(
+    String receiptId,
+    List<List<int>> groups,
+  ) async {
+    final pages = {for (final p in pagesFor(receiptId)) p.pageNumber: p};
+    final used = groups.expand((g) => g).toList();
+    if (used.toSet().length != used.length || !used.every(pages.containsKey)) {
+      throw ArgumentError('Each page must be assigned to exactly one receipt');
+    }
+    final original = receipt(receiptId)!;
+    final created = <Receipt>[];
+    for (final group in groups.skip(1)) {
+      final newReceipt = Receipt(
+        id: newId(),
+        capturedAt: original.capturedAt,
+        source: original.source,
+      );
+      for (final (index, number) in group.indexed) {
+        final page = pages[number]!;
+        final moved = ReceiptPage(
+          id: page.id,
+          receiptId: newReceipt.id,
+          pageNumber: index + 1,
+          sourceAssetId: page.sourceAssetId,
+          sourcePageIndex: page.sourcePageIndex,
+          derivativeAssetId: page.derivativeAssetId,
+        );
+        await _store.upsertEntity(
+          ReceiptEntityTypes.page,
+          page.id,
+          receiptPageToJson(moved),
+        );
+      }
+      await _putReceipt(newReceipt);
+      created.add(newReceipt);
+    }
+    for (final (index, number) in groups.first.indexed) {
+      final page = pages[number]!;
+      if (page.pageNumber == index + 1) continue;
+      final renumbered = ReceiptPage(
+        id: page.id,
+        receiptId: receiptId,
+        pageNumber: index + 1,
+        sourceAssetId: page.sourceAssetId,
+        sourcePageIndex: page.sourcePageIndex,
+        derivativeAssetId: page.derivativeAssetId,
+      );
+      await _store.upsertEntity(
+        ReceiptEntityTypes.page,
+        page.id,
+        receiptPageToJson(renumbered),
+      );
+    }
+    state.refresh();
+    return created;
   }
 
   /// Ranked candidate transactions for a receipt (MATCH 01).
