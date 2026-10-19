@@ -25,7 +25,7 @@ Future<void> openTransactionEditor(
               journal,
               today: state.today(),
             ));
-  final saved = await Navigator.of(context).push<bool>(
+  final done = await Navigator.of(context).push<bool>(
     MaterialPageRoute(
       builder: (context) => Scaffold(
         appBar: AppBar(
@@ -79,7 +79,7 @@ Future<void> openTransactionEditor(
       ),
     ),
   );
-  if (saved == true) {
+  if (done == true) {
     messenger.showSnackBar(
       SnackBar(
         content: const Text('Saved on this device'),

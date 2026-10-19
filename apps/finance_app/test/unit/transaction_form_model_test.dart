@@ -128,4 +128,23 @@ void main() {
     expect(form.tags, {'holiday'});
     expect(form.toDraft().effectiveDate, LocalDate(2026, 10, 1));
   });
+
+  test('unsaved form fields survive an interruption', () {
+    final form = model()
+      ..type = TransactionType.expense
+      ..accountId = 'bank'
+      ..amountText = '103.47'
+      ..splitMode = true
+      ..splits = [SplitLine('groceries', '80.00'), SplitLine('dining', '23.47')]
+      ..payee = 'Market'
+      ..tags = {'holiday'}
+      ..effectiveDate = LocalDate(2026, 10, 17);
+    final restored = TransactionFormModel.fromDraftJson(chart, form.toDraftJson(), today: today);
+    expect(restored.amountText, '103.47');
+    expect(restored.splits.map((s) => s.categoryId), ['groceries', 'dining']);
+    expect(restored.payee, 'Market');
+    expect(restored.tags, {'holiday'});
+    expect(restored.effectiveDate, LocalDate(2026, 10, 17));
+    expect(restored.errors, isEmpty);
+  });
 }

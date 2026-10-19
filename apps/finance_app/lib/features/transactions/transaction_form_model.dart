@@ -53,6 +53,36 @@ class TransactionFormModel {
     return form;
   }
 
+  /// Restores fields saved by [toDraftJson] after an interruption (UX 02).
+  factory TransactionFormModel.fromDraftJson(
+    Chart chart,
+    Map<String, Object?> json, {
+    required LocalDate today,
+  }) {
+    String? known(Object? id) =>
+        id is String && (chart.hasAccount(id) || chart.hasCategory(id))
+        ? id
+        : null;
+    return TransactionFormModel(chart, today: today)
+      ..type = TransactionType.values.byName(json['type'] as String)
+      ..accountId = known(json['accountId'])
+      ..counterAccountId = known(json['counterAccountId'])
+      ..amountText = json['amountText'] as String? ?? ''
+      ..effectiveDate = LocalDate.parse(json['effectiveDate'] as String)
+      ..categoryId = known(json['categoryId'])
+      ..splitMode = json['splitMode'] as bool? ?? false
+      ..splits = [
+        for (final s
+            in (json['splits'] as List? ?? const [])
+                .cast<Map<String, Object?>>())
+          SplitLine(known(s['categoryId']), s['amountText'] as String? ?? ''),
+      ]
+      ..payee = json['payee'] as String? ?? ''
+      ..notes = json['notes'] as String? ?? ''
+      ..tags = {...(json['tags'] as List? ?? const []).cast<String>()}
+      ..refundOf = json['refundOf'] as String?;
+  }
+
   final Chart chart;
   TransactionType type = TransactionType.expense;
   String? accountId;
@@ -166,6 +196,29 @@ class TransactionFormModel {
     }
     return errors;
   }
+
+  bool get hasInput =>
+      amountText.trim().isNotEmpty ||
+      payee.trim().isNotEmpty ||
+      notes.trim().isNotEmpty;
+
+  Map<String, Object?> toDraftJson() => {
+    'type': type.name,
+    'accountId': accountId,
+    'counterAccountId': counterAccountId,
+    'amountText': amountText,
+    'effectiveDate': effectiveDate.toString(),
+    'categoryId': categoryId,
+    'splitMode': splitMode,
+    'splits': [
+      for (final s in splits)
+        {'categoryId': s.categoryId, 'amountText': s.amountText},
+    ],
+    'payee': payee,
+    'notes': notes,
+    'tags': tags.toList()..sort(),
+    'refundOf': refundOf,
+  };
 
   /// Builds the draft; call only when [errors] is empty.
   TransactionDraft toDraft() {

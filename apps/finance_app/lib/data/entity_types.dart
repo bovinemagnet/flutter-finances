@@ -14,4 +14,5 @@ abstract final class AppEntityTypes {
   static const transactionReview = 'transactionReview';
   static const appPreferences = 'appPreferences';
   static const categorisationRule = 'categorisationRule';
+  static const entryDraft = 'entryDraft';
 }

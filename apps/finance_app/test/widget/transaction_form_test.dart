@@ -155,4 +155,24 @@ void main() {
     expect(saved.single.accountId, 'card');
     expect(saved.single.splits.single.categoryId, 'groceries');
   });
+
+  testWidgets('backgrounding the app hands unsaved input over (UX 02)', (tester) async {
+    final interrupted = <TransactionFormModel>[];
+    final model = TransactionFormModel(chart, today: LocalDate(2026, 10, 19));
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: TransactionForm(
+          model: model,
+          onSave: (_) async {},
+          onInterrupted: interrupted.add,
+        ),
+      ),
+    ));
+    await tester.enterText(find.widgetWithText(TextField, 'Amount'), '12.50');
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    expect(interrupted, isNotEmpty);
+    expect(interrupted.first.toDraftJson()['amountText'], '12.50');
+  });
 }

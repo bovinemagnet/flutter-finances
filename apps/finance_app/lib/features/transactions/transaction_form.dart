@@ -15,6 +15,7 @@ class TransactionForm extends StatefulWidget {
     required this.onSave,
     this.onCancel,
     this.refundCandidates = const [],
+    this.onInterrupted,
   });
 
   final TransactionFormModel model;
@@ -24,11 +25,15 @@ class TransactionForm extends StatefulWidget {
   /// Recent purchases a refund can be linked to (FIN 06).
   final List<Journal> refundCandidates;
 
+  /// Called when the app is sent to the background with unsaved input.
+  final ValueChanged<TransactionFormModel>? onInterrupted;
+
   @override
   State<TransactionForm> createState() => _TransactionFormState();
 }
 
-class _TransactionFormState extends State<TransactionForm> {
+class _TransactionFormState extends State<TransactionForm>
+    with WidgetsBindingObserver {
   TransactionFormModel get model => widget.model;
   var _showErrors = false;
   var _saving = false;
@@ -42,7 +47,24 @@ class _TransactionFormState extends State<TransactionForm> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if ((state == AppLifecycleState.paused ||
+            state == AppLifecycleState.hidden) &&
+        model.hasInput &&
+        model.editing == null) {
+      widget.onInterrupted?.call(model);
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tagController.dispose();
     super.dispose();
   }

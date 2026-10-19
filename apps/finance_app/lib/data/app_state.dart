@@ -303,6 +303,20 @@ class AppState extends ChangeNotifier {
     refresh();
   }
 
+  /// Fields of an entry interrupted before saving (UX 02).
+  Map<String, Object?>? get entryDraft {
+    final record = store.entity(AppEntityTypes.entryDraft, 'current');
+    return record == null || record.deleted ? null : record.json;
+  }
+
+  Future<void> saveEntryDraft(Map<String, Object?> fields) =>
+      _put(AppEntityTypes.entryDraft, 'current', {'id': 'current', ...fields});
+
+  Future<void> clearEntryDraft() async {
+    if (entryDraft != null)
+      await store.deleteEntity(AppEntityTypes.entryDraft, 'current');
+  }
+
   Future<bool> undo() async {
     final undone = await store.undoLastAction();
     refresh();
