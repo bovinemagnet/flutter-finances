@@ -1,156 +1,130 @@
 package com.paulsnow.finance.core.imports;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
- * How the columns of a bank's CSV statement map onto a transaction (IMP 01).
- * A mapping is saved as a template and reused for later statements.
- * <p>
- * Columns are named by their header text (matched ignoring case and
- * surrounding spaces) when {@code hasHeader} is true, otherwise by their
- * zero-based position, for example {@code "0"}. Either {@code amountColumn}
- * (a signed amount) or {@code debitColumn} and {@code creditColumn} (two
- * unsigned amounts) must be given.
+ * A saved CSV mapping template (IMP 01), the {@code CsvMapping} JSON of
+ * {@code spec/fixtures/README.md}. Exactly one amount layout is required: a
+ * signed {@code amountColumn}, or both {@code debitColumn} and
+ * {@code creditColumn}. Header-name columns need {@code hasHeader}.
  *
- * @param delimiter         field separator, usually {@code ,} or {@code ;}
+ * @param id                template identifier
+ * @param name              template name
+ * @param accountId         the user account the rows belong to
+ * @param currencyCode      statement currency, default {@code AUD}
  * @param hasHeader         whether the first record names the columns
- * @param dateColumn        transaction date column
- * @param dateFormat        {@link java.time.format.DateTimeFormatter} pattern, default {@code dd/MM/yyyy}
- * @param descriptionColumn description (narrative) column
- * @param amountColumn      signed amount column, or null when debit and credit columns are used
+ * @param delimiter         one-character field separator
+ * @param encoding          encoding used to decode the file bytes
+ * @param decimalSeparator  {@code .} or {@code ,}; the other is grouping
+ * @param dateColumn        date column
+ * @param dateFormat        date format, default {@code dd/MM/yyyy}
+ * @param descriptionColumn description column
+ * @param amountColumn      signed amount column, or null
  * @param debitColumn       money-out column, or null
  * @param creditColumn      money-in column, or null
- * @param signConvention    meaning of the sign in {@code amountColumn}
- * @param decimalSeparator  {@code .} or {@code ,}; the other is a grouping separator
- * @param currencyColumn    optional currency code column; other currencies are rejected
- * @param referenceColumn   optional bank reference (provider identifier) column
- * @param currency          the workspace currency code
- * @param exponent          the workspace currency exponent
+ * @param debitSign         how the signed column shows money out
+ * @param referenceColumn   optional bank reference column
  * @author Paul Snow
  * @since 0.0.0
  */
-public record CsvMapping(char delimiter, boolean hasHeader, String dateColumn, String dateFormat,
-        String descriptionColumn, String amountColumn, String debitColumn, String creditColumn,
-        SignConvention signConvention, char decimalSeparator, String currencyColumn, String referenceColumn,
-        String currency, int exponent) {
-
-    /**
-     * What the sign of a single signed amount column means.
-     *
-     * @author Paul Snow
-     * @since 0.0.0
-     */
-    public enum SignConvention {
-        /** Negative amounts are money out (the usual bank export). */
-        NEGATIVE_IS_OUTFLOW,
-        /** Positive amounts are money out (common for credit card exports). */
-        POSITIVE_IS_OUTFLOW
-    }
+public record CsvMapping(String id, String name, String accountId, String currencyCode, boolean hasHeader,
+        char delimiter, TextEncoding encoding, char decimalSeparator, CsvColumn dateColumn, String dateFormat,
+        CsvColumn descriptionColumn, CsvColumn amountColumn, CsvColumn debitColumn, CsvColumn creditColumn,
+        DebitSign debitSign, CsvColumn referenceColumn) {
 
     public CsvMapping {
-        dateFormat = dateFormat == null || dateFormat.isBlank() ? "dd/MM/yyyy" : dateFormat;
-        signConvention = signConvention == null ? SignConvention.NEGATIVE_IS_OUTFLOW : signConvention;
-        currency = currency == null || currency.isBlank() ? "AUD" : currency;
-    }
-
-    /** Returns a builder with the Australian defaults: comma, header, dd/MM/yyyy, AUD. */
-    public static Builder builder() {
-        return new Builder();
+        currencyCode = currencyCode == null ? "AUD" : currencyCode;
+        encoding = encoding == null ? TextEncoding.UTF8 : encoding;
+        dateFormat = dateFormat == null ? "dd/MM/yyyy" : dateFormat;
+        debitSign = debitSign == null ? DebitSign.NEGATIVE : debitSign;
+        if (dateColumn == null || descriptionColumn == null) {
+            throw new IllegalArgumentException("Date and description columns are required");
+        }
+        boolean signed = amountColumn != null;
+        boolean split = debitColumn != null || creditColumn != null;
+        if (signed == split) {
+            throw new IllegalArgumentException("Choose either a signed amount column or debit and credit columns");
+        }
+        if (split && (debitColumn == null || creditColumn == null)) {
+            throw new IllegalArgumentException("Both debit and credit columns are required");
+        }
+        if (decimalSeparator != '.' && decimalSeparator != ',') {
+            throw new IllegalArgumentException("The decimal separator must be . or ,");
+        }
+        if (!hasHeader) {
+            for (CsvColumn column : new CsvColumn[] { dateColumn, descriptionColumn, amountColumn, debitColumn,
+                    creditColumn, referenceColumn }) {
+                if (column != null && column.header() != null) {
+                    throw new IllegalArgumentException("Header names need a file with a header row");
+                }
+            }
+        }
     }
 
     /**
-     * Builder for {@link CsvMapping}.
+     * Reads the mapping JSON (as plain Java values); omitted settings take
+     * their defaults.
      *
-     * @author Paul Snow
-     * @since 0.0.0
+     * @param json mapping properties
+     * @return the mapping
+     * @throws IllegalArgumentException when the mapping is invalid
      */
-    public static final class Builder {
-        private char delimiter = ',';
-        private boolean hasHeader = true;
-        private String dateColumn;
-        private String dateFormat = "dd/MM/yyyy";
-        private String descriptionColumn;
-        private String amountColumn;
-        private String debitColumn;
-        private String creditColumn;
-        private SignConvention signConvention = SignConvention.NEGATIVE_IS_OUTFLOW;
-        private char decimalSeparator = '.';
-        private String currencyColumn;
-        private String referenceColumn;
-        private String currency = "AUD";
-        private int exponent = 2;
-
-        private Builder() {
+    public static CsvMapping fromMap(Map<String, Object> json) {
+        try {
+            return new CsvMapping(string(json, "id", ""), string(json, "name", ""), string(json, "accountId", ""),
+                    string(json, "currency", "AUD"), bool(json, "hasHeader", true), character(json, "delimiter", ','),
+                    TextEncoding.fromWire(string(json, "encoding", "utf8")),
+                    character(json, "decimalSeparator", '.'), CsvColumn.of(json.get("dateColumn")),
+                    string(json, "dateFormat", "dd/MM/yyyy"), CsvColumn.of(json.get("descriptionColumn")),
+                    CsvColumn.of(json.get("amountColumn")), CsvColumn.of(json.get("debitColumn")),
+                    CsvColumn.of(json.get("creditColumn")), DebitSign.fromWire(string(json, "debitSign", "negative")),
+                    CsvColumn.of(json.get("referenceColumn")));
+        } catch (ClassCastException | ArithmeticException e) {
+            throw new IllegalArgumentException("Invalid mapping", e);
         }
+    }
 
-        public Builder delimiter(char value) {
-            this.delimiter = value;
-            return this;
-        }
+    /** Writes the mapping JSON as plain Java values. */
+    public Map<String, Object> toMap() {
+        Map<String, Object> json = new LinkedHashMap<>();
+        json.put("id", id);
+        json.put("name", name);
+        json.put("accountId", accountId);
+        json.put("currency", currencyCode);
+        json.put("hasHeader", hasHeader);
+        json.put("delimiter", String.valueOf(delimiter));
+        json.put("encoding", encoding.wire());
+        json.put("decimalSeparator", String.valueOf(decimalSeparator));
+        json.put("dateColumn", dateColumn.toValue());
+        json.put("dateFormat", dateFormat);
+        json.put("descriptionColumn", descriptionColumn.toValue());
+        json.put("amountColumn", amountColumn == null ? null : amountColumn.toValue());
+        json.put("debitColumn", debitColumn == null ? null : debitColumn.toValue());
+        json.put("creditColumn", creditColumn == null ? null : creditColumn.toValue());
+        json.put("debitSign", debitSign.wire());
+        json.put("referenceColumn", referenceColumn == null ? null : referenceColumn.toValue());
+        return json;
+    }
 
-        public Builder hasHeader(boolean value) {
-            this.hasHeader = value;
-            return this;
-        }
+    private static String string(Map<String, Object> json, String key, String fallback) {
+        Object value = json.get(key);
+        return value == null ? fallback : (String) value;
+    }
 
-        public Builder dateColumn(String value) {
-            this.dateColumn = value;
-            return this;
-        }
+    private static boolean bool(Map<String, Object> json, String key, boolean fallback) {
+        Object value = json.get(key);
+        return value == null ? fallback : (Boolean) value;
+    }
 
-        public Builder dateFormat(String value) {
-            this.dateFormat = value;
-            return this;
+    private static char character(Map<String, Object> json, String key, char fallback) {
+        String value = string(json, key, null);
+        if (value == null) {
+            return fallback;
         }
-
-        public Builder descriptionColumn(String value) {
-            this.descriptionColumn = value;
-            return this;
+        if (value.length() != 1) {
+            throw new IllegalArgumentException(key + " must be one character");
         }
-
-        public Builder amountColumn(String value) {
-            this.amountColumn = value;
-            return this;
-        }
-
-        public Builder debitColumn(String value) {
-            this.debitColumn = value;
-            return this;
-        }
-
-        public Builder creditColumn(String value) {
-            this.creditColumn = value;
-            return this;
-        }
-
-        public Builder signConvention(SignConvention value) {
-            this.signConvention = value;
-            return this;
-        }
-
-        public Builder decimalSeparator(char value) {
-            this.decimalSeparator = value;
-            return this;
-        }
-
-        public Builder currencyColumn(String value) {
-            this.currencyColumn = value;
-            return this;
-        }
-
-        public Builder referenceColumn(String value) {
-            this.referenceColumn = value;
-            return this;
-        }
-
-        public Builder currency(String code, int currencyExponent) {
-            this.currency = code;
-            this.exponent = currencyExponent;
-            return this;
-        }
-
-        public CsvMapping build() {
-            return new CsvMapping(delimiter, hasHeader, dateColumn, dateFormat, descriptionColumn, amountColumn,
-                    debitColumn, creditColumn, signConvention, decimalSeparator, currencyColumn, referenceColumn,
-                    currency, exponent);
-        }
+        return value.charAt(0);
     }
 }

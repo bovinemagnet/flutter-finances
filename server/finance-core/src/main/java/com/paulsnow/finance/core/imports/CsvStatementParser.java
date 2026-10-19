@@ -1,39 +1,36 @@
 package com.paulsnow.finance.core.imports;
 
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
-import java.time.format.ResolverStyle;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.paulsnow.finance.core.money.Money;
 import com.paulsnow.finance.core.money.MoneyFormatException;
 import com.paulsnow.finance.core.money.MoneyRangeException;
 
 /**
- * Parses a bank's CSV statement into dated, signed amounts with a
- * {@link CsvMapping} (IMP 01). Pure and deterministic: text in, rows and
- * row-level errors out, so the Dart client and the server can share
- * fixtures for it.
- * <p>
- * Rules:
+ * Parses a bank's CSV statement with a {@link CsvMapping} (IMP 01; fixture
+ * {@code csv.parse}). Pure and deterministic, and shared in behaviour with
+ * the Dart client through the {@code documents.json} fixtures:
  * <ul>
- * <li>RFC 4180 records: quoted fields may contain the delimiter, doubled
- * quotes and line breaks; CRLF, LF and CR all end a record; a leading
- * byte-order mark is ignored; blank records are skipped.</li>
- * <li>{@code rowNumber} is the 1-based position of the record in the file,
- * the header counting as record 1, so it matches spreadsheet rows when no
- * field spans lines.</li>
- * <li>Amounts are exact ({@link Money#parseMinor}); {@code $} signs are
- * ignored and parentheses mean negative. {@code amountMinor} is from the
- * account's point of view: positive is money in, negative money out. With
- * debit and credit columns exactly one must be non-zero.</li>
- * <li>Each failing record yields one error with the first failing check, in
- * the order column count, date, description, amount, currency.</li>
+ * <li>Reading follows RFC 4180: records end at CRLF, LF or CR outside
+ * quotes; a field starting with {@code "} is quoted, {@code ""} inside it is
+ * one quote, and delimiters and line breaks inside it are literal. A quote
+ * anywhere else is kept literally. A leading U+FEFF is removed. Blank
+ * records are skipped but counted. An unterminated quote reports
+ * {@code UNTERMINATED_QUOTE} where it opened and stops reading.</li>
+ * <li>A required column missing from the header gives
+ * {@code COLUMN_NOT_FOUND} on row 1 per column and no rows.</li>
+ * <li>Each record reports at most one error, in the order
+ * {@code MISSING_FIELD}, {@code BAD_DATE}, amount errors
+ * ({@code BAD_AMOUNT}, {@code MISSING_AMOUNT},
+ * {@code BOTH_DEBIT_AND_CREDIT}), {@code ZERO_AMOUNT}.</li>
  * </ul>
  *
  * @author Paul Snow
@@ -41,267 +38,335 @@ import com.paulsnow.finance.core.money.MoneyRangeException;
  */
 public final class CsvStatementParser {
 
-    /**
-     * A parsed statement line.
-     *
-     * @param rowNumber   1-based record number in the file
-     * @param date        transaction date
-     * @param description trimmed description
-     * @param amountMinor signed minor units, positive is money in
-     * @param currency    workspace currency code
-     * @param reference   bank reference, or null
-     * @param raw         the record's original text
-     */
-    public record CsvRow(int rowNumber, LocalDate date, String description, long amountMinor, String currency,
-            String reference, String raw) {
-    }
+    private static final Pattern TOKEN = Pattern.compile("yyyy|yy|MMM|MM|M|dd|d");
 
-    /**
-     * A record that could not be parsed.
-     *
-     * @param rowNumber 1-based record number in the file (0 for a mapping problem)
-     * @param code      stable code: {@code COLUMN_COUNT}, {@code DATE_FORMAT}, {@code MISSING_FIELD},
-     *                  {@code AMOUNT_FORMAT}, {@code OUT_OF_RANGE}, {@code ZERO_AMOUNT},
-     *                  {@code CURRENCY_MISMATCH}, {@code UNKNOWN_COLUMN}, {@code INVALID_MAPPING} or
-     *                  {@code UNTERMINATED_QUOTE}
-     * @param column    the mapped column at fault, or null
-     * @param raw       the record's original text, or null
-     */
-    public record CsvError(int rowNumber, String code, String column, String raw) {
-    }
+    private static final List<String> MONTHS = List.of("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug",
+            "sep", "oct", "nov", "dec");
 
-    /**
-     * Parsed rows and errors, each in file order.
-     *
-     * @param rows   parsed rows
-     * @param errors row-level errors
-     */
-    public record CsvResult(List<CsvRow> rows, List<CsvError> errors) {
+    private static final Map<String, DatePattern> DATE_PATTERNS = new ConcurrentHashMap<>();
+
+    private record DatePattern(Pattern pattern, List<String> tokens) {
     }
 
     private record Record(int number, List<String> fields, String raw) {
+    }
+
+    private record Amount(Long minor, ImportErrorCode error) {
     }
 
     private CsvStatementParser() {
     }
 
     /**
-     * Parses a statement.
+     * Parses CSV text into rows.
      *
-     * @param text    decoded file text
-     * @param mapping column mapping
-     * @return rows and errors
+     * @param text     decoded file text
+     * @param mapping  column mapping
+     * @param exponent currency exponent of the workspace
+     * @return rows and errors in file order
      */
-    public static CsvResult parse(String text, CsvMapping mapping) {
-        List<CsvRow> rows = new ArrayList<>();
-        List<CsvError> errors = new ArrayList<>();
-        if (mapping.dateColumn() == null || mapping.descriptionColumn() == null
-                || (mapping.amountColumn() == null && mapping.debitColumn() == null
-                        && mapping.creditColumn() == null)) {
-            errors.add(new CsvError(0, "INVALID_MAPPING", null, null));
-            return new CsvResult(rows, errors);
-        }
-        List<Record> records = records(text.startsWith("﻿") ? text.substring(1) : text, mapping.delimiter(),
-                errors);
-        Map<String, Integer> columns = new HashMap<>();
-        int first = 0;
+    public static CsvParseResult parse(String text, CsvMapping mapping, int exponent) {
+        String body = text.startsWith("﻿") ? text.substring(1) : text;
+        List<ImportRowError> errors = new ArrayList<>();
+        List<Record> records = read(body, mapping.delimiter(), errors);
+        List<ImportRow> rows = new ArrayList<>();
+        List<String> header = null;
         if (mapping.hasHeader() && !records.isEmpty()) {
-            Record header = records.getFirst();
-            for (int i = 0; i < header.fields().size(); i++) {
-                columns.putIfAbsent(normalise(header.fields().get(i)), i);
-            }
-            first = 1;
+            header = records.getFirst().fields();
+            records = records.subList(1, records.size());
         }
-        Map<String, Integer> indexes = new HashMap<>();
-        for (String column : new String[] { mapping.dateColumn(), mapping.descriptionColumn(), mapping.amountColumn(),
-                mapping.debitColumn(), mapping.creditColumn(), mapping.currencyColumn(), mapping.referenceColumn() }) {
-            if (column == null) {
+        Integer date = required(mapping.dateColumn(), header, errors);
+        Integer description = required(mapping.descriptionColumn(), header, errors);
+        Integer amount = mapping.amountColumn() == null ? null : required(mapping.amountColumn(), header, errors);
+        Integer debit = mapping.debitColumn() == null ? null : required(mapping.debitColumn(), header, errors);
+        Integer credit = mapping.creditColumn() == null ? null : required(mapping.creditColumn(), header, errors);
+        Integer reference = mapping.referenceColumn() == null ? null : mapping.referenceColumn().resolve(header);
+        if (errors.stream().anyMatch(e -> e.code() == ImportErrorCode.COLUMN_NOT_FOUND)) {
+            return new CsvParseResult(List.of(), errors);
+        }
+        int needed = Math.max(date, description);
+        for (Integer index : new Integer[] { amount, debit, credit }) {
+            if (index != null) {
+                needed = Math.max(needed, index);
+            }
+        }
+        for (Record record : records) {
+            List<String> fields = record.fields();
+            if (fields.size() <= needed) {
+                errors.add(new ImportRowError(record.number(), ImportErrorCode.MISSING_FIELD));
                 continue;
             }
-            Integer index = mapping.hasHeader() ? columns.get(normalise(column)) : position(column);
-            if (index == null) {
-                errors.clear();
-                errors.add(new CsvError(mapping.hasHeader() ? 1 : 0, "UNKNOWN_COLUMN", column, null));
-                return new CsvResult(List.of(), List.copyOf(errors));
+            LocalDate parsedDate = parseDate(fields.get(date), mapping.dateFormat());
+            if (parsedDate == null) {
+                errors.add(new ImportRowError(record.number(), ImportErrorCode.BAD_DATE));
+                continue;
             }
-            indexes.put(column, index);
-        }
-        int needed = indexes.values().stream().mapToInt(Integer::intValue).max().orElse(0) + 1;
-        DateTimeFormatter dates = DateTimeFormatter.ofPattern(strictPattern(mapping.dateFormat()), Locale.ROOT)
-                .withResolverStyle(ResolverStyle.STRICT);
-        for (Record record : records.subList(first, records.size())) {
-            Object outcome = parseRecord(record, mapping, indexes, needed, dates);
-            if (outcome instanceof CsvRow row) {
-                rows.add(row);
-            } else {
-                errors.add((CsvError) outcome);
+            Amount value = rowAmount(fields, mapping, exponent, amount, debit, credit);
+            if (value.error() != null) {
+                errors.add(new ImportRowError(record.number(), value.error()));
+                continue;
             }
+            String ref = reference != null && reference < fields.size() ? trim(fields.get(reference)) : "";
+            rows.add(new ImportRow(record.number(), parsedDate, value.minor(), trim(fields.get(description)),
+                    ref.isEmpty() ? null : ref, fields, record.raw()));
         }
-        errors.sort((a, b) -> Integer.compare(a.rowNumber(), b.rowNumber()));
-        return new CsvResult(List.copyOf(rows), List.copyOf(errors));
+        errors.sort(Comparator.comparingInt(ImportRowError::row));
+        return new CsvParseResult(rows, errors);
     }
 
-    private static Object parseRecord(Record record, CsvMapping mapping, Map<String, Integer> indexes, int needed,
-            DateTimeFormatter dates) {
-        if (record.fields().size() < needed) {
-            return error(record, "COLUMN_COUNT", null);
+    /**
+     * Reads one amount cell into minor units: trimmed; empty is no value;
+     * {@code $} and spaces removed; {@code (x)} or a trailing {@code -}
+     * negates; then the {@code money.parse} rules with the decimal
+     * separator.
+     *
+     * @param text             cell text
+     * @param exponent         currency exponent
+     * @param decimalSeparator {@code .} or {@code ,}
+     * @return minor units, null for an empty cell
+     * @throws MoneyFormatException when the text is not an amount or is out of range
+     */
+    public static Long parseAmount(String text, int exponent, char decimalSeparator) {
+        String t = trim(text).replace("$", "").replace(" ", "");
+        if (t.isEmpty()) {
+            return null;
         }
-        LocalDate date;
+        boolean negate = false;
+        if (t.length() > 2 && t.startsWith("(") && t.endsWith(")")) {
+            negate = true;
+            t = t.substring(1, t.length() - 1);
+        } else if (t.length() > 1 && t.endsWith("-")) {
+            negate = true;
+            t = t.substring(0, t.length() - 1);
+        }
         try {
-            date = LocalDate.parse(field(record, indexes, mapping.dateColumn()), dates);
-        } catch (DateTimeParseException e) {
-            return error(record, "DATE_FORMAT", mapping.dateColumn());
-        }
-        String description = field(record, indexes, mapping.descriptionColumn());
-        if (description.isEmpty()) {
-            return error(record, "MISSING_FIELD", mapping.descriptionColumn());
-        }
-        long amount;
-        String amountColumn = mapping.amountColumn() != null ? mapping.amountColumn()
-                : mapping.debitColumn() != null ? mapping.debitColumn() : mapping.creditColumn();
-        try {
-            if (mapping.amountColumn() != null) {
-                String text = field(record, indexes, mapping.amountColumn());
-                if (text.isEmpty()) {
-                    return error(record, "MISSING_FIELD", amountColumn);
-                }
-                amount = amount(text, mapping);
-                if (mapping.signConvention() == CsvMapping.SignConvention.POSITIVE_IS_OUTFLOW) {
-                    amount = -amount;
-                }
-            } else {
-                String debit = mapping.debitColumn() == null ? "" : field(record, indexes, mapping.debitColumn());
-                String credit = mapping.creditColumn() == null ? "" : field(record, indexes, mapping.creditColumn());
-                if (debit.isEmpty() && credit.isEmpty()) {
-                    return error(record, "MISSING_FIELD", amountColumn);
-                }
-                long out = debit.isEmpty() ? 0 : Math.abs(amount(debit, mapping));
-                long in = credit.isEmpty() ? 0 : Math.abs(amount(credit, mapping));
-                if (out != 0 && in != 0) {
-                    return error(record, "AMOUNT_FORMAT", amountColumn);
-                }
-                amount = in - out;
-            }
+            long minor = Money.parseMinor(t, exponent, decimalSeparator);
+            return negate ? -minor : minor;
         } catch (MoneyRangeException e) {
-            return error(record, "OUT_OF_RANGE", amountColumn);
-        } catch (MoneyFormatException e) {
-            return error(record, "AMOUNT_FORMAT", amountColumn);
+            throw new MoneyFormatException("Amount out of range");
         }
-        if (amount == 0) {
-            return error(record, "ZERO_AMOUNT", amountColumn);
-        }
-        if (mapping.currencyColumn() != null) {
-            String currency = field(record, indexes, mapping.currencyColumn()).toUpperCase(Locale.ROOT);
-            if (!currency.isEmpty() && !currency.equals(mapping.currency())) {
-                return error(record, "CURRENCY_MISMATCH", mapping.currencyColumn());
-            }
-        }
-        String reference = mapping.referenceColumn() == null ? "" : field(record, indexes, mapping.referenceColumn());
-        return new CsvRow(record.number(), date, description, amount, mapping.currency(),
-                reference.isEmpty() ? null : reference, record.raw());
     }
 
-    private static long amount(String text, CsvMapping mapping) {
-        String cleaned = text.replace("$", "").strip();
-        boolean parenthesised = cleaned.startsWith("(") && cleaned.endsWith(")");
-        if (parenthesised) {
-            cleaned = cleaned.substring(1, cleaned.length() - 1).strip();
-            if (cleaned.startsWith("-") || cleaned.startsWith("+")) {
-                throw new MoneyFormatException("Signed amount in parentheses");
+    /**
+     * Parses a date with format tokens {@code yyyy}, {@code yy} (2000-2099),
+     * {@code MMM} (English month abbreviation, any case), {@code MM}/{@code M}
+     * and {@code dd}/{@code d} (one or two digits); other characters match
+     * literally and anything after whitespace following the date is ignored.
+     *
+     * @param text   date text
+     * @param format format
+     * @return the date, or null when the text does not match or the date does not exist
+     */
+    public static LocalDate parseDate(String text, String format) {
+        DatePattern compiled = DATE_PATTERNS.computeIfAbsent(format, CsvStatementParser::compileDate);
+        Matcher match = compiled.pattern().matcher(trim(text));
+        if (!match.matches()) {
+            return null;
+        }
+        Integer year = null;
+        Integer month = null;
+        Integer day = null;
+        for (int i = 0; i < compiled.tokens().size(); i++) {
+            String value = match.group(i + 1);
+            switch (compiled.tokens().get(i)) {
+                case "yyyy" -> year = Integer.parseInt(value);
+                case "yy" -> year = 2000 + Integer.parseInt(value);
+                case "MMM" -> {
+                    int index = MONTHS.indexOf(value.toLowerCase(Locale.ROOT));
+                    if (index < 0) {
+                        return null;
+                    }
+                    month = index + 1;
+                }
+                case "MM", "M" -> month = Integer.parseInt(value);
+                default -> day = Integer.parseInt(value);
             }
         }
-        if (cleaned.isEmpty()) {
-            throw new MoneyFormatException("Empty amount");
+        if (year == null || month == null || day == null || month < 1 || month > 12 || day < 1
+                || day > java.time.YearMonth.of(year, month).lengthOfMonth()) {
+            return null;
         }
-        long minor = Money.parseMinor(cleaned, mapping.exponent(), mapping.decimalSeparator());
-        return parenthesised ? -minor : minor;
+        return LocalDate.of(year, month, day);
     }
 
-    private static List<Record> records(String text, char delimiter, List<CsvError> errors) {
+    /**
+     * Trims whitespace as the Dart client does (Unicode white space and
+     * U+FEFF), unlike {@link String#strip()}.
+     *
+     * @param text text
+     * @return trimmed text
+     */
+    public static String trim(String text) {
+        int start = 0;
+        int end = text.length();
+        while (start < end && isTrimmable(text.charAt(start))) {
+            start++;
+        }
+        while (end > start && isTrimmable(text.charAt(end - 1))) {
+            end--;
+        }
+        return text.substring(start, end);
+    }
+
+    private static boolean isTrimmable(char c) {
+        return (c >= 0x09 && c <= 0x0D) || c == 0x20 || c == 0x85 || c == 0xA0 || c == 0x1680
+                || (c >= 0x2000 && c <= 0x200A) || c == 0x2028 || c == 0x2029 || c == 0x202F || c == 0x205F
+                || c == 0x3000 || c == 0xFEFF;
+    }
+
+    private static DatePattern compileDate(String format) {
+        StringBuilder regex = new StringBuilder();
+        List<String> tokens = new ArrayList<>();
+        Matcher matcher = TOKEN.matcher(format);
+        int last = 0;
+        while (matcher.find()) {
+            regex.append(Pattern.quote(format.substring(last, matcher.start())));
+            String token = matcher.group();
+            tokens.add(token);
+            regex.append(switch (token) {
+                case "yyyy" -> "([0-9]{4})";
+                case "yy" -> "([0-9]{2})";
+                case "MMM" -> "([A-Za-z]{3})";
+                default -> "([0-9]{1,2})";
+            });
+            last = matcher.end();
+        }
+        regex.append(Pattern.quote(format.substring(last)));
+        regex.append("(?:\\s.*)?");
+        return new DatePattern(Pattern.compile(regex.toString(), Pattern.UNICODE_CHARACTER_CLASS), List.copyOf(tokens));
+    }
+
+    private static Integer required(CsvColumn column, List<String> header, List<ImportRowError> errors) {
+        Integer index = column.resolve(header);
+        if (index == null) {
+            errors.add(new ImportRowError(1, ImportErrorCode.COLUMN_NOT_FOUND));
+        }
+        return index;
+    }
+
+    private static Amount rowAmount(List<String> fields, CsvMapping mapping, int exponent, Integer amountIndex,
+            Integer debitIndex, Integer creditIndex) {
+        long value;
+        if (amountIndex != null) {
+            Long parsed;
+            try {
+                parsed = parseAmount(fields.get(amountIndex), exponent, mapping.decimalSeparator());
+            } catch (MoneyFormatException e) {
+                return new Amount(null, ImportErrorCode.BAD_AMOUNT);
+            }
+            if (parsed == null) {
+                return new Amount(null, ImportErrorCode.MISSING_AMOUNT);
+            }
+            value = mapping.debitSign() == DebitSign.NEGATIVE ? parsed : -parsed;
+        } else {
+            Long debit;
+            Long credit;
+            try {
+                debit = parseAmount(fields.get(debitIndex), exponent, mapping.decimalSeparator());
+                credit = parseAmount(fields.get(creditIndex), exponent, mapping.decimalSeparator());
+            } catch (MoneyFormatException e) {
+                return new Amount(null, ImportErrorCode.BAD_AMOUNT);
+            }
+            if (debit == null && credit == null) {
+                return new Amount(null, ImportErrorCode.MISSING_AMOUNT);
+            }
+            long d = Math.abs(debit == null ? 0 : debit);
+            long c = Math.abs(credit == null ? 0 : credit);
+            if (d != 0 && c != 0) {
+                return new Amount(null, ImportErrorCode.BOTH_DEBIT_AND_CREDIT);
+            }
+            value = c - d;
+        }
+        if (value == 0) {
+            return new Amount(null, ImportErrorCode.ZERO_AMOUNT);
+        }
+        return new Amount(value, null);
+    }
+
+    private static List<Record> read(String text, char delimiter, List<ImportRowError> errors) {
         List<Record> records = new ArrayList<>();
         List<String> fields = new ArrayList<>();
-        StringBuilder field = new StringBuilder();
-        boolean inQuotes = false;
-        boolean fieldStart = true;
-        int recordStart = 0;
         int number = 1;
+        int recordStart = 0;
+        int length = text.length();
         int i = 0;
-        while (i < text.length()) {
+        while (i < length) {
             char c = text.charAt(i);
-            if (inQuotes) {
-                if (c == '"') {
-                    if (i + 1 < text.length() && text.charAt(i + 1) == '"') {
-                        field.append('"');
+            if (c == '"') {
+                StringBuilder buffer = new StringBuilder();
+                int startRecord = number;
+                i++;
+                boolean closed = false;
+                while (i < length) {
+                    c = text.charAt(i);
+                    if (c == '"') {
+                        if (i + 1 < length && text.charAt(i + 1) == '"') {
+                            buffer.append('"');
+                            i += 2;
+                            continue;
+                        }
+                        closed = true;
                         i++;
-                    } else {
-                        inQuotes = false;
+                        break;
                     }
-                } else {
-                    field.append(c);
-                }
-            } else if (c == '"' && fieldStart) {
-                inQuotes = true;
-                fieldStart = false;
-            } else if (c == delimiter) {
-                fields.add(field.toString());
-                field.setLength(0);
-                fieldStart = true;
-            } else if (c == '\r' || c == '\n') {
-                fields.add(field.toString());
-                addRecord(records, number, fields, text.substring(recordStart, i));
-                fields = new ArrayList<>();
-                field.setLength(0);
-                fieldStart = true;
-                number++;
-                if (c == '\r' && i + 1 < text.length() && text.charAt(i + 1) == '\n') {
+                    buffer.append(c);
                     i++;
                 }
-                recordStart = i + 1;
+                if (!closed) {
+                    errors.add(new ImportRowError(startRecord, ImportErrorCode.UNTERMINATED_QUOTE));
+                    return records;
+                }
+                int tailStart = i;
+                while (i < length) {
+                    c = text.charAt(i);
+                    if (c == delimiter || c == '\r' || c == '\n') {
+                        break;
+                    }
+                    i++;
+                }
+                buffer.append(text, tailStart, i);
+                fields.add(buffer.toString());
             } else {
-                field.append(c);
-                fieldStart = false;
+                int start = i;
+                while (i < length) {
+                    c = text.charAt(i);
+                    if (c == delimiter || c == '\r' || c == '\n') {
+                        break;
+                    }
+                    i++;
+                }
+                fields.add(text.substring(start, i));
             }
+            if (i >= length) {
+                endRecord(records, fields, number, text.substring(recordStart, i));
+                return records;
+            }
+            c = text.charAt(i);
+            if (c == delimiter) {
+                i++;
+                if (i >= length) {
+                    fields.add("");
+                    endRecord(records, fields, number, text.substring(recordStart, i));
+                    return records;
+                }
+                continue;
+            }
+            int end = i;
             i++;
-        }
-        if (inQuotes) {
-            errors.add(new CsvError(number, "UNTERMINATED_QUOTE", null, text.substring(recordStart)));
-        } else if (recordStart < text.length()) {
-            fields.add(field.toString());
-            addRecord(records, number, fields, text.substring(recordStart));
+            if (c == '\r' && i < length && text.charAt(i) == '\n') {
+                i++;
+            }
+            endRecord(records, fields, number, text.substring(recordStart, end));
+            fields = new ArrayList<>();
+            number++;
+            recordStart = i;
         }
         return records;
     }
 
-    private static void addRecord(List<Record> records, int number, List<String> fields, String raw) {
-        if (fields.size() == 1 && fields.getFirst().isBlank()) {
-            return;
+    private static void endRecord(List<Record> records, List<String> fields, int number, String raw) {
+        if (!(fields.size() == 1 && fields.getFirst().isEmpty())) {
+            records.add(new Record(number, List.copyOf(fields), raw));
         }
-        records.add(new Record(number, List.copyOf(fields), raw));
-    }
-
-    private static String field(Record record, Map<String, Integer> indexes, String column) {
-        return record.fields().get(indexes.get(column)).strip();
-    }
-
-    private static CsvError error(Record record, String code, String column) {
-        return new CsvError(record.number(), code, column, record.raw());
-    }
-
-    private static Integer position(String column) {
-        try {
-            int index = Integer.parseInt(column.strip());
-            return index >= 0 ? index : null;
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
-    private static String normalise(String header) {
-        return header.strip().toLowerCase(Locale.ROOT);
-    }
-
-    /** STRICT resolution needs proleptic years, so {@code y} becomes {@code u}. */
-    private static String strictPattern(String pattern) {
-        return pattern.replace('y', 'u');
     }
 }
