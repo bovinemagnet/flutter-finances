@@ -4,13 +4,29 @@ Paul Snow
 
 This page summarises sync protocol version 1 (`spec/sync/protocol.md`). The client is the primary store. Every user action is saved together with a command in a local outbox in one SQLite transaction (SYNC 01). The server validates commands, commits canonical state and exposes an ordered change feed. All JSON uses camelCase. Money is integer minor units in the workspace currency, dates are `YYYY-MM-DD` and instants are ISO 8601 UTC.
 
-NOTE: The server is planned. This page documents the specified contract.
+NOTE: The server is implemented as a Spring Boot application (`server/app`). This page documents the contract it and the client both follow.
 
 .Command flow
 [source,mermaid]
 ----
 include::example$sync-sequence.mmd[]
 ----
+
+== Headers and setup
+
+Every API call sends `Authorization: Bearer` (an OIDC access token) and `X-Device-Id` (the client's device id). Presigned object storage URLs never receive these headers or the token.
+
+* `/v1/sync/*` requires a registered, unrevoked device of the caller. Otherwise the response is `400 DEVICE_REQUIRED`, `403 DEVICE_NOT_AUTHORISED` or `403 DEVICE_REVOKED`.
+* Other workspace endpoints take `X-Workspace-Id`, or fall back to the workspace of the device.
+* The client sends `X-Workspace-Id` once it has synced, and for a bootstrap preview.
+
+Setup uses three calls:
+
+`+POST /v1/workspaces+`:: Payload `+{"id"?, "name", "currency", "timezone"}+`. The client generates the id offline. If a retry after a lost response gets `409 WORKSPACE_EXISTS`, the client reads `+GET /v1/workspaces/{id}+` instead.
+`GET /v1/workspaces`:: Lists the caller's workspaces.
+`POST /v1/devices`:: Payload `+{"deviceId", "workspaceId", "name", "platform"}+`. Repeating it is harmless.
+
+The client API names are `SyncClient.listRemoteWorkspaces()`, `createRemoteWorkspace(name:)` and `registerDevice(workspaceId:, name:, platform:)`. `previewBootstrap` needs a registered device.
 
 == Command envelope
 
@@ -53,7 +69,9 @@ Each entity has an integer `revision`, starting at 1 on creation and incremented
 
 == Field merge
 
-For `entity.upsert` the server keeps a revision per field. A field changed on the server after `baseRevision` with a different value is a conflict and nothing is applied; otherwise the fields merge (SYNC 03). Competing money amounts, split lines, reconciliation changes and deletions are never resolved by last write wins. On conflict the local proposal and server state are preserved, the difference is shown, and the user chooses or combines them through a fresh validated command.
+For `entity.upsert` the server keeps a revision per field. A field changed on the server after `baseRevision` with a different value is a conflict and nothing is applied; otherwise the fields merge (SYNC 03). A field the server never had has not changed, so adding it merges. Competing money amounts, split lines, reconciliation changes and deletions are never resolved by last write wins. On conflict the local proposal and server state are preserved, the difference is shown, and the user chooses or combines them through a fresh validated command.
+
+Identifiers are UUIDs, and entity ids are unique across entity types in a workspace (otherwise `ENTITY_TYPE_MISMATCH`). An entity that belongs to another, such as a journal annotation or an entry's review state, therefore uses a name-based UUID derived from its owner's id.
 
 == Server journal validation
 
@@ -80,6 +98,14 @@ Tombstones are retained for a proposed 90 days (SYNC 06). A cursor older than th
 
 Metadata may arrive before an image, in which case other devices show "Image pending".
 
+Limits:
+
+* Each file is at most 20 MiB (`400 TOO_LARGE` at the upload intent).
+* A receipt's source documents total at most 10 pages, checked at completion (`422 TOO_MANY_PAGES`). PDF pages are counted like the shared `pdf.inspect` fixture, an image is one page and derivatives do not count.
+* The scan rejects images over 16,384 px per side or 50 megapixels.
+
+Downloading before the scan finishes is `409 ASSET_NOT_AVAILABLE`, and `404` before any upload intent. The client shows "Image pending" in both cases.
+
 == Endpoints
 
 [cols="1,3",options="header"]
@@ -91,8 +117,16 @@ Metadata may arrive before an image, in which case other devices show "Image pen
 | `GET /v1/sync/snapshot` | Page a snapshot for rebase
 | `POST /v1/receipts/upload-intents` | Request an upload URL
 | `+POST /v1/receipts/{id}/complete+` | Complete an upload
-| `+GET /v1/receipts/{id}/download+` | Scoped download (see above for the asset path)
+| `+GET /v1/receipts/{receiptId}/assets/{assetId}/download+` | Scoped download
+| `POST /v1/workspaces` | Create a workspace
+| `GET /v1/workspaces` | List the caller's workspaces
+| `+GET /v1/workspaces/{id}+` | Read a workspace and its bootstrap settings
+| `+DELETE /v1/workspaces/{id}+` | Delete a workspace
 | `POST /v1/imports/preview`, `+POST /v1/imports/{id}/commit+` | Import preview and commit
 | `POST /v1/exports`, `+GET /v1/jobs/{id}+` | Export and job status
 | `POST /v1/devices`, `+DELETE /v1/devices/{id}+` | Register and revoke devices
 |===
+
+== End-to-end tests
+
+`tool/e2e/run.sh` starts PostgreSQL and MinIO with podman, runs the server with the `e2e` profile and then runs `packages/finance_store/test/e2e` (`dart test -P e2e`). The server verifies tokens with the committed test-only key in `tool/e2e/keys`, which must never be used anywhere else. A plain `dart test` skips these tests.

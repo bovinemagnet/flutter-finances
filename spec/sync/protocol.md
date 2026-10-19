@@ -63,7 +63,10 @@ client last saw (0 for a new entity).
 - `entity.upsert` payload `{"fields": {...}}` with only the changed fields.
   The server keeps a revision per field. A field changed on the server after
   `baseRevision` with a different value is a conflict and nothing is
-  applied; otherwise fields merge (SYNC 03). Never last write wins.
+  applied; otherwise fields merge (SYNC 03). A field the server never had
+  has not changed, so adding it merges even when `baseRevision` is behind
+  (or 0 for two devices creating the same derived entity). Never last
+  write wins.
 - `entity.delete` writes a tombstone. Deleting a posted journal is rejected
   (`POSTED_JOURNAL_IMMUTABLE`); void it with `journal.correct` and a null
   replacement.
@@ -124,18 +127,37 @@ take `X-Workspace-Id`, or fall back to the workspace of `X-Device-Id`. A
 workspace the caller is not a member of is `404 WORKSPACE_NOT_FOUND`;
 another workspace's receipt, asset, job or export is `404`, never `403`, so
 an identifier reveals nothing (A17). A command whose `workspaceId` or
-`deviceId` differs from the calling device's is `permission_denied`.
+`deviceId` differs from the calling device's is `permission_denied` with
+`errors: ["NOT_PERMITTED"]`. Every result carries `errors`, empty when
+there are none. Clients send `X-Device-Id` (their own device id) on every
+API call and `X-Workspace-Id` once synced and with a bootstrap preview;
+presigned object storage URLs never receive these headers or the token.
+
+**Identifiers.** `commandId`, `workspaceId`, `deviceId`, `entityId`,
+`receiptId` and `assetId` are UUIDs (a malformed command is
+`INVALID_COMMAND`). An entity id is unique across entity types within a
+workspace: reusing another type's id is `ENTITY_TYPE_MISMATCH`. An entity
+that belongs to another one, such as a journal's `journalAnnotation` or an
+entry's review state, therefore never reuses its owner's id; clients
+derive a name-based UUID from the owner's id (the same on every device, so
+concurrent edits still merge) and name the owner in a field such as
+`journalId`.
 
 **Setup.** `POST /v1/workspaces` `{"id"?, "name", "currency", "timezone"}`
 creates a workspace owned by the caller (`id` may be generated offline; a
 deleted workspace's id is refused with `409 WORKSPACE_DELETED`, so a restore
-always creates a new workspace, DATA 03). `GET /v1/workspaces` lists the
-caller's workspaces and `GET /v1/workspaces/{id}` returns the bootstrap
+always creates a new workspace, DATA 03) and answers `201` with the
+workspace; an id that already exists is `409 WORKSPACE_EXISTS`, so a client
+retrying after a lost answer reads `GET /v1/workspaces/{id}` instead.
+`GET /v1/workspaces` lists the caller's workspaces as `[{"id", "name",
+"currency", "currencyExponent", "timezone", "role"}]` and
+`GET /v1/workspaces/{id}` returns the bootstrap
 settings (currency and exponent, timezone, `schemaVersion`,
 `tombstoneHorizonDays`, `maxCommandsPerBatch`, `serverTime`).
 `POST /v1/devices` `{"deviceId", "workspaceId", "name", "platform"}`
 registers a device (repeating it is harmless); `DELETE /v1/devices/{id}`
-revokes it for good (its owner or a workspace owner).
+revokes it for good (its owner or a workspace owner). A device must be
+registered before it previews a bootstrap, which reads `/v1/sync/changes`.
 
 **Absent and deleted entities.** A command against a tombstone is a
 `conflict` with `errors: ["ENTITY_DELETED"]` and `serverState: null`; one
@@ -179,17 +201,25 @@ client keeps the first page's.
 **Receipts.** An intent needs a live `receipt` entity in the workspace
 (`404 RECEIPT_NOT_FOUND`); the first intent binds the receipt to that
 workspace. Accepted types are those `content.sniff` recognises (JPEG, PNG,
-HEIC, HEIF, PDF; `400 UNSUPPORTED_CONTENT_TYPE`), up to 25 MiB
+HEIC, HEIF, PDF; `400 UNSUPPORTED_CONTENT_TYPE`), up to 20 MiB
 (`400 TOO_LARGE`), with a lower-case hex `sha256` (`400 INVALID_CHECKSUM`).
+These limits match the client's `ContentLimits` (REC 05): a receipt's
+source documents hold at most 10 pages together, counted at completion
+(a PDF as the shared `pdf.inspect` fixture counts, at least one; an image
+is one page; derivatives are renderings and do not count), and the scan
+rejects images wider or taller than 16,384 pixels or larger than 50
+megapixels (`IMAGE_TOO_LARGE`).
 Uploads go to a staging key; completion copies verified bytes to the
 asset's permanent key, so a late or repeated upload cannot replace them.
 Completion answers `200 {"status": "quarantined" | "available" |
 "rejected"}`, `404 UNKNOWN_ASSET`, `409 OBJECT_MISSING` (nothing uploaded),
-or `422 CHECKSUM_MISMATCH` (size or checksum) and `422
-CONTENT_TYPE_MISMATCH`; after a 422 the client may upload again. A new
+or `422 CHECKSUM_MISMATCH` (size or checksum), `422
+CONTENT_TYPE_MISMATCH` and `422 TOO_MANY_PAGES`; after a 422 the client may
+upload again. A new
 intent with a different checksum for a completed asset is
-`409 ASSET_ALREADY_COMPLETE`. Download of another workspace's asset is
-`404 NOT_FOUND`; a rejected asset stays `409 ASSET_NOT_AVAILABLE`.
+`409 ASSET_ALREADY_COMPLETE`. Download of another workspace's asset, or
+of one with no upload intent yet, is `404 NOT_FOUND`; a rejected asset
+stays `409 ASSET_NOT_AVAILABLE`. Clients treat both as "Image pending".
 
 **CSV imports (IMP 01-03).** `POST /v1/imports/preview` `{"fileName",
 "contentBase64", "mapping", "outflowCategoryId", "inflowCategoryId"}`
@@ -224,6 +254,12 @@ of every file); `GET /v1/exports/{id}/download` returns `{"downloadUrl",
 "expiresAt"}` or `409 EXPORT_NOT_READY`. `DELETE /v1/workspaces/{id}`
 (owner) revokes every device at once and returns `202` with a deletion
 whose progress `GET /v1/workspaces/{id}/deletion` reports to the requester.
+The deletion's suppression record outlives the workspace (SEC 06): if a
+restored database backup brings a deleted workspace back, the server
+treats it as gone at once (`404 WORKSPACE_NOT_FOUND` for workspace and
+receipt calls and device registration, `403 DEVICE_REVOKED` on
+`/v1/sync/*`, `409 WORKSPACE_DELETED` on creation), and the worker erases
+it again with every module's purger at startup and every 15 minutes.
 
 **Errors.** Non-2xx responses are `{"error", "message", "correlationId"}`;
 every response carries `X-Correlation-Id`.
