@@ -255,6 +255,7 @@ void main() {
         final server = FakeSyncServer(workspaceId: 'ws-new');
         final device = Device.wrap('restored', restored, server);
         addTearDown(device.close);
+        await device.register(server);
         final preview = await device.client.previewBootstrap(
           remoteWorkspaceId: 'ws-new',
         );

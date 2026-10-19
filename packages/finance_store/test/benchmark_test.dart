@@ -131,6 +131,7 @@ void main() {
     for (var i = 0; i < 3000; i++) {
       await store.postTransaction(expense('1.00', payee: 'Item $i'));
     }
+    await device.register(server);
     final preview = await device.client.previewBootstrap(
       remoteWorkspaceId: 'ws-bulk',
     );
