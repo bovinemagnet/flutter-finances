@@ -312,6 +312,158 @@ approve a match. Results are deleted when consent is withdrawn, when the
 receipt entity is deleted (in the deleting command's transaction) and by
 the workspace deletion job.
 
+## Bank feeds (BANK 01-03, P1)
+
+**Pending business decision.** No real provider is wired. Choosing an
+Australian Consumer Data Right provider, and the participation model the
+application operates under (for example as a CDR representative of an
+accredited intermediary, or as an accredited recipient itself), is a
+pending business decision (BANK 01). Until it is made, only the
+deterministic `sandbox` provider exists, and only when
+`finance.bank-feeds.sandbox.enabled` is true. The application never asks
+for bank passwords: consent is given at the provider or data holder
+through the provider's consent URL. The application stays fully useful
+through manual entry and CSV import whenever a provider is unavailable.
+
+**Adapter boundary.** Each provider is a server-side `BankFeedProvider`
+adapter that lists shared accounts, fetches an account's transactions
+after a cursor (with provider ids, `pending | posted` status, the pending
+id a posted transaction settles, a previous id when the provider changed
+it, and the transaction a reversal reverses), reports consent status and
+expiry, refreshes and revokes tokens. Provider tokens never reach clients
+or logs; they are stored AES-GCM encrypted (a fresh nonce each time, the
+connection id as associated data) with a key from configuration
+(`finance.bank-feeds.token-key`, base64; without it connecting is `409
+BANK_FEEDS_UNAVAILABLE`).
+
+**Connections.** All endpoints take `X-Workspace-Id` (or `X-Device-Id`);
+another workspace's connection is `404 CONNECTION_NOT_FOUND`, and viewers
+can read but not change. A connection is:
+
+```json
+{
+  "id": "uuid", "provider": "sandbox",
+  "institution": {"id": "sandbox-bank", "name": "Sandbox Bank"},
+  "sharedAccounts": [{"id", "name", "type", "maskedNumber"}],
+  "dataScope": ["bank:accounts.basic:read", "bank:transactions:read"],
+  "purpose": "Suggest entries from my bank transactions",
+  "consentStatus": "pending | active | expired | revoked",
+  "consentExpiresAt": "instant", "lastSuccessfulRefreshAt": "instant",
+  "stale": false, "error": {"code": "RATE_LIMITED", "at": "instant"},
+  "nextRefreshAt": "instant", "createdAt": "instant", "revokedAt": null,
+  "consentUrl": "https://... (only when the user must consent at the provider)"
+}
+```
+
+Absent values are omitted. `stale` is true when an active feed has not
+refreshed successfully for `finance.bank-feeds.stale-after` (36 hours);
+clients show stale feeds prominently and never present a connected
+account as real-time.
+
+- `POST /v1/bank-feeds/connections` `{"provider", "institutionId"?,
+  "dataScope"?, "purpose"}` answers `201` with the connection. A real
+  provider returns `consentStatus: pending` and a `consentUrl`; the sandbox
+  grants at once and queues the backfill. `400 UNKNOWN_PROVIDER`,
+  `400 PURPOSE_REQUIRED` (blank or over 500 characters), `400
+  INVALID_SCOPE` (only the two scopes above may be requested).
+- `POST /v1/bank-feeds/connections/{id}/consent-callback` `{"state",
+  "code"}` completes a redirect consent: `400 INVALID_CONSENT_STATE` when
+  the state does not match the one in the consent URL (only its SHA-256 is
+  stored), `409 CONSENT_REJECTED` when the provider refuses the code, `409
+  CONSENT_NOT_PENDING` when nothing is waiting.
+- `GET /v1/bank-feeds/connections` and `GET /v1/bank-feeds/connections/{id}`.
+- `POST /v1/bank-feeds/connections/{id}/refresh` answers `202 {"jobId"}`;
+  `409 CONSENT_EXPIRED`, `409 CONSENT_PENDING` or `409 CONNECTION_REVOKED`
+  when nothing may be collected.
+- `POST /v1/bank-feeds/connections/{id}/reconnect` renews consent and
+  keeps the connection's records and cursors, so nothing is proposed twice;
+  it may return a `consentUrl`. A revoked connection is `409
+  CONNECTION_REVOKED`: connect again instead.
+- `DELETE /v1/bank-feeds/connections/{id}` revokes: consent is withdrawn at
+  the provider (best effort), the tokens are deleted and collection stops
+  for good; a refresh already queued collects nothing. Existing provider
+  records and decisions are kept until the workspace is deleted.
+
+Creating, connecting, reconnecting and revoking are audited
+(`bank_feed.*`). Workspace deletion withdraws consent at each provider
+(best effort) and deletes connections, tokens, accounts and records.
+
+**Refresh.** The `bankfeeds.refresh` job renews the access token when it
+is due, confirms the consent is still active (otherwise the connection
+becomes `expired` and its tokens are deleted), refreshes the shared
+accounts and pages each account from its stored cursor; the first run is
+the backfill. Each page and its cursor commit together, after locking the
+connection, so nothing is collected once a revocation has committed. When
+the provider rate-limits, the connection records `error.code
+RATE_LIMITED` and `nextRefreshAt`, and the job queues its own retry after
+the base delay (`refresh-base-backoff`, 1 minute) doubled for each
+consecutive limit, at least the provider's requested delay and at most
+`refresh-max-backoff` (6 hours); after `max-rate-limit-retries` (8) it
+waits for the next manual refresh or webhook. Success clears the error
+and sets `lastSuccessfulRefreshAt`.
+
+**Webhooks.** `POST /v1/bank-feeds/webhooks/{provider}` needs no user
+token. The provider signs each delivery with its configured secret
+(`finance.bank-feeds.webhook-secrets.<provider>`): `X-Webhook-Id` (the
+delivery id), `X-Webhook-Timestamp` (Unix seconds) and
+`X-Webhook-Signature: v1=<hex HMAC-SHA256 of "<id>.<timestamp>.<raw
+body>">`. A bad or missing signature is `401 INVALID_SIGNATURE`, a
+timestamp more than `webhook-tolerance` (5 minutes) from the server clock
+is `401 TIMESTAMP_OUT_OF_TOLERANCE`, and an unknown provider is `404`. A
+delivery id already handled answers `200 {"status": "duplicate"}` and does
+nothing; otherwise `202 {"status": "accepted"}`. The body `{"type",
+"connectionReference"}` only triggers work: `transactions.updated` queues
+a refresh, `consent.revoked` ends collection and deletes the tokens,
+`consent.expired` marks the consent expired. Unknown types and unknown or
+inactive connections are acknowledged and ignored, so a webhook reveals
+nothing. Webhooks never carry transactions the server trusts.
+
+**Provider records and proposals.** Provider transactions are stored as
+provider records, separate from canonical journals, and are never posted
+automatically. `GET /v1/bank-feeds/{connectionId}/proposals?status=open |
+all | superseded | accepted | dismissed` (default `open`) returns
+`{"connectionId", "proposals": [{"recordId", "accountId",
+"providerTransactionId", "previousProviderTransactionIds", "status":
+"pending | posted", "amountMinor", "currency", "date", "description",
+"kind": "new | settles_pending | reversal", "relatedRecordId",
+"settledByRecordId", "reversedByRecordId", "proposalStatus", "journalId",
+"firstSeenAt"}]}`. Descriptions are untrusted provider text. The client
+turns an accepted proposal into a journal through the normal command path
+(posted, or pending for a pending record, which never touches the posted
+ledger) and then records the decision with
+`POST /v1/bank-feeds/{connectionId}/proposals/{recordId}/decision`
+`{"decision": "accepted | dismissed", "journalId"?}`; the journal must be
+a live journal of the workspace (`400 JOURNAL_NOT_FOUND`), and a proposal
+that is no longer open is `409 PROPOSAL_DECIDED`. Reconciliation is
+explicit and idempotent:
+
+- the same provider id again updates a pending record and is otherwise
+  ignored;
+- a pending transaction that posts arrives as a posted record of kind
+  `settles_pending`, linked both ways (`relatedRecordId`,
+  `settledByRecordId`). If the pending proposal was still open it becomes
+  `superseded`; if it was accepted it keeps its `journalId`, and the
+  client settles that entry rather than adding a second purchase;
+- a provider id change renames the existing record and lists the old id
+  in `previousProviderTransactionIds`; a late delivery under the old id is
+  ignored;
+- a reversal is a record of kind `reversal`, linked both ways
+  (`relatedRecordId`, `reversedByRecordId`); the user decides how to
+  correct any journal created from the original (a reversal plus
+  replacement, never an edit of posted history).
+
+A provider that drops a pending transaction without posting it, or
+changes an id without reporting the previous one, cannot be detected by
+cursor-based collection; the user reviews such cases as ordinary
+proposals.
+
+**Sandbox.** The `sandbox` provider is a fake institution ("Sandbox
+Bank") with two accounts and a fixed timeline measured from when the
+connection was first made: day 0 has three posted transactions and one
+pending purchase; day 1 posts that purchase under a new id and adds a
+subscription; day 2 changes a transaction's id and reverses the
+subscription. Its consent lasts 90 days and pages hold two transactions.
+
 ## Entity JSON
 
 Journal:
