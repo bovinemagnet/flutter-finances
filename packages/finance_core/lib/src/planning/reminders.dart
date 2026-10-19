@@ -59,20 +59,10 @@ PlannedReminder? planReminder(
 ) {
   final preference = schedule.reminder;
   if (!preference.enabled || occurrence.skipped) return null;
-  var day = occurrence.dueDate.addDays(-preference.leadDays);
-  var minute = preference.minuteOfDay;
-  final quietStart = preference.quietStartMinute;
-  final quietEnd = preference.quietEndMinute;
-  if (quietStart != null && quietEnd != null && quietStart != quietEnd) {
-    final overnight = quietStart > quietEnd;
-    final quiet = overnight
-        ? minute >= quietStart || minute < quietEnd
-        : minute >= quietStart && minute < quietEnd;
-    if (quiet) {
-      if (overnight && minute >= quietStart) day = day.addDays(1);
-      minute = quietEnd;
-    }
-  }
+  final (day, minute) = applyQuietHours(
+    occurrence.dueDate.addDays(-preference.leadDays),
+    preference,
+  );
   final due = occurrence.dueDate;
   final income = schedule.kind == ScheduleKind.income;
   final verb = income ? 'expected on' : 'due on';
@@ -88,4 +78,24 @@ PlannedReminder? planReminder(
     minuteOfDay: minute,
     text: text,
   );
+}
+
+/// The day and minute to remind on [day] at the preference's minute,
+/// moved to the end of quiet hours when it would fall inside them (to the
+/// next morning for overnight quiet hours).
+(LocalDate, int) applyQuietHours(LocalDate day, ReminderPreference preference) {
+  var minute = preference.minuteOfDay;
+  final quietStart = preference.quietStartMinute;
+  final quietEnd = preference.quietEndMinute;
+  if (quietStart != null && quietEnd != null && quietStart != quietEnd) {
+    final overnight = quietStart > quietEnd;
+    final quiet = overnight
+        ? minute >= quietStart || minute < quietEnd
+        : minute >= quietStart && minute < quietEnd;
+    if (quiet) {
+      if (overnight && minute >= quietStart) day = day.addDays(1);
+      minute = quietEnd;
+    }
+  }
+  return (day, minute);
 }
