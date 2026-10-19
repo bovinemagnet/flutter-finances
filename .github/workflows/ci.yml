@@ -1,0 +1,123 @@
+# Tests for every package, the server build and the end-to-end suite.
+#
+# Locally the repository uses `gradle25w`, a wrapper script on the developer's
+# PATH that selects Java 25 before calling ./gradlew. It does not exist on
+# GitHub runners, so CI installs Java 25 with actions/setup-java and calls
+# ./gradlew directly.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: 3.47.7
+  JAVA_VERSION: "25"
+
+jobs:
+  dart-packages:
+    name: Dart packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      # The pub workspace includes the Flutter app, so resolution needs the
+      # Flutter SDK even for the pure Dart packages.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Resolve the workspace
+        run: dart pub get
+      - name: finance_core analyse
+        working-directory: packages/finance_core
+        run: dart analyze
+      - name: finance_core tests
+        working-directory: packages/finance_core
+        run: dart test
+      - name: finance_store analyse
+        working-directory: packages/finance_store
+        run: dart analyze
+      # End-to-end tests are tagged `e2e` and skipped here; the e2e job runs them.
+      - name: finance_store tests
+        working-directory: packages/finance_store
+        run: dart test
+
+  flutter-app:
+    name: Flutter app
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Resolve the workspace
+        run: flutter pub get
+      - name: Analyse
+        working-directory: apps/finance_app
+        run: flutter analyze
+      - name: Test
+        working-directory: apps/finance_app
+        run: flutter test
+
+  server:
+    name: Server build (Java 25)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: gradle/actions/setup-gradle@v6
+      # Integration tests use Testcontainers; the runner's Docker daemon is
+      # used because the Podman socket the Gradle build looks for is absent.
+      - name: Build and test
+        run: ./gradlew --no-daemon build
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: server-test-reports
+          path: server/*/build/reports/tests/
+          retention-days: 7
+
+  e2e:
+    name: End-to-end (Dart client against the server)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [dart-packages, server]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: gradle/actions/setup-gradle@v6
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Resolve the workspace
+        run: dart pub get
+      - name: Run the end-to-end suite
+        env:
+          CONTAINER_ENGINE: docker
+          GRADLE: ./gradlew --no-daemon
+          FINANCE_E2E_KEEP_LOGS: "1"
+        run: tool/e2e/run.sh

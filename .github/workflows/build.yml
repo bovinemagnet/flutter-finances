@@ -1,0 +1,167 @@
+# Unsigned builds for every platform, each on its own operating system.
+#
+# Nothing here is signed and no secret is read, so the workflow is safe for
+# pull requests from forks. Signed artefacts come only from release.yml.
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: 3.47.7
+
+jobs:
+  android:
+    name: Android APK and App Bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      # Without android/key.properties the release build type is signed with
+      # the debug key, which is fine for a test artefact.
+      - name: Build APK
+        working-directory: apps/finance_app
+        run: flutter build apk --release
+      - name: Build App Bundle
+        working-directory: apps/finance_app
+        run: flutter build appbundle --release
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-unsigned
+          path: |
+            apps/finance_app/build/app/outputs/flutter-apk/app-release.apk
+            apps/finance_app/build/app/outputs/bundle/release/app-release.aab
+          retention-days: 7
+
+  linux:
+    name: Linux bundle and packages
+    # Ubuntu 24.04 LTS is the named Linux baseline (PRD section 15).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
+            libstdc++-12-dev libsecret-1-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev \
+            desktop-file-utils appstream
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - name: Build
+        working-directory: apps/finance_app
+        run: flutter build linux --release
+      - name: Package (.tar.gz and .deb)
+        run: tool/packaging/linux/build-deb.sh --require-deb --out dist/linux
+      - name: Check the package installs on the baseline
+        run: |
+          sudo apt-get install -y ./dist/linux/finance-app_*_amd64.deb
+          test -x /usr/bin/finance-app
+          dpkg -L finance-app | grep -q /usr/share/metainfo/com.paulsnow.finance.app.metainfo.xml
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-unsigned
+          path: dist/linux/
+          retention-days: 7
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - name: Build
+        working-directory: apps/finance_app
+        run: flutter build windows --release
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-unsigned
+          path: apps/finance_app/build/windows/x64/runner/Release/
+          retention-days: 7
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter config --enable-swift-package-manager
+      - run: flutter pub get
+      - name: Build
+        working-directory: apps/finance_app
+        run: flutter build macos --release
+      - name: Archive
+        run: ditto -c -k --keepParent apps/finance_app/build/macos/Build/Products/Release/finance_app.app finance_app-macos-unsigned.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-unsigned
+          path: finance_app-macos-unsigned.zip
+          retention-days: 7
+
+  ios:
+    name: iOS (no code signing)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      # receive_sharing_intent is distributed as a Swift package only.
+      - run: flutter config --enable-swift-package-manager
+      - run: flutter pub get
+      - name: Add the share extension target
+        working-directory: apps/finance_app
+        run: |
+          gem install --user-install --no-document xcodeproj
+          ruby ios/tool/add_share_extension.rb
+      - name: Build
+        working-directory: apps/finance_app
+        run: flutter build ios --release --no-codesign
+      - name: Check the extension is embedded
+        run: test -d apps/finance_app/build/ios/iphoneos/Runner.app/PlugIns/ShareExtension.appex
+      - name: Archive
+        run: ditto -c -k --keepParent apps/finance_app/build/ios/iphoneos/Runner.app Runner-ios-unsigned.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ios-unsigned
+          path: Runner-ios-unsigned.zip
+          retention-days: 7

@@ -39,6 +39,20 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  msix: ^3.18.0
 
 flutter:
   uses-material-design: true
+
+# Windows MSIX package (`dart run msix:create`). The release workflow builds
+# with `--build-windows false` after `flutter build windows`, and passes the
+# signing certificate, its password and the version on the command line, so
+# no secret lives here. See tool/packaging/README.md.
+msix_config:
+  display_name: Finance
+  publisher_display_name: Paul Snow
+  identity_name: com.paulsnow.finance.app
+  logo_path: macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_512.png
+  capabilities: internetClient
+  languages: en-au, en-gb, en-us
+  install_certificate: false
