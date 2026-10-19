@@ -2,19 +2,30 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Repository state
+## Repository layout and commands
 
-This repository is at the specification stage. The only content is the product requirements document at `docs/prd/initial.md`; there is no source code, build configuration, or test suite yet. Read the PRD before starting any feature work: requirement IDs (`FIN 03`, `REC 04`, `SYNC 02`, acceptance tests `A01`–`A18`, etc.) are the shared vocabulary for scope and tests.
+Requirements are in `docs/prd/initial.md`; requirement IDs (`FIN 03`, `REC 04`, `SYNC 02`, acceptance tests `A01`–`A18`) are the shared vocabulary for scope and tests. The implementation roadmap is `docs/superpowers/plans/2026-10-19-personal-finance-roadmap.md`.
 
-When build tooling is added, record the build, lint, and single-test commands here. For any Gradle-based backend, use `gradle25w` rather than `./gradlew`.
+| Path | What it is | Commands |
+| --- | --- | --- |
+| `pubspec.yaml` | Dart pub workspace root (also sets the `sqlite3mc` hook so SQLite is encrypted) | `dart pub get` (run once at the root) |
+| `packages/finance_core` | Pure Dart domain: money, ledger, planning, documents/imports | `dart test`, `dart test test/ledger_test.dart -N "A01"`, `dart analyze` |
+| `packages/finance_store` | Encrypted SQLite store, outbox, receipt vault, sync client, backup | `dart test`, `dart analyze` |
+| `apps/finance_app` | Flutter client (iOS, Android, Windows, macOS, Linux) | `flutter test`, `flutter test test/unit/app_state_test.dart`, `flutter analyze`, `flutter run -d linux` |
+| `server/finance-core`, `server/app` | Java 25 / Spring Boot 4.1 sync service (Gradle subprojects) | `gradle25w build`, `gradle25w :server:app:test --tests '*SyncCommands*'`, `SPRING_PROFILES_ACTIVE=local gradle25w :server:app:bootRun` |
+| `spec/fixtures/*.json` | Golden fixtures run by both the Dart and Java test suites | change a rule here first |
+| `spec/sync/protocol.md` | Client/server sync contract | |
+| `src/docs` | Antora documentation | `gradle25w antora` |
 
-## Planned architecture (from the PRD)
+Always use `gradle25w`, never `./gradlew`. Server integration tests use Testcontainers through the Podman socket (configured in the Gradle `test` task). Run every package's tests after merging changes from another package: a new export in `finance_core` can clash with names in `finance_store` or Flutter (for example `Split` clashes with Flutter's animation `Split`; hide one).
 
-- **Clients:** Flutter for iOS, Android, Windows, macOS and Linux. Dart packages organised by domain (accounts/ledger, budgeting, planning, receipts, imports, sync, reporting), with UI, business rules, persistence and platform services kept separate. Riverpod and Drift are *proposed*, pending a prototype.
-- **Local storage:** encrypted SQLite plus protected files. The client reads from its local database and writes user actions together with an outbox command in a single local transaction (`SYNC 01`).
+## Architecture
+
+- **Clients:** Flutter for iOS, Android, Windows, macOS and Linux. Dart packages organised by domain (accounts/ledger, budgeting, planning, receipts, imports, sync, reporting), with UI, business rules, persistence and platform services kept separate. State lives in an `AppState` `ChangeNotifier` exposed through `AppScope` (an `InheritedNotifier`); Riverpod and Drift were proposed in the PRD but not adopted.
+- **Local storage:** `finance_store` — SQLite3MultipleCiphers database plus an AES-GCM receipt vault; the data key is held in the platform key store or wrapped with an Argon2id password. Every user action and its outbox command are saved in one transaction (`SYNC 01`). Typed tables hold accounts, categories, journals and postings; every other entity type (budget plans, schedules, receipts, rules…) is stored generically as JSON via `upsertEntity` and synced as `entity.upsert` with field-level revisions. The app's entity type names are in `apps/finance_app/lib/data/entity_types.dart` and `receipt_service.dart`/`import_service.dart`.
 - **Backend (optional sync):** Java/Spring Boot modular monolith (Quarkus is an allowed substitute, but never both), PostgreSQL with Liquibase, S3-compatible private object storage, and a background worker deployed from the same codebase. REST + OpenAPI with versioned command envelopes; no GraphQL mutations.
 - **Platform services** sit behind interfaces (`ReceiptScanner`, `TextRecognizer`, `SecureKeyStore`, `FileImporter`, `ShareInbox`, `Notifications`, `BackgroundScheduler`). Do not scatter platform conditionals through finance code. Layouts are driven by width breakpoints (compact < 600, medium 600–1023, expanded ≥ 1024), not by OS checks.
-- A **decision prototype** (PRD §10) is meant to precede feature development: offline receipt capture, DB encryption/key retrieval, PDF import, share-target handoff, two-device conflict, signed builds on all five OS families.
+- Only the Linux desktop build can be produced and run on this development machine; Android, iOS, macOS and Windows builds must be made on their own operating systems (the iOS share extension target has not been added yet).
 
 ## Financial invariants that must not be broken
 
