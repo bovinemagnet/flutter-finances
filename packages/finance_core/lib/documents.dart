@@ -1,7 +1,10 @@
 /// Receipts, extraction, matching, imports, rules and exports.
 library;
 
+export 'src/documents/exports/archive_manifest.dart';
 export 'src/documents/exports/csv_writer.dart';
+export 'src/documents/exports/restore_verification.dart';
+export 'src/documents/exports/transaction_export.dart';
 export 'src/documents/extraction/extraction.dart';
 export 'src/documents/extraction/ocr_result.dart';
 export 'src/documents/extraction/receipt_dates.dart' show DateConvention;
