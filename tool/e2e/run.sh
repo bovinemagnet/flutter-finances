@@ -114,7 +114,10 @@ if [[ "${FINANCE_E2E_SKIP_BUILD:-}" != 1 ]]; then
 fi
 JAR="$ROOT/server/app/build/libs/app-0.0.0.jar"
 
-wait_for "PostgreSQL" 60 "$CONTAINER_ENGINE" exec "$RUN_ID-postgres" pg_isready -U finance -d finance
+# Ask over TCP: during first start-up the image runs a temporary server on
+# the Unix socket only, which a socket check would report as ready.
+wait_for "PostgreSQL" 60 "$CONTAINER_ENGINE" exec "$RUN_ID-postgres" \
+  pg_isready -h 127.0.0.1 -U finance -d finance
 wait_for "MinIO" 60 curl -fsS "http://127.0.0.1:$MINIO_PORT/minio/health/live"
 
 log "starting the server on $APP_PORT"
