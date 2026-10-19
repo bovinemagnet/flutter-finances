@@ -331,7 +331,8 @@ class ReceiptVault {
     _ctx.write(() {
       _ctx.db.execute('DELETE FROM assets WHERE id = ?', [id]);
       final ref = EntityRef(documentAssetType, id);
-      if (record.kind != VaultAssetKind.preview && _ctx.state.json(ref) != null) {
+      if (record.kind != VaultAssetKind.preview &&
+          _ctx.state.json(ref) != null) {
         _ctx.record(
           _ctx.newCommand(
             type: CommandType.entityDelete,

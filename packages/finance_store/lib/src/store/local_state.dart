@@ -347,6 +347,7 @@ class LocalState {
     lastReconciledOn: row['last_reconciled_on'] == null
         ? null
         : LocalDate.parse(row['last_reconciled_on'] as String),
+    sharing: AccountSharing.values.byName(row['sharing'] as String),
   );
 
   void _putAccount(
@@ -361,7 +362,7 @@ class LocalState {
       'INSERT OR REPLACE INTO accounts (id, name, type, include_in_budget, '
       'include_in_forecast, include_in_net_worth, archived, data_source, '
       'last_reconciled_on, revision, field_revisions_json, deleted, '
-      'updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'updated_at, sharing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         a.id,
         a.name,
@@ -376,6 +377,7 @@ class LocalState {
         jsonEncode(fields),
         deleted ? 1 : 0,
         _now(),
+        a.sharing.name,
       ],
     );
     _afterWrite(EntityRef(EntityTypes.account, id), json, deleted);

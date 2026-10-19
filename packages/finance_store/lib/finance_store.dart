@@ -53,6 +53,7 @@ export 'src/sync/asset_sync.dart'
         UploadPhase,
         UploadProgress,
         UploadSummary;
+export 'src/sync/household_client.dart';
 export 'src/sync/sync_client.dart';
 export 'src/sync/transport.dart'
     show

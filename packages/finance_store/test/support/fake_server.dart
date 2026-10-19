@@ -712,6 +712,7 @@ class FakeSyncServer {
           v == null ||
               (v is String && RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(v)),
         'parentId' => v == null || v is String,
+        'sharing' => type == 'account' && (v == 'private' || v == 'shared'),
         _ => true,
       };
       if (!valid) return 'INVALID_FIELD';

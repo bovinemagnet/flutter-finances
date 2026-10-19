@@ -124,6 +124,28 @@ void main() {
       db.close();
     });
 
+    test('version 4 adds account sharing with private as the default', () {
+      var db = openEncryptedDatabase(path, key.databaseKeyHex);
+      migrate(db, financeMigrations.take(3).toList());
+      db.execute('''
+        INSERT INTO accounts (id, name, type, include_in_budget,
+          include_in_forecast, include_in_net_worth, archived, data_source,
+          updated_at)
+        VALUES ('bank', 'Everyday', 'transaction', 1, 1, 1, 0, 'manual',
+          '2026-07-01T00:00:00.000Z');
+      ''');
+      db.close();
+      db = openEncryptedDatabase(path, key.databaseKeyHex);
+      migrate(db, financeMigrations);
+      expect(
+        db
+            .select("SELECT sharing FROM accounts WHERE id = 'bank'")
+            .first['sharing'],
+        'private',
+      );
+      db.close();
+    });
+
     test('a failing migration rolls back and can be retried', () {
       var db = openEncryptedDatabase(path, key.databaseKeyHex);
       migrate(db, financeMigrations.take(1).toList());

@@ -466,4 +466,43 @@ void main() {
     expect(s.a.store.entity('goal', g1)!.json['notes'], 'from B');
     expect(s.a.store.entity('goal', g2), isNull);
   });
+
+  e2eTest(
+    'households: a member sees shared accounts but never private ones',
+    () async {
+      final owner = await device('owner', newUser('owner'));
+      final joint = Account(
+        id: newId(),
+        name: 'Joint',
+        type: AccountType.transaction,
+        sharing: AccountSharing.shared,
+      );
+      final mine = Account(
+        id: newId(),
+        name: 'Mine',
+        type: AccountType.savings,
+      );
+      await owner.store.createAccount(joint);
+      await owner.store.createAccount(mine);
+      final workspace = await owner.client.createRemoteWorkspace(name: 'Home');
+      await owner.join(workspace);
+
+      final invitation = await HouseholdClient.of(owner.client)
+          .invite(workspace.id);
+      final partner = await device('partner', newUser('partner'));
+      final role = await HouseholdClient.of(partner.client)
+          .accept(InvitationCode.parse(invitation.code!));
+      expect(role, HouseholdRole.member);
+      await partner.join(workspace);
+
+      expect(partner.store.account(joint.id)?.name, 'Joint');
+      expect(partner.store.account(mine.id), isNull);
+      final members = await HouseholdClient.of(owner.client)
+          .members(workspace.id);
+      expect(members.map((m) => m.role).toSet(), {
+        HouseholdRole.owner,
+        HouseholdRole.member,
+      });
+    },
+  );
 }

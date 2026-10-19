@@ -103,7 +103,8 @@ class AssetRecord {
   bool get imagePending => localState != AssetLocalState.present;
 
   /// Uploadable and not yet confirmed in the cloud.
-  bool get unsynced => kind != VaultAssetKind.preview && cloudConfirmedAt == null;
+  bool get unsynced =>
+      kind != VaultAssetKind.preview && cloudConfirmedAt == null;
 
   /// Metadata synchronised to other devices.
   Map<String, Object?> toEntityJson() => {

@@ -72,6 +72,7 @@ Map<String, Object?> accountToJson(Account account) => {
   'archived': account.archived,
   'dataSource': account.dataSource,
   'lastReconciledOn': account.lastReconciledOn?.toString(),
+  'sharing': account.sharing.name,
 };
 
 Account accountFromJson(Map<String, Object?> json) => Account(
@@ -86,6 +87,9 @@ Account accountFromJson(Map<String, Object?> json) => Account(
   lastReconciledOn: json['lastReconciledOn'] == null
       ? null
       : LocalDate.parse(json['lastReconciledOn'] as String),
+  sharing: AccountSharing.values.byName(
+    json['sharing'] as String? ?? AccountSharing.private.name,
+  ),
 );
 
 Map<String, Object?> categoryToJson(Category category) => {

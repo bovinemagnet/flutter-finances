@@ -13,6 +13,7 @@ final List<Migration> financeMigrations = List.unmodifiable([
   Migration(1, 'core ledger, generic entities, outbox and sync state', _v1),
   Migration(2, 'receipt vault assets', _v2),
   Migration(3, 'full-text search index', _v3),
+  Migration(4, 'household account sharing', _v4),
 ]);
 
 final int latestSchemaVersion = financeMigrations.last.version;
@@ -233,4 +234,11 @@ void _v3(Database db) {
       ),
     );
   }
+}
+
+void _v4(Database db) {
+  db.execute(
+    "ALTER TABLE accounts ADD COLUMN sharing TEXT NOT NULL DEFAULT 'private' "
+    "CHECK (sharing IN ('private', 'shared'))",
+  );
 }

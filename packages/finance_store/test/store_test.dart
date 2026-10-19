@@ -426,4 +426,17 @@ void main() {
     expect(store.journal(j.id)!.amount, m('42.00'));
     expect(store.isUnsynced('journal', j.id), isTrue);
   });
+
+  test('account sharing persists and syncs as a changed field', () async {
+    const joint = Account(
+      id: 'joint',
+      name: 'Joint',
+      type: AccountType.transaction,
+    );
+    await store.createAccount(joint);
+    await store.updateAccount(joint.copyWith(sharing: AccountSharing.shared));
+    expect(store.account('joint')!.sharing, AccountSharing.shared);
+    final upsert = store.pendingCommands().last.command;
+    expect((upsert.payload['fields'] as Map)['sharing'], 'shared');
+  });
 }

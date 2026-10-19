@@ -27,6 +27,11 @@ enum AccountType {
       isLiability ? LedgerKind.liability : LedgerKind.asset;
 }
 
+/// Who in a household can see an account (P1 shared households). A private
+/// account, its journals and reports stay visible only to the member who
+/// created it.
+enum AccountSharing { private, shared }
+
 @immutable
 class Account {
   const Account({
@@ -39,6 +44,7 @@ class Account {
     this.archived = false,
     this.dataSource = 'manual',
     this.lastReconciledOn,
+    this.sharing = AccountSharing.private,
   });
 
   final String id;
@@ -50,6 +56,7 @@ class Account {
   final bool archived;
   final String dataSource;
   final LocalDate? lastReconciledOn;
+  final AccountSharing sharing;
 
   Account copyWith({
     String? name,
@@ -59,6 +66,7 @@ class Account {
     bool? archived,
     String? dataSource,
     LocalDate? lastReconciledOn,
+    AccountSharing? sharing,
   }) => Account(
     id: id,
     name: name ?? this.name,
@@ -69,6 +77,7 @@ class Account {
     archived: archived ?? this.archived,
     dataSource: dataSource ?? this.dataSource,
     lastReconciledOn: lastReconciledOn ?? this.lastReconciledOn,
+    sharing: sharing ?? this.sharing,
   );
 }
 

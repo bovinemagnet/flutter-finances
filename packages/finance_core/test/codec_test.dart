@@ -73,4 +73,21 @@ void main() {
     expect(json['schemaVersion'], syncSchemaVersion);
     expect(SyncCommand.fromJson(json).toJson(), json);
   });
+
+  test('accounts carry household sharing, private by default', () {
+    const account = Account(
+      id: 'a',
+      name: 'Joint',
+      type: AccountType.transaction,
+    );
+    expect(account.sharing, AccountSharing.private);
+    final shared = account.copyWith(sharing: AccountSharing.shared);
+    expect(accountToJson(shared)['sharing'], 'shared');
+    expect(
+      accountFromJson(accountToJson(shared)).sharing,
+      AccountSharing.shared,
+    );
+    final legacy = accountToJson(account)..remove('sharing');
+    expect(accountFromJson(legacy).sharing, AccountSharing.private);
+  });
 }
