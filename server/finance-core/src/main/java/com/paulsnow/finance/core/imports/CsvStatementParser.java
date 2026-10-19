@@ -93,17 +93,17 @@ public final class CsvStatementParser {
         for (Record record : records) {
             List<String> fields = record.fields();
             if (fields.size() <= needed) {
-                errors.add(new ImportRowError(record.number(), ImportErrorCode.MISSING_FIELD));
+                errors.add(new ImportRowError(record.number(), ImportErrorCode.MISSING_FIELD, record.raw()));
                 continue;
             }
             LocalDate parsedDate = parseDate(fields.get(date), mapping.dateFormat());
             if (parsedDate == null) {
-                errors.add(new ImportRowError(record.number(), ImportErrorCode.BAD_DATE));
+                errors.add(new ImportRowError(record.number(), ImportErrorCode.BAD_DATE, record.raw()));
                 continue;
             }
             Amount value = rowAmount(fields, mapping, exponent, amount, debit, credit);
             if (value.error() != null) {
-                errors.add(new ImportRowError(record.number(), value.error()));
+                errors.add(new ImportRowError(record.number(), value.error(), record.raw()));
                 continue;
             }
             String ref = reference != null && reference < fields.size() ? trim(fields.get(reference)) : "";
@@ -239,7 +239,7 @@ public final class CsvStatementParser {
     private static Integer required(CsvColumn column, List<String> header, List<ImportRowError> errors) {
         Integer index = column.resolve(header);
         if (index == null) {
-            errors.add(new ImportRowError(1, ImportErrorCode.COLUMN_NOT_FOUND));
+            errors.add(new ImportRowError(1, ImportErrorCode.COLUMN_NOT_FOUND, null));
         }
         return index;
     }
@@ -313,7 +313,8 @@ public final class CsvStatementParser {
                     i++;
                 }
                 if (!closed) {
-                    errors.add(new ImportRowError(startRecord, ImportErrorCode.UNTERMINATED_QUOTE));
+                    errors.add(new ImportRowError(startRecord, ImportErrorCode.UNTERMINATED_QUOTE,
+                            text.substring(recordStart)));
                     return records;
                 }
                 int tailStart = i;

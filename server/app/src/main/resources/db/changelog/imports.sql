@@ -46,3 +46,14 @@ create table import_row (
     primary key (batch_id, row_number)
 );
 create unique index import_row_committed_key_idx on import_row (workspace_id, dedupe_key) where status = 'committed';
+
+--changeset "Paul Snow":imports-2
+-- Rows carry the shared csv.fingerprint text (dedupe_key) and its SHA-256
+-- (fingerprint); committed fingerprints are unique per workspace, so the
+-- same statement line can never be committed twice (A12) while identical
+-- same-day purchases keep distinct occurrence numbers (A11).
+alter table import_row alter column dedupe_key type text;
+drop index import_row_committed_key_idx;
+create unique index import_row_committed_fingerprint_idx on import_row (workspace_id, fingerprint)
+    where status = 'committed';
+alter table import_batch add column job_id uuid;
