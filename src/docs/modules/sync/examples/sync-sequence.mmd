@@ -1,0 +1,21 @@
+sequenceDiagram
+    participant U as User
+    participant C as Client
+    participant DB as Local SQLite
+    participant S as Sync service
+    participant O as Object storage
+
+    U->>C: Enter expense and receipt
+    C->>DB: Save entry and outbox command (one transaction)
+    C-->>U: Show local result with unsynced indicator
+    C->>S: POST /v1/sync/commands
+    S->>S: Validate, commit state, idempotency record and change record
+    S-->>C: Results (applied, conflict, ...)
+    C->>S: POST /v1/receipts/upload-intents
+    S-->>C: Presigned upload URL
+    C->>O: PUT receipt bytes
+    C->>S: POST /v1/receipts/{id}/complete
+    S-->>C: Asset quarantined until scanned
+    C->>S: GET /v1/sync/changes?cursor=
+    S-->>C: Changes and new cursor
+    C->>DB: Apply changes, keep pending commands as overlays

@@ -1,0 +1,16 @@
+site:
+  title: Personal Finance
+  start_page: finance::index.adoc
+content:
+  sources:
+    - url: .
+      branches: HEAD
+      start_path: src/docs
+ui:
+  bundle:
+    # Vendored Antora default UI (bundle-stable, built 2026-07-16), so builds
+    # never fetch unpinned remote code. SHA-256 is recorded in
+    # src/docs/ui/ui-bundle.zip.sha256; replace both files together.
+    url: ./src/docs/ui/ui-bundle.zip
+output:
+  dir: build/site

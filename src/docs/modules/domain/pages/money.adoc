@@ -1,0 +1,36 @@
+= Money and rounding
+Paul Snow
+:revnumber: 0.0.0
+
+Money is never held as binary floating point. The implementation lives in `packages/finance_core/lib/src/money/money.dart`.
+
+== Representation
+
+* An amount is a signed 64-bit integer of _minor units_ (cents for AUD) paired with a `Currency` that carries an explicit exponent. AUD has exponent 2.
+* The largest supported magnitude is `999_999_999_999_999` minor units. The limit keeps sums of many postings well inside the signed 64-bit range, so overflow cannot occur silently before range validation catches it.
+* Creating a `Money` outside the range raises a range error. Arithmetic and comparison between different currencies raises a currency mismatch error.
+* A workspace has one currency; multi-currency journals are rejected.
+
+== Parsing
+
+Parsing converts decimal text to minor units without rounding.
+
+* Grouping separators are ignored. The decimal separator defaults to `.`; when `,` is the decimal separator, `.` is the grouping separator.
+* A leading `-` or `+` is accepted.
+* Malformed text, or more fractional digits than the currency exponent, is a `FORMAT` error. The text is rejected, never rounded.
+* A value beyond the maximum magnitude is `OUT_OF_RANGE`.
+
+The `money.parse` fixture operation exercises these rules in both the Dart and Java implementations (see xref:architecture:shared-fixtures.adoc[]).
+
+== Exact allocation
+
+Splitting an amount in proportion to weights uses the largest remainder method, so the parts always sum to the total.
+
+. The sign of the total is set aside and the magnitude is used.
+. Each part receives the floor of its proportional share.
+. The leftover minor units go to the parts with the largest fractional remainders, one unit each. Ties go to the lower index.
+. The sign is reapplied to every part.
+
+Weights must be non-negative integers and must not all be zero. For example, allocating 100 minor units across weights 1, 1 and 1 gives 34, 33 and 33.
+
+Percentage allocation in budgets uses the same exact arithmetic with a deterministic rounding remainder. Rate calculations use decimal arithmetic.

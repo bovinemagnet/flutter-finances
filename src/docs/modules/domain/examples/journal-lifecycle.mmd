@@ -1,0 +1,7 @@
+stateDiagram-v2
+    [*] --> draft
+    draft --> pending
+    draft --> posted
+    pending --> posted
+    posted --> reversed: correction (reversal plus replacement)
+    reversed --> [*]

@@ -1,0 +1,35 @@
+= Journal status and corrections
+Paul Snow
+:revnumber: 0.0.0
+
+== Status
+
+[cols="1,3",options="header"]
+|===
+| Status | Effect
+
+| `draft` | Affects nothing
+| `pending` | Affects only the pending view and planned availability
+| `posted` | Part of the posted ledger
+| `reversed` | Part of the posted ledger. The original still counts and its linked reversal cancels it, so past periods stay reproducible
+|===
+
+Posted and reversed journals together form the posted ledger. Creating a draft with status `reversed` is invalid.
+
+.Journal lifecycle
+[source,mermaid]
+----
+include::example$journal-lifecycle.mmd[]
+----
+
+== Corrections
+
+A financial correction is an ordinary edit for the user but is stored as a reversal plus a replacement, both linked to the original.
+
+. The reversal journal negates every posting of the original and is dated on the original's effective date, so the corrected figure applies to the period it always belonged to.
+. The replacement journal carries the corrected entry and a `replaces` link to the original. It may be absent, which voids the journal.
+. The original's status becomes `reversed`.
+
+A journal that is not in the posted ledger needs no reversal, and an already reversed journal cannot be reversed again. Metadata changes retain revision history rather than creating reversals.
+
+On the server, `journal.correct` applies all three changes atomically; see xref:sync:protocol.adoc[]. Two devices correcting the same amount produce one accepted correction and one conflict.

@@ -1,0 +1,49 @@
+= Architecture overview
+Paul Snow
+:revnumber: 0.0.0
+
+== Components and responsibilities
+
+The client reads from its local database and writes local commands into a durable outbox. The sync service validates commands, commits canonical changes and exposes a cursor-based change feed. Receipt bytes travel directly to private object storage through short-lived authorised upload URLs; they do not travel through the financial command payload.
+
+.Component diagram
+[source,mermaid]
+----
+include::example$component-diagram.mmd[]
+----
+
+[cols="1,3",options="header"]
+|===
+| Component | Responsibility
+
+| Flutter client | Adaptive UI, local projections, input validation, platform capture, OCR adapters, outbox and sync coordinator
+| Encrypted SQLite and protected files | Local journals, plans, receipt metadata, search indexes, queued commands and receipt originals
+| Spring Boot service | Identity integration, workspace authorisation, financial validation, command deduplication, revisions, sync feed, imports and reports
+| PostgreSQL | Canonical journals and metadata, constraints, idempotency records, change log, audit events and job state
+| Private object storage | Receipt sources, derivatives, encrypted export archives, upload checksums and retention lifecycle
+| Background worker | File validation, malware scanning, optional OCR jobs, exports, notification scheduling and deletion jobs
+|===
+
+== Modular monolith
+
+The backend is a modular monolith with explicit module boundaries, not an initial microservice estate. The API and worker are deployed from the same codebase with independently controlled workloads. A PostgreSQL job table and a transactional outbox are sufficient initially; a dedicated queue is introduced only when measured workload justifies it.
+
+The planned server modules are workspace, sync, ledger, receipts, imports, exports and jobs (see xref:architecture:repository-layout.adoc[]).
+
+== Data flow
+
+. A user action is validated locally and saved with its outbox command in one SQLite transaction. The local projection updates immediately with an unsynced indicator.
+. When sync is enabled, the client posts batches of commands to the server.
+. The server validates each command and commits canonical state, its idempotency record and a change record in one transaction.
+. The client pulls changes with an opaque cursor and applies them transactionally, keeping pending commands as overlays.
+. Receipt files are uploaded separately and directly to object storage, then completed through the API.
+
+The protocol is described in xref:sync:protocol.adoc[].
+
+== API style
+
+The initial offline command protocol, imports and document lifecycle use REST with OpenAPI, versioned command envelopes and explicit idempotency keys. GraphQL may later serve complex read views but must not become a second set of mutation semantics.
+
+== Client structure
+
+Business rules live in a pure Dart package (`finance_core`) with no Flutter and no IO. Persistence, platform services and UI are separate. Platform interfaces keep operating system conditionals out of finance code; see xref:platform:capabilities.adoc[].

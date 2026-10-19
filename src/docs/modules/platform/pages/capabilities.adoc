@@ -1,0 +1,40 @@
+= Platform capability matrix
+Paul Snow
+:revnumber: 0.0.0
+
+The application asks what the device can do rather than which operating system it runs. `PlatformCapabilities.forPlatform` is the only place that inspects the platform, and platform adapters implement the interfaces in `apps/finance_app/lib/platform`.
+
+== Matrix
+
+[cols="2,^1,^1,^1,^1,^1",options="header"]
+|===
+| Capability | iOS | Android | Windows | macOS | Linux
+
+| Native document scanner | Yes | Yes | No | No | No
+| Camera fallback | Yes | Yes | No | No | No
+| On-device OCR | Yes | Yes | Conditional ^1^ | Conditional ^1^ | Conditional ^1^
+| Share target | Yes ^2^ | Yes | No | No | No
+| Drag and drop | No | No | Yes | Yes | Yes
+| Paste | Yes | Yes | Yes | Yes | Yes
+| File capture | Yes | Yes | Yes | Yes | Yes
+| Background work | Yes | Yes | No ^3^ | No ^3^ | No ^3^
+| Platform key store | Yes | Yes | Yes | Yes | Conditional ^4^
+| Notifications | Yes ^5^ | Yes ^5^ | Yes ^5^ | Yes ^5^ | Yes ^5^
+|===
+
+The native document scanner is VisionKit on iOS and the ML Kit document scanner on Android. Where it is missing or its resources are not yet downloaded, `FallbackReceiptScanner` uses the basic camera capture (A05). On desktop, receipts are brought in through file capture, paste and drag and drop, which keep working when camera or photo access is denied.
+
+[NOTE]
+====
+. Desktop OCR requires Tesseract with English language data (`eng`), detected at start-up. Without it, on-device OCR is unavailable on desktop.
+. The iOS share extension needs its own Xcode target and an App Group; a Flutter screen alone does not implement it. The extension copies files into the App Group container and opens the app, which then reads them.
+. Desktop platforms use a foreground-only scheduler: queued work resumes when the application starts and while its window is open. Nothing depends on background execution succeeding.
+. Linux key store availability depends on a Secret Service provider, checked at runtime. If none is available the password-based fallback is required; a plaintext key is never written (SEC 02).
+. Notifications are scheduled locally and delivery is best effort, because the operating system controls it. The in-app calendar remains the authoritative record. Notification text hides amounts and merchants unless the user opts in.
+====
+
+Builds must be produced on each operating system: macOS signing requires Apple tooling, and each desktop target is built and tested on its own operating system.
+
+== Planned validation
+
+Flutter does not guarantee that a given plugin works on every target. The requirements call for validating native dependencies, minimum operating system versions and architectures (x64 and ARM64) before advertising support. Ubuntu LTS is the proposed Linux baseline, with other distributions best effort.

@@ -1,0 +1,82 @@
+= Ledger model
+Paul Snow
+:revnumber: 0.0.0
+
+The application uses a balanced journal internally, but the interface never requires accounting terminology.
+
+== Journals and postings
+
+* A _posting_ references a ledger account and a signed amount in minor units.
+* A _journal_ is a set of postings in one currency that sums to zero.
+* *Debit is positive.* Assets and expenses increase with positive amounts. Liabilities, income and equity increase with negative amounts.
+
+`validatePostings` reports these error codes, which are shared with the server through the fixtures:
+
+[cols="1,3",options="header"]
+|===
+| Code | Meaning
+
+| `EMPTY` | No postings (nothing else is reported)
+| `TOO_FEW_POSTINGS` | Fewer than two postings
+| `MIXED_CURRENCY` | More than one currency (further checks stop)
+| `UNBALANCED` | Postings do not sum to zero
+| `ZERO_AMOUNT` | A posting has a zero amount
+| `OUT_OF_RANGE` | The total of debits exceeds the maximum magnitude
+|===
+
+== Mapping user accounts and categories
+
+User accounts map to asset or liability ledger accounts. Categories map to income or expense ledger accounts. A user account or category shares its identifier with its ledger account, so postings reference user-facing identifiers directly.
+
+[cols="1,1",options="header"]
+|===
+| User account type | Ledger kind
+
+| Transaction, savings, cash, property, investment, superannuation, other asset | Asset
+| Credit card, loan | Liability
+|===
+
+Liquid money is transaction, savings and cash accounts.
+
+== System accounts
+
+System accounts have fixed identifiers so every device agrees on them without syncing.
+
+[cols="2,1,3",options="header"]
+|===
+| Identifier | Kind | Used for
+
+| `system:opening-equity` | Equity | Opening balances
+| `system:balance-adjustments` | Equity | Balance adjustments, including confirmed reconciliation adjustments
+| `system:transfer-clearing` | Asset | Reserved system account
+| `system:reimbursement-receivable` | Asset | Money owed to the user by a third party
+|===
+
+== How user entries become postings
+
+`JournalFactory` turns a `TransactionDraft` into a balanced journal. Amounts are positive magnitudes, except for opening balances and adjustments, which are signed. Splits must sum exactly to the entry total.
+
+[cols="1,3,3",options="header"]
+|===
+| Entry | Postings | Notes
+
+| Expense | Each split: category debit. Account: credit for the total | Categorised with splits; categories must be expense categories
+| Income | Account: debit for the total. Each split: category credit | Income categories only
+| Transfer | Destination account: debit. Source account: credit | Not income or expense. The two accounts must differ
+| Card repayment | A transfer from a bank account (credit) to the card (debit) | Reduces cash and card debt; the purchase is not counted again
+| Refund | Account: debit. Each split: expense category credit | Reduces the category on the refund's effective date and links to the original with `refundOf`
+| Opening balance | User account against `system:opening-equity` | Signed. Not income. Liabilities are entered as money owed
+| Adjustment | User account against `system:balance-adjustments` | Signed. A zero amount is rejected
+| Reimbursable expense | `system:reimbursement-receivable`: debit. Account: credit | Records money owed back to the user
+| Reimbursement | Account: debit. `system:reimbursement-receivable`: credit | With splits instead, it offsets the expense categories directly
+|===
+
+For a signed opening balance or adjustment, the user-facing amount is money held for an asset and money owed for a liability; `toLedgerSign` converts a liability amount into a credit.
+
+== Draft validation
+
+Entry validation reports the first failure, in this order: unknown account (and currency match), then for transfers an unknown destination and same-account, then non-positive amount, then for categorised entries missing splits, an unknown or wrong-kind category, a non-positive split and finally a split mismatch. The codes are `UNKNOWN_ACCOUNT`, `SAME_ACCOUNT`, `NON_POSITIVE_AMOUNT`, `MISSING_SPLITS`, `UNKNOWN_CATEGORY`, `WRONG_CATEGORY_KIND` and `SPLIT_MISMATCH`.
+
+== Balances are derived
+
+Balances are never stored as editable truth. Every figure is recomputed from accepted journals by the projection. See xref:domain:net-worth.adoc[] and xref:domain:journal-status.adoc[].

@@ -1,0 +1,41 @@
+= Adaptive layout
+Paul Snow
+:revnumber: 0.0.0
+
+Layouts are driven by window width, never by operating system checks. Width classes are defined in `apps/finance_app/lib/app/breakpoints.dart`.
+
+== Breakpoints
+
+[cols="1,2,2",options="header"]
+|===
+| Class | Width (logical pixels) | Navigation
+
+| Compact | Below 600 | Bottom navigation bar with the primary destinations, an add button and a "Scan receipt" button
+| Medium | 600 to 1023 | Navigation rail with labels for the primary destinations
+| Expanded | 1024 or above | Extended, labelled sidebar listing all destinations
+|===
+
+The breakpoints are design starting points rather than device classifications. Content is tested at the boundary widths.
+
+== Destinations
+
+Primary destinations are Overview, Transactions, Budget, Receipts and Plan. Reports, Accounts and Settings are secondary: reached from Overview on compact widths and from the sidebar on expanded widths. Medium widths show only the primary destinations in the rail.
+
+A single global add action offers expense, income, transfer and receipt capture.
+
+== Keyboard shortcuts
+
+`AdaptiveShell.shortcuts` defines these shortcuts (Ctrl key):
+
+[cols="1,2",options="header"]
+|===
+| Shortcut | Action
+
+| Ctrl+1 to Ctrl+5 | Go to Overview, Transactions, Budget, Receipts, Plan
+| Ctrl+N | Add expense
+| Ctrl+I | Add income
+| Ctrl+T | Add transfer
+| Ctrl+Shift+R | Add receipt (scan)
+|===
+
+NOTE: The shortcuts are registered in the shell for all widths. The requirements list them as a desktop behaviour.

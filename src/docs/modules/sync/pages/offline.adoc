@@ -1,0 +1,22 @@
+= Offline behaviour
+Paul Snow
+:revnumber: 0.0.0
+
+== Journey E: continue after being offline
+
+A receipt and an expense entered on a disconnected phone appear immediately on that phone. When connectivity returns, the app uploads changes and images separately, displays progress, and checks for conflicts. A concurrent edit on another device produces a reviewable conflict rather than silently replacing the first edit.
+
+== How it works
+
+* *Local commit.* The user action and its outbox command are saved in one local transaction and the local projection updates at once with an unsynced indicator. In local-only mode the same validation applies and no network operation is needed (SYNC 01).
+* *Separate uploads.* Receipt images are uploaded independently of financial commands, with checksums, retry, bounded concurrency and backoff. Metadata may arrive first and other devices then show "Image pending". Upload completion cannot create a second receipt (SYNC 05).
+* *Safe retry.* A command whose response was lost is retried with the same `commandId` and returns the original result (A09).
+* *Conflicts.* Two devices changing the same amount keep both proposals; the user resolves them into one validated, balanced correction (A10).
+* *Long absence.* A device returning after tombstones expired rebases from a snapshot, preserves pending proposals and cannot resurrect deleted records (A15).
+* *Foreground resume.* Native background work is opportunistic; foreground launch reliably resumes queued work (UX 04).
+
+See xref:sync:protocol.adoc[] for the protocol and xref:platform:capabilities.adoc[] for background work by platform.
+
+== Receipt capture without connectivity
+
+Capturing a receipt in flight mode on first launch saves a readable image. If the advanced scanner or OCR resources are absent, the application falls back to a basic camera capture with a clear explanation (A05). Saving an image never posts an expense.
