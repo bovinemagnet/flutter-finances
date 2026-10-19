@@ -26,6 +26,6 @@ class ModularityTest {
     void declaresTheExpectedModules() {
         assertThat(modules.stream().map(ApplicationModule::getIdentifier).map(Object::toString))
                 .contains("common", "workspace", "sync", "ledger", "receipts", "imports", "exports", "jobs",
-                        "deletion", "storage", "reports");
+                        "deletion", "storage", "reports", "ops");
     }
 }
