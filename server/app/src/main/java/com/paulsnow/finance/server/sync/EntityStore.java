@@ -46,8 +46,9 @@ class EntityStore {
     record StoredEntity(UUID id, String type, long revision, ObjectNode data, ObjectNode fieldRevisions,
             boolean deleted) {
 
+        /** Revision at which {@code field} last changed; 0 for a field the server never had. */
         long fieldRevision(String field) {
-            return fieldRevisions.path(field).asLong(revision);
+            return fieldRevisions.path(field).asLong(0);
         }
 
         /** Fields changed on the server after {@code baseRevision}, sorted. */
