@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as hash;
-import 'package:finance_core/finance_core.dart';
+import 'package:finance_core/finance_core.dart' hide AssetKind;
 import 'package:meta/meta.dart';
 
 import '../crypto/aead.dart';

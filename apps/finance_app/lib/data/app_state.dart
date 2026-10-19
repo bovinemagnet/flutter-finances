@@ -5,9 +5,11 @@ import 'package:finance_core/finance_core.dart'
 import 'package:finance_store/finance_store.dart';
 import 'package:flutter/foundation.dart';
 
+import '../features/accounts/account_editor.dart';
 import '../features/onboarding/onboarding_model.dart';
 import '../features/transactions/transaction_form_model.dart';
 import 'entity_types.dart';
+import 'receipt_service.dart';
 
 /// Application state over the encrypted local store.
 ///
@@ -20,6 +22,9 @@ class AppState extends ChangeNotifier {
 
   final FinanceStore store;
   final LocalDate Function() today;
+
+  /// Receipt capture, extraction and review over the same store.
+  late final ReceiptService receipts = ReceiptService(this);
 
   Currency get currency => store.settings.currency;
   WorkspaceSettings get settings => store.settings;
@@ -163,11 +168,20 @@ class AppState extends ChangeNotifier {
     return result;
   }
 
-  Future<void> _setReviewed(String journalId, bool reviewed) => _put(
-    AppEntityTypes.transactionReview,
-    journalId,
-    {'id': journalId, 'reviewed': reviewed},
-  );
+  Future<void> _mergeReview(
+    String journalId,
+    Map<String, Object?> fields,
+  ) async {
+    final existing = store.entity(AppEntityTypes.transactionReview, journalId);
+    await _put(AppEntityTypes.transactionReview, journalId, {
+      ...?existing?.json,
+      'id': journalId,
+      ...fields,
+    });
+  }
+
+  Future<void> _setReviewed(String journalId, bool reviewed) =>
+      _mergeReview(journalId, {'reviewed': reviewed});
 
   Future<void> markReviewed(List<String> journalIds) async {
     for (final id in journalIds) {
@@ -176,22 +190,28 @@ class AppState extends ChangeNotifier {
     refresh();
   }
 
-  /// Moves single-category entries to [categoryId]; returns how many were
-  /// skipped because they are split or have no category.
+  /// How each entry's category was chosen; explicit user choices beat rules
+  /// (AUTO 01).
+  Map<String, CategorySource> get categorySources => {
+    for (final record in store.entities(AppEntityTypes.transactionReview))
+      if (!record.deleted && record.json['categorySource'] != null)
+        record.ref.id: CategorySource.values.byName(
+          record.json['categorySource'] as String,
+        ),
+  };
+
+  /// Moves single-category entries to [categoryId] as the user's explicit
+  /// choice; returns how many were skipped because they are split or have
+  /// no category.
   Future<int> categorise(List<String> journalIds, String categoryId) async {
     var skipped = 0;
     for (final id in journalIds) {
       final journal = store.journal(id);
-      if (journal == null) {
-        skipped++;
-        continue;
-      }
-      final form = TransactionFormModel.fromJournal(
-        chart,
-        journal,
-        today: today(),
-      );
-      if (form.splitMode ||
+      final form = journal == null
+          ? null
+          : TransactionFormModel.fromJournal(chart, journal, today: today());
+      if (form == null ||
+          form.splitMode ||
           form.categoryId == null ||
           !form.needsCategory ||
           chart.category(categoryId).kind !=
@@ -199,14 +219,88 @@ class AppState extends ChangeNotifier {
         skipped++;
         continue;
       }
-      if (form.categoryId == categoryId) continue;
-      form
-        ..categoryId = categoryId
-        ..status = journal.status;
-      await correct(id, form.toDraft());
+      await _recategorise(id, categoryId, source: CategorySource.user);
     }
     refresh();
     return skipped;
+  }
+
+  /// Returns the id of the entry now carrying the category.
+  Future<String?> _recategorise(
+    String journalId,
+    String categoryId, {
+    required CategorySource source,
+  }) async {
+    final journal = store.journal(journalId);
+    if (journal == null) return null;
+    final form = TransactionFormModel.fromJournal(
+      chart,
+      journal,
+      today: today(),
+    );
+    if (form.splitMode || form.categoryId == null) return null;
+    var id = journalId;
+    if (form.categoryId != categoryId) {
+      form
+        ..categoryId = categoryId
+        ..status = journal.status;
+      final result = await correct(journalId, form.toDraft());
+      id = result?.replacement?.id ?? journalId;
+    }
+    await _mergeReview(id, {'categorySource': source.name});
+    return id;
+  }
+
+  List<CategorisationRule> get rules => _all(
+    AppEntityTypes.categorisationRule,
+    (j) => categorisationRuleFromJson(j, currency),
+  );
+
+  Future<void> saveRule(CategorisationRule rule) async {
+    await _put(
+      AppEntityTypes.categorisationRule,
+      rule.id,
+      categorisationRuleToJson(rule),
+    );
+    refresh();
+  }
+
+  Future<void> deleteRule(String id) async {
+    await store.deleteEntity(AppEntityTypes.categorisationRule, id);
+    refresh();
+  }
+
+  /// What the rules would change; nothing is applied until confirmed.
+  RuleApplicationPreview previewRules() => previewRuleApplication(
+    rules: rules,
+    journals: ledger.journals,
+    chart: chart,
+    categorySources: categorySources,
+  );
+
+  /// Applies confirmed rule changes as ordinary corrections and returns the
+  /// reverse changes, so the whole application can be undone.
+  Future<List<(String, String)>> applyRules(
+    RuleApplicationPreview preview,
+  ) async {
+    final undo = <(String, String)>[];
+    for (final change in preview.changes) {
+      final id = await _recategorise(
+        change.journalId,
+        change.toCategoryId,
+        source: CategorySource.rule,
+      );
+      if (id != null) undo.add((id, change.fromCategoryId));
+    }
+    refresh();
+    return undo;
+  }
+
+  Future<void> undoRules(List<(String, String)> undo) async {
+    for (final (journalId, categoryId) in undo) {
+      await _recategorise(journalId, categoryId, source: CategorySource.none);
+    }
+    refresh();
   }
 
   Future<bool> undo() async {
@@ -217,12 +311,12 @@ class AppState extends ChangeNotifier {
 
   // Accounts and setup ----------------------------------------------------
 
-  Future<void> saveAccount(dynamic edit) async {
-    final account = edit.account as Account;
+  Future<void> saveAccount(AccountEdit edit) async {
+    final account = edit.account;
     if (store.account(account.id) == null) {
       await store.createAccount(account);
       _chart = null;
-      final draft = edit.openingBalanceDraft() as TransactionDraft?;
+      final draft = edit.openingBalanceDraft();
       if (draft != null) await store.postTransaction(draft);
     } else {
       await store.updateAccount(account);
