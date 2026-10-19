@@ -5,7 +5,6 @@ import java.net.URI;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -22,6 +21,7 @@ import software.amazon.awssdk.services.s3.model.BucketAlreadyOwnedByYouException
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
 import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 /**
@@ -73,13 +73,20 @@ class StorageConfiguration {
         return new S3ObjectStorage(client, presigner, properties);
     }
 
+    /** Creates the bucket at startup when {@code finance.storage.create-bucket} is true. */
     @Bean
-    @ConditionalOnProperty(name = "finance.storage.create-bucket", havingValue = "true")
     ApplicationRunner createBucket(S3Client client, StorageProperties properties) {
         return args -> {
+            if (!properties.createBucket()) {
+                return;
+            }
             try {
                 client.headBucket(HeadBucketRequest.builder().bucket(properties.bucket()).build());
-            } catch (NoSuchBucketException e) {
+            } catch (S3Exception e) {
+                // HEAD has no error body, so a missing bucket is a bare 404.
+                if (!(e instanceof NoSuchBucketException) && e.statusCode() != 404) {
+                    throw e;
+                }
                 try {
                     client.createBucket(CreateBucketRequest.builder().bucket(properties.bucket()).build());
                     LOG.info("Created object storage bucket {}", properties.bucket());
