@@ -16,7 +16,10 @@ class SampleWorld {
       effectiveDate: date,
       splits: [Split(category, Money(minor, aud))],
       status: status,
-      payee: category,
+      payee: const {
+        'groceries': 'Fresh Grocer',
+        'dining': 'Corner Cafe',
+      }[category],
     );
     journals = [
       factory.build(
