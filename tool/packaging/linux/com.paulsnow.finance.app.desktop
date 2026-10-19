@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Finance
+GenericName=Personal finance
+Comment=Budgeting, planning and receipt capture
+Exec=finance-app
+Icon=com.paulsnow.finance.app
+Terminal=false
+Categories=Office;Finance;
+Keywords=budget;money;receipts;accounts;
+StartupNotify=true
+StartupWMClass=com.paulsnow.finance.app

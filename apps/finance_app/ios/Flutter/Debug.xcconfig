@@ -1,1 +1,4 @@
 #include "Generated.xcconfig"
+
+// App Group shared by Runner and the share extension (receive_sharing_intent).
+CUSTOM_GROUP_ID = group.com.paulsnow.finance.app
