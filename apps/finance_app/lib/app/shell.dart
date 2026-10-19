@@ -8,17 +8,23 @@ enum Destination {
   overview('Overview', Icons.dashboard_outlined, Icons.dashboard),
   transactions('Transactions', Icons.receipt_long_outlined, Icons.receipt_long),
   budget('Budget', Icons.pie_chart_outline, Icons.pie_chart),
-  receipts('Receipts', Icons.document_scanner_outlined,
-      Icons.document_scanner),
+  receipts('Receipts', Icons.document_scanner_outlined, Icons.document_scanner),
   plan('Plan', Icons.event_note_outlined, Icons.event_note),
   reports('Reports', Icons.insights_outlined, Icons.insights, primary: false),
-  accounts('Accounts', Icons.account_balance_outlined, Icons.account_balance,
-      primary: false),
-  settings('Settings', Icons.settings_outlined, Icons.settings,
-      primary: false);
+  accounts(
+    'Accounts',
+    Icons.account_balance_outlined,
+    Icons.account_balance,
+    primary: false,
+  ),
+  settings('Settings', Icons.settings_outlined, Icons.settings, primary: false);
 
-  const Destination(this.label, this.icon, this.selectedIcon,
-      {this.primary = true});
+  const Destination(
+    this.label,
+    this.icon,
+    this.selectedIcon, {
+    this.primary = true,
+  });
 
   final String label;
   final IconData icon;
@@ -77,16 +83,20 @@ class AdaptiveShell extends StatelessWidget {
 
   static final shortcuts = <ShortcutActivator, Intent>{
     for (final (index, destination) in Destination.primaries.indexed)
-      SingleActivator(LogicalKeyboardKey(LogicalKeyboardKey.digit1.keyId + index),
-          control: true): NavigateIntent(destination),
+      SingleActivator(
+        LogicalKeyboardKey(LogicalKeyboardKey.digit1.keyId + index),
+        control: true,
+      ): NavigateIntent(
+        destination,
+      ),
     const SingleActivator(LogicalKeyboardKey.keyN, control: true):
         const AddIntent(AddAction.expense),
     const SingleActivator(LogicalKeyboardKey.keyI, control: true):
         const AddIntent(AddAction.income),
     const SingleActivator(LogicalKeyboardKey.keyT, control: true):
         const AddIntent(AddAction.transfer),
-    const SingleActivator(LogicalKeyboardKey.keyR,
-        control: true, shift: true): const AddIntent(AddAction.receipt),
+    const SingleActivator(LogicalKeyboardKey.keyR, control: true, shift: true):
+        const AddIntent(AddAction.receipt),
   };
 
   @override
@@ -102,19 +112,19 @@ class AdaptiveShell extends StatelessWidget {
       child: Actions(
         actions: {
           NavigateIntent: CallbackAction<NavigateIntent>(
-              onInvoke: (intent) => onSelect(intent.destination)),
+            onInvoke: (intent) => onSelect(intent.destination),
+          ),
           AddIntent: CallbackAction<AddIntent>(
-              onInvoke: (intent) => onAdd(intent.action)),
+            onInvoke: (intent) => onAdd(intent.action),
+          ),
         },
         child: FocusScope(autofocus: true, child: scaffold),
       ),
     );
   }
 
-  PreferredSizeWidget _appBar(BuildContext context) => AppBar(
-        title: Text(selected.label),
-        actions: [if (syncStatus != null) syncStatus!],
-      );
+  PreferredSizeWidget _appBar(BuildContext context) =>
+      AppBar(title: Text(selected.label), actions: [?syncStatus]);
 
   Widget _compact(BuildContext context) {
     final primaries = Destination.primaries;

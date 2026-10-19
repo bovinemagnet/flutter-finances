@@ -22,8 +22,10 @@ void main() {
     test('formats Australian dollars exactly without floating point', () {
       expect(formatMoney(Money(123456789, aud)), r'$1,234,567.89');
       expect(formatMoney(Money(-5, aud)), r'-$0.05');
-      expect(formatMoney(Money(999999999999999, aud)),
-          r'$9,999,999,999,999.99');
+      expect(
+        formatMoney(Money(999999999999999, aud)),
+        r'$9,999,999,999,999.99',
+      );
     });
 
     test('can show an explicit sign and hide amounts', () {
@@ -51,8 +53,10 @@ void main() {
     });
 
     test('rejects malformed input', () {
-      expect(() => evaluateAmountExpression('1.234', aud),
-          throwsFormatException);
+      expect(
+        () => evaluateAmountExpression('1.234', aud),
+        throwsFormatException,
+      );
       expect(() => evaluateAmountExpression('5+', aud), throwsFormatException);
       expect(() => evaluateAmountExpression('', aud), throwsFormatException);
     });
