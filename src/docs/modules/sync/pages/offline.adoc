@@ -27,7 +27,17 @@ The behaviours above are implemented in `packages/finance_store/lib/src/sync` an
 * *Expired cursor.* A `410` on the change feed starts a snapshot rebuild. Progress is saved, so an interrupted rebuild resumes, and entities that the server no longer has are removed locally. Pending commands for entities deleted in the meantime are held for review.
 * *Images.* Receipt uploads run separately from commands, at most 2 at a time, and can be held back on a metered connection.
 
-NOTE: The transport does not yet send the `X-Device-Id` header that the server requires on `/v1/sync/*`, so the client cannot yet complete a sync against the current server. See the note on xref:sync:protocol.adoc[the protocol page].
+* *Identification.* The transport sends `X-Device-Id` on every call and `X-Workspace-Id` once the workspace is synced or while a bootstrap is previewed. `SyncClient` can list the account's server workspaces (`listRemoteWorkspaces`), create one (`createRemoteWorkspace`) and register this device (`registerDevice`). Entity identifiers that reach the server are UUIDs. Entities that belong to another (for example a journal annotation) use a name-based UUID derived from the owner's id (`ownedEntityId`, `nameBasedId`). See xref:sync:protocol.adoc[].
+
+== In the application
+
+The application drives the client through `SyncController`; see xref:architecture:client-application.adoc#sync-in-the-client[Sync in the client] for the screens.
+
+* *When.* Sync runs on "Sync now", when the application returns to the foreground and every two minutes while it is open. On Android and iOS a Workmanager job also runs about hourly for a synced workspace that is protected by the platform key store. Desktop platforms sync only while the application is open. Nothing depends on background execution succeeding.
+* *Turning it on.* The user signs in, chooses or creates a server workspace and confirms a preview. If both the device and the server workspace hold data, sync is refused rather than merged.
+* *A new device.* "Use my synced data" starts from an empty workspace and downloads the server's data, so no merge is needed.
+* *Conflicts.* The conflicts screen offers "Keep server version", "Keep mine" and, for entries, "Edit a combined version". The first dismisses the review. The second sends the local change again as a fresh change, and the third saves a new validated entry that replaces both.
+* *Settings.* The server address, provider address and application identifier are device configuration in `sync-settings.json` and are never synced.
 
 == Receipt capture without connectivity
 

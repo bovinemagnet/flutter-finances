@@ -20,11 +20,12 @@ The sync service registers its own metrics with Micrometer, on top of the standa
 | `finance.sync.commands` | counter | `status`: `applied`, `previously_applied`, `conflict`, `validation_failed`, `permission_denied` | Sync commands processed, by result. The conflict rate is `conflict` divided by the sum of all statuses.
 | `finance.sync.backlog.age` | gauge (seconds) | none | Age of the oldest change that an active device has not yet pulled. A device counts as active if it pulled within the tombstone horizon. `0` when nothing is waiting, `NaN` if the database cannot be queried.
 | `finance.ledger.journals.rejected` | counter | `code`: `EMPTY`, `TOO_FEW_POSTINGS`, `UNBALANCED`, `MIXED_CURRENCY`, `ZERO_AMOUNT`, `OUT_OF_RANGE`, `CURRENCY_MISMATCH`, `UNKNOWN_LEDGER_ACCOUNT`, `INVALID_STATUS`, `INVALID_TYPE`, `REVERSAL_MISMATCH`, `REPLACEMENT_MISMATCH`, `INVALID_JOURNAL`, `POSTED_JOURNAL_IMMUTABLE` | Journals rejected by validation, by error code.
-| `finance.receipts.upload.failures` | counter | `reason`: `OBJECT_MISSING`, `CHECKSUM_MISMATCH`, `CONTENT_TYPE_MISMATCH`, `SCAN_REJECTED` | Receipt uploads rejected at completion or by the scan.
+| `finance.receipts.upload.failures` | counter | `reason`: `OBJECT_MISSING`, `CHECKSUM_MISMATCH`, `CONTENT_TYPE_MISMATCH`, `TOO_MANY_PAGES`, `SCAN_REJECTED` | Receipt uploads rejected at completion or by the scan.
 | `finance.imports.failures` | counter | `stage`: `preview`, `commit` | Import rows or files that failed. Preview failures count each row error and each unreadable file.
 | `finance.jobs.backlog` | gauge | none | Jobs that are queued or running.
 | `finance.jobs.backlog.age` | gauge (seconds) | none | Age of the oldest queued job, measured from its `run_after` time. `0` when none are queued.
 | `finance.deletion.backlog` | gauge | none | Workspace deletions requested but not yet completed.
+| `finance.deletion.suppression.reapplied` | counter | none | Deleted workspaces found again (for example after a database restore) and erased again.
 |===
 
 A gauge reports `NaN` rather than failing the scrape when its database query errors.

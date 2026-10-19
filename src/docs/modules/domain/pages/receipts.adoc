@@ -93,9 +93,7 @@ Issues carry a stable code, an actionable message and a severity. `isAccepted` i
 
 The server repeats the checks when an upload completes, then scans it. Uploads go to a per-asset staging key. Completion verifies the checksum and the content type against the magic bytes (`CHECKSUM_MISMATCH`, `CONTENT_TYPE_MISMATCH`) and moves the asset to `quarantined`. A scan job then releases it (`available`) or marks it `rejected`. The default `StructuralDocumentScanner` rejects `TRUNCATED` and `MALFORMED` files, images beyond the configured dimension, and PDFs containing `/JavaScript`, `/JS`, `/Launch`, `/EmbeddedFile(s)`, `/XFA` or `/RichMedia` (`ACTIVE_CONTENT`). It is not a malware scanner; a deployment can supply its own `DocumentScanner` bean.
 
-The server limits are configured under `finance.receipts`: `max-size-bytes` (default 26,214,400, which is 25 MiB) and `max-image-dimension` (default 20,000 pixels).
-
-NOTE: The server defaults are looser than the client's `ContentLimits` (25 MiB against 20 MiB, and 20,000 against 16,384 pixels per side). The client rejects first, so a document accepted on the device is within the server limits.
+The server limits are configured under `finance.receipts` and match the client's `ContentLimits`: `max-size-bytes` (default 20,971,520, which is 20 MiB), `max-pages-per-receipt` (10), `max-image-side` (16,384 pixels) and `max-image-pixels` (50,000,000). At completion the server counts the pages of a PDF as the shared `pdf.inspect` fixture operation does (an image is one page) and refuses a receipt whose source documents total more than 10 pages with `TOO_MANY_PAGES`. The scan job rejects images beyond the side and area limits.
 
 == Extraction, provenance and uncertainty
 
@@ -117,7 +115,7 @@ Confidence is a category, never a percentage.
 * Amounts need exactly two decimal places; percentages, quantities and dates are ignored; the last amount on a row counts.
 * Totals come from rows labelled total. Cash tendered, change and cash-out rows are never totals. A candidate scores 8 when subtotal, discounts, charges, rounding (and tax, if exclusive) add up to it, 6 when a card payment row shows it, 6 when cash less change equals it, 2 for a strong label such as `total due`, 1 when printed more than once and 1 when it is the last total row. The best score wins and ties go to the earlier row.
 * With no total row, the total is inferred from a payment row, then cash less change, then the subtotal, then the largest amount, and is marked `TOTAL_INFERRED`.
-* Dates prefer labelled rows and skip due, expiry and validity dates. An all-numeric date with both parts at most 12 is ambiguous unless the merchant has a chosen convention; the workspace default is day-month. The other reading is kept as an alternative, and a reading in the future gives way to one that is not.
+* Dates prefer labelled rows and skip due, expiry and validity dates. An all-numeric date with both parts at most 12 is ambiguous unless the merchant has a chosen convention; the workspace default is day-month, which the user can change to month-day in settings (see xref:platform:receipt-capture.adoc[]). The other reading is kept as an alternative, and a reading in the future gives way to one that is not.
 * The merchant is a labelled value (`Sold by:`, `Merchant:`) with high confidence, otherwise the first heading-like row with medium confidence.
 * Currency is reported only when printed as a code or prefixed symbol such as `AUD`, `A$` or `US$`; a bare `$` is not explicit.
 

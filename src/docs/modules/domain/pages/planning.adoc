@@ -51,7 +51,7 @@ A missed date therefore does not prove a bill is unpaid when the account data is
 
 == Reminders
 
-`ReminderPreference` holds whether reminders are enabled (default on), the lead time in days (default 1), the minute of the local day to remind (default 9:00, minute 540), optional quiet hours and whether to show details. `planReminder` produces a `PlannedReminder` for an occurrence, or nothing when reminders are off or the occurrence is skipped. A reminder that would fall inside quiet hours is moved to the end of the quiet period, handling overnight windows. Notification text hides the schedule name, amount and merchant unless `showDetails` is set, for example "A scheduled payment is due on 2026-07-10".
+`ReminderPreference` holds whether reminders are enabled (default on), the lead time in days (default 1), the minute of the local day to remind (default 9:00, minute 540), optional quiet hours and whether to show details. `planReminder` produces a `PlannedReminder` for an occurrence, or nothing when reminders are off or the occurrence is skipped. A reminder that would fall inside quiet hours is moved to the end of the quiet period, handling overnight windows. Notification text hides the schedule name, amount and merchant unless `showDetails` is set, for example "A scheduled payment is due on 2026-07-10". When the user adds a reminder to a schedule, the application offers the lead time (on the day, 1 or 2 days before, or a week before), a switch for "Show the amount and name in notifications" (off by default so the lock screen stays private) and a switch for quiet hours from 9 pm to 7 am.
 
 Delivery is best effort because the operating system controls it; the in-app calendar remains the authoritative record.
 
@@ -99,6 +99,10 @@ A `Scenario` is a named list of changes applied to a forecast. It changes only t
 | `RemoveScheduleChange` | Leaves a schedule out of the projection
 | `AddScheduleChange` | Projects an additional schedule
 |===
+
+=== What-if on the Plan screen
+
+The Forecast tab of the Plan page has "What if...", which adds a one-off cash movement (a description, an amount that may be an expression, an account that counts towards the forecast, and a date, a week ahead by default), and "What if a bill stopped", which leaves one schedule out. Each becomes a `OneOffChange` or `RemoveScheduleChange` in a `Scenario` that is passed to the forecast. The changes are held in the screen only. Nothing is saved, no entry is posted and no schedule is edited, and the screen says so. "Clear n hypothetical changes" removes them.
 
 NOTE: These forecast scenarios are unrelated to the acceptance scenarios (A01 and so on) described on xref:domain:scenarios.adoc[Acceptance scenarios].
 

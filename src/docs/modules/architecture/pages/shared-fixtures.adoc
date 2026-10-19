@@ -26,6 +26,7 @@ Each file has a `schemaVersion` (currently `1`), an `area` and `cases`. Every ca
 | `rollover.next` | `+{policy, remaining}+` | `+{opening}+`
 | `discretionary.estimate` | budget inputs | `+{budgetLimit, cashLimit, estimate, shortfall}+`
 | `csv.parse` | `+{text, mapping}+` | `+{rows[], errors[]}+`
+| `pdf.inspect` | `+{base64}+` (a whole PDF) | `+{readable, encrypted, pageCount}+`
 |===
 
-The semantics of the money and ledger operations are described in xref:domain:money.adoc[] and xref:domain:ledger.adoc[].
+The server uses `pdf.inspect` to count the pages of an uploaded PDF, so the client and server agree on the receipt page limit. The semantics of the money and ledger operations are described in xref:domain:money.adoc[] and xref:domain:ledger.adoc[].

@@ -44,11 +44,18 @@ The job runs on the worker (see xref:operations:job-worker.adoc[]), so a deletio
 
 Each step is recorded in the deletion record as it completes and is skipped if the job is retried, so a failure partway through resumes where it stopped. The purgers are idempotent. A module that stores workspace data adds a `WorkspaceDataPurger`, which the job discovers automatically.
 
+== Keeping deleted workspaces deleted
+
+A database restored from a backup taken before a deletion brings the workspace back. The API still refuses it, because every workspace lookup excludes workspaces named in `workspace_deletion_suppression` (SEC 06). `SuppressionEnforcer` then erases it again: it marks the workspace as deleting, which revokes its devices, removes the objects under `workspaces/<workspaceId>/`, runs every module's purger, removes the workspace's jobs and then the workspace rows, and marks any deletion request completed. Every step is idempotent. Each workspace found increments `finance.deletion.suppression.reapplied` and logs a warning.
+
+The enforcer runs only on a process with the worker enabled: once when the application is ready, which is when a restored database first comes up, and then on the schedule `finance.deletion.suppression-cron` (default every 15 minutes, UTC).
+
 == Retention
 
-IMPORTANT: The retention targets are requirements, not implemented behaviour. Only the first two items below describe the code.
+IMPORTANT: The retention targets are requirements, not implemented behaviour. Only the first three items below describe the code.
 
 * *Implemented:* access is revoked and the workspace hidden immediately; the erasure job removes data from the primary database and object storage; a suppression entry prevents the workspace id being reused.
+* *Implemented:* a workspace that reappears after a restore is erased again (see above).
 * *Requirement, not enforced by code:* deletion from active systems within 30 days (proposed) depends on a worker running; there is no alert tied to this target beyond the deletion backlog gauge.
 * *Requirement, not implemented:* expiry from rolling backups within 35 days (proposed). No backup tooling exists in the repository.
-* *Requirement, not implemented:* checking the suppression record when a backup is restored. See xref:operations:backup-and-restore.adoc[].
+* *Requirement, not implemented:* expiry of the data from the backups themselves. The repository holds no backup tooling; see xref:operations:backup-and-restore.adoc[].

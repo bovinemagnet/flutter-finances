@@ -96,8 +96,11 @@ Configuration is in `server/app/src/main/resources/application.yml` (production-
 | `finance.storage.create-bucket` | `false` (`true` in `local`) | Create the bucket on start-up
 | `finance.storage.upload-url-ttl` | `15m` | Presigned upload URL lifetime
 | `finance.storage.download-url-ttl` | `5m` | Presigned download URL lifetime
-| `finance.receipts.max-size-bytes` | `26214400` (25 MiB) | Largest receipt file
-| `finance.receipts.max-image-dimension` | `20000` | Largest image width or height in pixels
+| `finance.receipts.max-size-bytes` | `20971520` (20 MiB) | Largest receipt file
+| `finance.receipts.max-pages-per-receipt` | `10` | Most pages a receipt's source documents may total (`TOO_MANY_PAGES`)
+| `finance.receipts.max-image-side` | `16384` | Largest image width or height in pixels
+| `finance.receipts.max-image-pixels` | `50000000` | Largest image area (50 megapixels)
+| `finance.deletion.suppression-cron` | `0 */15 * * * *` (UTC) | How often the worker looks for deleted workspaces that have reappeared
 | `finance.imports.max-rows` | `50000` | Largest CSV import
 | `finance.imports.synchronous-row-limit` | `1000` | Imports above this commit through a job
 | `finance.worker.poll-interval` | `2s` | Job polling interval

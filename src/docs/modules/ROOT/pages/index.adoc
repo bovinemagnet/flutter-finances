@@ -24,14 +24,14 @@ The repository is a Dart workspace (`finance_core`, `finance_store` and the `fin
 | Implemented in the repository
 a| * Shared domain code in `packages/finance_core`: money, ledger, planning, document validation and the sync model.
 * The encrypted local store, receipt vault and backup code in `packages/finance_store`.
-* The Flutter client in `apps/finance_app`, with feature areas for onboarding, accounts, transactions, budget, goals, plan, receipts, reports, imports and settings, an adaptive shell, bill reminders, verified restore on a fresh device, and OIDC sign-in with PKCE.
+* The Flutter client in `apps/finance_app`, with feature areas for onboarding, accounts, transactions, budget, goals, plan, receipts, reports, imports and settings, an adaptive shell, bill reminders, verified restore on a fresh device, an optional app lock, and optional sync: OIDC sign-in with PKCE, connecting to a server workspace, foreground and mobile background sync, and a conflicts screen. See xref:sync:offline.adoc[].
 * Receipt capture with a scanner and camera fallback, file, paste and drag and drop, metadata stripping, and ML Kit or Tesseract text recognition. See xref:platform:receipt-capture.adoc[].
 * A Spring Boot server in `server/app` and `server/finance-core`, organised into modules for sync, receipts, jobs, imports, exports, deletion, storage, workspace and ledger.
+* End-to-end tests of the sync client against the real server (`tool/e2e/run.sh`). See xref:ROOT:developer-guide.adoc#end-to-end-tests[the developer guide].
 * This documentation site, built with `gradle25w antora`.
 
 | Planned or not yet complete
 a| * The iOS share extension target, release signing and notarisation, and continuous integration. See xref:platform:building-and-releasing.adoc[].
-* End-to-end synchronisation tests, being added under `tool/e2e`; that directory does not exist yet.
 * Screen reader verification on all release targets. See xref:platform:accessibility.adoc[].
 * Android, iOS, macOS and Windows builds; only Linux has been run and tested here.
 |===

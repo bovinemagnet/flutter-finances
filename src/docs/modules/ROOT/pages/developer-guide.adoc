@@ -9,6 +9,7 @@ This guide lists the commands for working in the repository. All commands are ru
 * The Dart and Flutter SDKs. The workspace needs Dart `^3.13.0` and Flutter `>=3.47.0` (see `pubspec.yaml` and `apps/finance_app/pubspec.yaml`).
 * A JDK that supports Java 25, because the server projects compile with `options.release = 25`, and the `gradle25w` wrapper script on the path.
 * For the sync service in local mode: PostgreSQL, an S3-compatible object store such as MinIO, and an OpenID Connect provider. See <<run-the-server>>.
+* For the end-to-end tests: `podman`, which provides PostgreSQL and MinIO, so no provider is needed. See <<end-to-end-tests>>.
 * Optional: `tesseract` with English data, to try desktop text recognition. See xref:platform:receipt-capture.adoc[].
 
 == Install dependencies
@@ -39,7 +40,17 @@ cd apps/finance_app && flutter test
 
 The server tests run as part of the Gradle build, described below.
 
-NOTE: End-to-end synchronisation tests are planned and are being added under `tool/e2e`. That directory does not exist yet, so there is no command for them.
+[[end-to-end-tests]]
+=== End-to-end tests
+
+The end-to-end suite runs the Dart sync client against the real server, PostgreSQL and S3-compatible storage. It is excluded from `dart test` (the `e2e` tag is skipped) and is run with:
+
+[source,shell]
+----
+tool/e2e/run.sh
+----
+
+The script needs `podman`, `java`, `curl`, `python3` and `dart`. It starts PostgreSQL and MinIO containers on free ports, builds the server jar and starts it with the `e2e` profile (access tokens are verified with the static test key pair in `tool/e2e/keys`, not an OIDC provider), waits for the health check, runs `dart test -P e2e test/e2e` in `packages/finance_store`, and always removes the containers and stops the server. Extra arguments go to `dart test`, for example `tool/e2e/run.sh --name A10`. `FINANCE_E2E_SKIP_BUILD=1` reuses the existing jar and `FINANCE_E2E_KEEP_LOGS=1` keeps the server log. The tests in `packages/finance_store/test/e2e` cover registering devices, offline history reaching a second device, idempotent command batches (A09), concurrent corrections (A10), field-level metadata merges, receipt images through object storage, another user being refused a receipt (A17), and a device returning after the tombstone horizon (A15). See xref:operations:running-locally.adoc#end-to-end-tests[Running the server locally].
 
 == Run the client
 
