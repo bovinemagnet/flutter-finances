@@ -1,0 +1,36 @@
+# End-to-end test profile, started by tool/e2e/run.sh against throwaway
+# PostgreSQL and MinIO containers. NEVER use it anywhere else: access tokens
+# are verified with a static public key (the committed, public test key in
+# tool/e2e/keys) instead of an OIDC issuer. FINANCE_E2E_PUBLIC_KEY has no
+# default, so the profile cannot start without naming the key explicitly.
+spring:
+  datasource:
+    url: ${FINANCE_DB_URL}
+    username: ${FINANCE_DB_USERNAME:finance}
+    password: ${FINANCE_DB_PASSWORD:finance}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Never contacted: EndToEndJwtConfiguration verifies tokens with
+          # the public key and only compares their iss claim with this.
+          issuer-uri: https://finance-e2e.invalid/
+          public-key-location: ${FINANCE_E2E_PUBLIC_KEY}
+
+finance:
+  sync:
+    # A short horizon lets the suite exercise expired cursors (A15).
+    tombstone-horizon: ${FINANCE_E2E_TOMBSTONE_HORIZON:20s}
+    purge-cron: "*/2 * * * * *"
+  storage:
+    endpoint: ${FINANCE_S3_ENDPOINT}
+    access-key: ${FINANCE_S3_ACCESS_KEY:minioadmin}
+    secret-key: ${FINANCE_S3_SECRET_KEY:minioadmin}
+    bucket: ${FINANCE_S3_BUCKET:finance-e2e}
+    path-style-access: true
+    create-bucket: true
+  worker:
+    # API and worker in one process, polling often so scans finish promptly.
+    enabled: true
+    poll-interval: 200ms
+    base-backoff: 1s

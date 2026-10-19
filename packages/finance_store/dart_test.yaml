@@ -1,0 +1,11 @@
+tags:
+  # Against a real server: tool/e2e/run.sh starts one and runs `-P e2e`.
+  e2e:
+    skip: "End-to-end test; run tool/e2e/run.sh (or dart test -P e2e with FINANCE_E2E_BASE_URL set)"
+    timeout: 3m
+
+presets:
+  e2e:
+    include_tags: e2e
+    run_skipped: true
+    concurrency: 1
