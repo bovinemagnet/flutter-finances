@@ -73,6 +73,27 @@ void main() {
       await reopened.close();
     });
 
+    test('the password can be changed without re-encrypting', () async {
+      final dir = temp.sub('pw2');
+      final pw = await FinanceStore.create(
+        dir,
+        keyProtection: KeyProtection.password('old', kdf: testKdf),
+      );
+      await seedChart(pw);
+      await pw.close();
+      await FinanceStore.changeWorkspacePassword(dir, 'old', 'new');
+      await expectLater(
+        FinanceStore.open(dir, keyProtection: KeyProtection.password('old')),
+        throwsA(isA<WrongPasswordException>()),
+      );
+      final reopened = await FinanceStore.open(
+        dir,
+        keyProtection: KeyProtection.password('new'),
+      );
+      expect(reopened.accounts(), hasLength(2));
+      await reopened.close();
+    });
+
     test('creating over an existing workspace is refused', () {
       expect(
         () => newStore(temp.sub('ws')),

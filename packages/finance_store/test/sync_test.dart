@@ -269,6 +269,27 @@ void main() {
     );
   });
 
+  test('A10: a combined amount resolves through a fresh correction', () async {
+    await bothSynced();
+    final original = await a.store.postTransaction(expense('100.00'));
+    await a.sync();
+    await b.sync();
+    await a.store.correctTransaction(original.id, expense('120.00'));
+    await b.store.correctTransaction(original.id, expense('130.00'));
+    await a.sync();
+    await b.sync();
+    final review = b.store.openReviewItems().single;
+    final result = await b.store.resolveWithTransaction(
+      review.id,
+      expense('125.00'),
+    );
+    expect(result!.original.amount, m('120.00'));
+    expect((await b.sync()).push.accepted, 1);
+    await a.sync();
+    expect(a.store.displayBalance('bank'), m('-125.00'));
+    expect(b.store.displayBalance('bank'), m('-125.00'));
+  });
+
   group('metadata merge (SYNC 03)', () {
     test('different fields merge; the same field conflicts', () async {
       await bothSynced();
