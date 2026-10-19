@@ -1,0 +1,31 @@
+= Shared fixtures
+Paul Snow
+:revnumber: 0.0.0
+
+The Dart client and the Java server share versioned specification fixtures, not source code. Both must pass identical rounding, posting, budget and forecast examples.
+
+== Contract
+
+JSON files in `spec/fixtures` are the executable contract between the Dart client (`packages/finance_core/test/fixtures`) and the Java server (`server/finance-core`, planned). Both runners load every `*.json` file and fail on any operation they do not implement. A rule is changed by changing a fixture first.
+
+Each file has a `schemaVersion` (currently `1`), an `area` and `cases`. Every case has a unique `id`, an `op`, an `input` and an `expect` object. Amounts in `ledger.scenario` and planning operations are decimal strings parsed with the case's currency exponent; `money.*` and `journal.validate` use integer minor units.
+
+== Operations
+
+[cols="1,2,2",options="header"]
+|===
+| op | input | expect
+
+| `money.parse` | `{text, exponent}` | `{minor}` or `{error}`
+| `money.allocate` | `{total, weights[]}` | `{parts[]}`
+| `journal.validate` | `{postings:[{account, minor, currency}]}` | `{errors:[codes]}`
+| `ledger.scenario` | `{accounts[], categories[], entries[]}` | `{balances{}, expenses, income, netWorth, journalCount}`
+| `periods.generate` | `{cycle, anchor, count, endOfMonth}` | `{periods:[{start,end}]}`
+| `schedule.occurrences` | `{frequency, interval, start, until, count}` | `{dates[]}`
+| `budget.remaining` | `{planned, rollover, adjustments, postedNet, pending}` | `{remaining, pendingRemaining}`
+| `rollover.next` | `{policy, remaining}` | `{opening}`
+| `discretionary.estimate` | budget inputs | `{budgetLimit, cashLimit, estimate, shortfall}`
+| `csv.parse` | `{text, mapping}` | `{rows[], errors[]}`
+|===
+
+The semantics of the money and ledger operations are described in xref:domain:money.adoc[] and xref:domain:ledger.adoc[].

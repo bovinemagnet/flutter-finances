@@ -1,0 +1,9 @@
+flowchart TB
+    C[Flutter native clients] <--> L[Encrypted local database and files]
+    C <--> N[Native capture and device services]
+    C -->|Commands and changes| A[Spring Boot API]
+    C -->|Authorised asset transfer| O[Private object storage]
+    A --> P[PostgreSQL]
+    A --> W[Background worker]
+    W --> P
+    W --> O

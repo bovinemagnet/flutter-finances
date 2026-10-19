@@ -1,0 +1,62 @@
+= Personal Finance
+Paul Snow
+:revnumber: 0.0.0
+:description: Documentation for the local-first personal finance application.
+
+This component documents a personal finance application that helps a person understand their money, plan spending and keep receipts with very little ongoing administration.
+
+== What the product is
+
+The product targets iPhone, iPad, Android phones and tablets, Windows, macOS and Linux. Phone workflows favour quick capture; tablet and desktop workflows support planning, reconciliation and detailed review.
+
+The proposed implementation is a Flutter client with an encrypted local SQLite database, and optional cloud synchronisation through a Java and Spring Boot modular monolith backed by PostgreSQL and private object storage.
+
+NOTE: The technology choices are proposed product decisions, subject to the decision register in the product requirements. See xref:architecture:adr-001-technology-stack.adoc[ADR 001].
+
+== Local first
+
+A user can start locally without registering, capture a receipt without internet access, and enable synchronisation later. Every user action is saved together with an outbox command in one local transaction, so the client is the primary store. See xref:sync:protocol.adoc[] and xref:sync:offline.adoc[].
+
+== Australian defaults
+
+Australia is the proposed first market. The defaults are:
+
+* AUD as the currency (two decimal places);
+* Australian date formats;
+* fortnightly income cycles; and
+* a July to June financial year.
+
+Currency and locale are explicit settings. A workspace holds one currency; multi-currency journals are rejected.
+
+== P0 scope summary
+
+P0 is the scope required for the first general release, including supported desktop clients.
+
+[cols="1,3",options="header"]
+|===
+| Area | P0 capability
+
+| Native clients | iOS and Android phones and tablets; Windows, macOS, Linux
+| Accounts and transactions | Manual accounts, CSV import, splits, transfers, refunds, reconciliation
+| Budgeting | Category budgets, adjustable 50/30/20, rollover, weekly and fortnightly cycles
+| Bills and planning | Recurrence, calendar, reminders, 90 day cash forecast
+| Goals and net worth | Savings goals; manual assets, loans, investments and super balances
+| Receipts | Camera, image and PDF import, OCR, search, matching, manual splits
+| Data and sync | Local operation, optional personal sync, backup, export and restore
+| Insights | Explainable rules and budget comparisons
+|===
+
+P0 does not include payments, bank credential storage, stock trading, financial product recommendations, tax return preparation or unrestricted mailbox access.
+
+== Where to go next
+
+[cols="1,3",options="header"]
+|===
+| Module | Contents
+
+| xref:architecture:overview.adoc[Architecture] | Components, responsibilities, repository layout, the technology decision and shared fixtures
+| xref:domain:money.adoc[Domain] | Money, the ledger model, journal status and corrections, reconciliation, net worth and worked acceptance scenarios
+| xref:sync:protocol.adoc[Sync] | Command envelope, revisions, conflicts, change feed and receipt document flow
+| xref:platform:capabilities.adoc[Platform] | Capability matrix, adaptive layout and accessibility commitments
+| xref:operations:observability-and-security.adoc[Operations] | Observability signals and security and privacy requirements
+|===

@@ -1,0 +1,2 @@
+.Operations
+* xref:operations:observability-and-security.adoc[Observability, security and privacy]

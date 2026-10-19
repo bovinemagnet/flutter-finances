@@ -1,0 +1,10 @@
+name: finance
+title: Personal Finance
+version: '0.0.0'
+nav:
+  - modules/ROOT/nav.adoc
+  - modules/architecture/nav.adoc
+  - modules/domain/nav.adoc
+  - modules/sync/nav.adoc
+  - modules/platform/nav.adoc
+  - modules/operations/nav.adoc

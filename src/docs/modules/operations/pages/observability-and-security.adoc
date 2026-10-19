@@ -1,0 +1,36 @@
+= Observability, security and privacy
+Paul Snow
+:revnumber: 0.0.0
+
+IMPORTANT: Everything on this page is a requirement taken from the product requirements. None of it describes delivered behaviour. Values marked as proposed are product policies to confirm before release.
+
+== Observability signals
+
+Measure:
+
+* sync backlog age;
+* command conflict rate;
+* rejected journals;
+* receipt upload failures;
+* extraction latency;
+* import failures;
+* backup success; and
+* deletion backlog.
+
+Use opaque correlation identifiers. Alert on growing queues and checksum failures without logging merchants, amounts, document contents, tokens or full account numbers. Define an incident owner before enabling cloud sync outside a development environment.
+
+== Security and privacy requirements
+
+[cols="1,3",options="header"]
+|===
+| Requirement | Summary
+
+| SEC 01 Modes and identity | Local-only mode needs no online account. Synced mode uses the OIDC authorisation code flow with PKCE through the system browser, revocable device sessions, short-lived access tokens and rotated refresh tokens where supported. No client secret is embedded in an app. MFA or passkeys come from the selected identity provider; account recovery is tested.
+| SEC 02 Local protection | Encrypt the database, receipt files, OCR text, thumbnails and search indexes at rest. Wrap data keys using the platform key store or a user-supplied secret. Biometrics unlock a protected key and are not the encryption scheme. Detect Linux key store availability and otherwise require the password fallback rather than writing a plaintext key. Keep secrets out of logs and crash reports.
+| SEC 03 Cloud protection | TLS, managed encryption keys, scoped service identities, private buckets, short-lived signed access, server-side authorisation and redacted operational logs. The sync service can read authorised data for processing; this is not end-to-end encryption.
+| SEC 04 File safety | Validate bytes as well as extensions, bound image dimensions and PDF processing resources, quarantine suspect files, isolate document parsing workers and prevent cross-workspace file access. Receipt images and text must not appear in notifications, analytics payloads or third-party error attachments.
+| SEC 05 Privacy controls | No advertising SDKs, sale of financial data or model training on receipts. Cloud sync and optional external extraction have separate consent controls. Australian residency for cloud data and backups is proposed, with any exception disclosed first. Deleting a workspace revokes sessions and triggers a tracked deletion job.
+| SEC 06 Retention and deletion | Proposed targets: deletion from active systems within 30 days and expiry from rolling backups within 35 days, except for a documented obligation. Keep a deletion suppression record so a restored backup cannot reintroduce deleted data. Proposed audit and security event retention is 12 months with minimised content.
+|===
+
+Related topics are covered in xref:sync:protocol.adoc[] (workspace scoping and quarantine of uploads) and xref:platform:capabilities.adoc[] (key store availability).
