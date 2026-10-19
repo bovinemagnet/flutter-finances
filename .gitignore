@@ -9,3 +9,4 @@ server/**/build/
 .vscode/
 node_modules/
 src/docs/build/
+.claude/worktrees/
