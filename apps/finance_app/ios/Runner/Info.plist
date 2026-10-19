@@ -4,6 +4,14 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>The camera is used to photograph receipts you choose to keep.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Choose receipt photos to attach to your transactions.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Unlock your finances with Face ID.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Financial data must not leave the device through platform backup; users
+     back up with the encrypted export instead (DATA 01). -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="."/>
+        <exclude domain="file" path="."/>
+        <exclude domain="database" path="."/>
+        <exclude domain="sharedpref" path="."/>
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="."/>
+        <exclude domain="file" path="."/>
+        <exclude domain="database" path="."/>
+        <exclude domain="sharedpref" path="."/>
+    </device-transfer>
+</data-extraction-rules>
