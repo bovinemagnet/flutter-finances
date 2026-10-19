@@ -31,6 +31,8 @@ export 'src/documents/receipts/receipt_search.dart';
 export 'src/documents/receipts/receipt_states.dart';
 export 'src/documents/receipts/retention.dart';
 export 'src/documents/receipts/review.dart';
+export 'src/documents/rules/categorisation_rule.dart';
+export 'src/documents/rules/rule_application.dart';
 export 'src/documents/text/normalise.dart';
 export 'src/documents/validation/content_type.dart' hide indexOfBytes;
 export 'src/documents/validation/content_validation.dart';
