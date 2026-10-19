@@ -1,8 +1,7 @@
 import 'package:finance_core/finance_core.dart';
+import 'package:finance_store/finance_store.dart' show SyncMode;
 
 import '../accounts/account_editor.dart';
-
-enum SyncMode { localOnly, synced }
 
 /// A starter category and the budget group it belongs to.
 class StarterCategory {
@@ -120,7 +119,7 @@ class OnboardingModel {
   Currency currency = Currency.aud;
   String timezone = 'Australia/Brisbane';
   String locale = 'en_AU';
-  SyncMode syncMode = SyncMode.localOnly;
+  SyncMode syncMode = SyncMode.local;
   final List<AccountEdit> accounts = [];
 
   /// Take-home pay per pay cycle; tax is never estimated (BUD 01).
