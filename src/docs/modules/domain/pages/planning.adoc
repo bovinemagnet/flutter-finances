@@ -182,6 +182,29 @@ The estimate is the smaller of $600.00 and $1,700.00, so *$600.00*, with no shor
 
 In the card variation the cash limit is unchanged because the card is not an eligible cash account, yet the purchase reduces the budget limit.
 
+== Debt payoff comparison
+
+`compareDebtPayoffs` (`debt_payoff.dart`, BUD 06) projects three ways of repaying cards and loans side by side. It only projects: payments are still recorded as ordinary transfers, and nothing is posted.
+
+A `DebtTerms` record holds, per card or loan account, the annual interest rate in basis points (19.99% is 1999, between 0 and 100000) and a positive minimum monthly payment. The user enters these on the "Paying off debt" screen, where the rate is typed as a percentage and parsed to an integer, never held as a floating-point number. The balance always comes from the ledger. `AppState.debtPayoff` includes every unarchived liability account that has terms and an amount owed, and starts payments on the first day of the next month.
+
+[cols="1,3",options="header"]
+|===
+| Strategy | Order extra money is applied
+
+| `avalanche` | Highest interest rate first (ties: smaller balance, then input order). Pays the least interest.
+| `snowball` | Smallest starting balance first (ties: higher rate, then input order). Clears accounts soonest.
+| `minimumOnly` | None. Each debt receives only its own minimum, with no extra amount and no rollover.
+|===
+
+Each month, for every debt still owed:
+
+. Interest is `balance x basis points / 120000`, rounded half away from zero to the minor unit, and is added before the payment.
+. The debt receives its minimum payment, or the whole amount owed when that is smaller.
+. For avalanche and snowball, the monthly budget is every debt's minimum (including debts already repaid, so their minimums roll over) plus the optional extra monthly amount. What remains after step 2 repays debts in strategy order, each up to what it owes.
+
+Payments fall on the same day of each later month, clamped to shorter months. All arithmetic is exact in minor units. The schedule stops when every debt is repaid or after 600 months. Each `DebtPayoffPlan` reports the order, a line per debt per month (opening, interest, payment, closing), total interest, total paid, each debt's payoff date and the debt-free date. `completed` is false when a debt is still owed at the limit, for example when a minimum is below the monthly interest, so no debt-free date is shown.
+
 == See also
 
 * xref:domain:budgeting.adoc[Budgeting] for periods, versions and the budget arithmetic the budget limit uses.

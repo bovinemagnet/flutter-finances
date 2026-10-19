@@ -28,3 +28,19 @@ Each account has three independent flags: include in budget, include in forecast
 |===
 
 The interface shows liquid money, liabilities and net worth separately.
+
+== Investment holdings
+
+An investment or superannuation account can be valued from its holdings instead of a single typed-in balance (P1). The code is `packages/finance_core/lib/src/planning/holdings.dart`, and the application's "holdings" screen for an account lists them.
+
+* A `Holding` is one security (a `securityCode` such as `VAS`, and a name) in one investment or superannuation account.
+* A `HoldingEvent` changes its units: `buy`, `sell`, or `split` (a numerator and denominator, so two-for-one is 2/1 and a one-for-three consolidation is 1/3). `unitsHeld` applies events in date order, keeping the given order within a date, and rounds a split's result half away from zero. Selling more than is held raises `INSUFFICIENT_UNITS`.
+* A `SecurityPrice` is the price of one whole unit on a date. A `PriceBook` returns the most recent price on or before a date; a later entry for the same security and date replaces the earlier one (a correction). The application keeps one price per security per day.
+
+Units are integer micro-units (six decimal places), parsed without rounding and rejected beyond six places, and prices are money in minor units, so no value passes through binary floating point. The value of a holding is `units x price / 1,000,000`, rounded half away from zero to the currency's minor unit, so 3.333333 units at 1.50 is worth 5.00. Each holding is rounded on its own before holdings are added.
+
+`valuePortfolio` values an account's holdings at the end of a date. A holding with units but no known price has no value and is left out of the total; `isComplete` is false and the screen says some holdings have no price. A holding with no units is worth zero. `holdingsValuationHistory` gives month-end values per account as a report keyed like the net-worth history, with a count of holdings left out for want of a price.
+
+=== Updating the account value
+
+Holdings do not change the ledger by themselves. `proposeValuationAdjustment` compares the portfolio total with the account's posted balance and, when they differ and every holding has a price, proposes a balance adjustment draft for the difference, dated on the valuation date. `AppState.valuationProposal` supplies it and the screen offers "Update value". The adjustment is posted only after the user confirms "Update the account value?", and it is an ordinary adjustment entry, so net worth then follows the usual calculation above. Only investment and superannuation accounts can be valued.

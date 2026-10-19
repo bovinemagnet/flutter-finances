@@ -26,9 +26,56 @@ The sync service registers its own metrics with Micrometer, on top of the standa
 | `finance.jobs.backlog.age` | gauge (seconds) | none | Age of the oldest queued job, measured from its `run_after` time. `0` when none are queued.
 | `finance.deletion.backlog` | gauge | none | Workspace deletions requested but not yet completed.
 | `finance.deletion.suppression.reapplied` | counter | none | Deleted workspaces found again (for example after a database restore) and erased again.
+| `finance.extraction.latency` | timer with histogram buckets (seconds) | `job`, `outcome` | Time taken by a server-side document job. Today `job` is `receipts.scan` and `outcome` is `available`, `rejected` or `error`. The cloud extraction job (`receipts.extract`) is not timed yet, because no provider is configured by default (see xref:sync:cloud-extraction.adoc[]).
+| `finance.backup.last.success` | gauge (seconds) | `kind`: `database`, `objects`, `restore-drill` | Epoch seconds when the latest successful run of that kind finished, `0` if none was ever reported.
+| `finance.backup.recovery.point` | gauge (seconds) | `kind`: `database`, `objects` | Epoch seconds of the latest point a successful backup restores to.
+| `finance.backup.failures` | counter | `kind` | Failed runs reported to this instance.
 |===
 
-A gauge reports `NaN` rather than failing the scrape when its database query errors.
+A gauge reports `NaN` rather than failing the scrape when its database query errors. The extraction timer publishes histogram buckets (`management.metrics.distribution.percentiles-histogram`), so `histogram_quantile()` works across instances.
+
+== Backup reporting
+
+Backups of the server's PostgreSQL database and object storage are made by deployment tooling, not by the service (the repository holds no backup tooling; see xref:operations:backup-and-restore.adoc[] for the device backups). The tooling reports each run to the service so that the outcome can be alerted on (NFR 08). The code is in `server/app/src/main/java/com/paulsnow/finance/server/ops/`.
+
+`POST /v1/ops/backups` accepts only access tokens carrying the `finance.ops` scope (authority `SCOPE_finance.ops`), for example a client-credentials client of the OIDC provider that only the tooling uses. End-user tokens receive `403 FORBIDDEN`. The body is:
+
+[source,json]
+----
+{"kind": "database", "outcome": "success",
+ "completedAt": "2026-10-20T01:00:00Z", "recoveryPointAt": "2026-10-20T00:59:30Z"}
+----
+
+[cols="1,3",options="header"]
+|===
+| Field | Values
+
+| `kind` | `database`, `objects` or `restore-drill`
+| `outcome` | `success` or `failure`
+| `completedAt` | When the run finished (UTC, at most 5 minutes ahead of the server clock)
+| `recoveryPointAt` | Optional. For a successful `database` or `objects` run, the latest point it restores to. It defaults to `completedAt` and is never after it.
+|===
+
+The answer is the stored status of that kind: `lastSuccessAt`, `recoveryPointAt` and `lastFailureAt`. The last success and recovery point are stored in the database, so every instance reports the same values and they survive restarts. A report of an older run never moves them back, so retries and late reports are harmless. An invalid report is `400 INVALID_REQUEST`.
+
+Aggregate the backup gauges with `max` and the failure counter with `sum`. A kind that was never reported has a last success of `0`, so the alerts below fire until the first report arrives.
+
+== Alerting hooks
+
+`server/README.md` (section "Operations") holds example Prometheus rules. They encode these targets:
+
+[cols="1,3",options="header"]
+|===
+| Alert | Condition
+
+| `FinanceRecoveryPointTooOld` | The latest `database` or `objects` recovery point is more than 15 minutes old for 5 minutes (NFR 08). Report the database recovery point every few minutes, for example after each WAL segment is archived, so the alert means a real gap.
+| `FinanceRestoreDrillOverdue` | No successful `restore-drill` within 90 days.
+| `FinanceBackupFailed` | A backup failure was reported in the last hour.
+| `FinanceBackupMetricsMissing` | No instance exposes the database backup gauge for 15 minutes.
+| `FinanceExtractionSlow` | The 95th percentile of `finance.extraction.latency` exceeds 30 seconds for 15 minutes.
+|===
+
+These are examples to adopt into the operator's own alerting. The repository does not deploy Prometheus, dashboards or an incident owner.
 
 == Mapping to the requirement signals
 
@@ -43,8 +90,8 @@ A gauge reports `NaN` rather than failing the scrape when its database query err
 | Import failures | `finance.imports.failures`
 | Deletion backlog | `finance.deletion.backlog`
 | Queue growth | `finance.jobs.backlog`, `finance.jobs.backlog.age`
-| Extraction latency | Not implemented: there is no extraction meter or server-side extraction in the code.
-| Backup success | Not implemented: backups are made on the device (see xref:operations:backup-and-restore.adoc[]) and no server meter reports them.
+| Extraction latency | `finance.extraction.latency`
+| Backup success | `finance.backup.last.success`, `finance.backup.recovery.point` and `finance.backup.failures`
 |===
 
 No meter or log field carries merchants, amounts, document contents or tokens. Tags are fixed code lists, and no meter is tagged by workspace, user or device.

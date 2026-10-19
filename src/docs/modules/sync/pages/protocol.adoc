@@ -130,6 +130,7 @@ After a 410 the client pages `GET /v1/sync/snapshot?after=<entityKey>&limit=500`
 
 Pending commands for entities deleted in the meantime are surfaced for review and never applied automatically.
 
+[[receipts]]
 == Receipt documents (SYNC 05)
 
 . `POST /v1/receipts/upload-intents` with `+{"receiptId", "assetId", "kind": "source | derivative", "contentType", "sizeBytes", "sha256"}+` returns `+{"uploadUrl", "headers", "expiresAt"}+` for a presigned PUT valid for 15 minutes. Requesting an intent again for the same `assetId` and checksum returns a fresh URL for the same object.
@@ -191,9 +192,33 @@ Uploads go to a staging key. Completion copies verified bytes to the asset's per
 * `receipts/<receiptId>/<assetId>`, the original bytes of every available receipt document; and
 * `manifest.json`, which holds the format (`flutter-finances-export`), schema version, workspace id, name, currency, exponent and timezone, the effective date semantics, `acceptedSequence`, counts, relationships (`reversalOf`, `replaces`, `refundOf`, `assetOf`), and the path, size and SHA-256 of every other file.
 
-`+GET /v1/exports/{id}+` reports the export, and `+GET /v1/exports/{id}/download+` returns `+{"downloadUrl", "expiresAt"}+` or `409 EXPORT_NOT_READY`. Exports are available to every workspace member.
+`+GET /v1/exports/{id}+` reports the export, and `+GET /v1/exports/{id}/download+` returns `+{"downloadUrl", "expiresAt"}+`, `409 EXPORT_NOT_READY`, or `410 EXPORT_EXPIRED` once the archive is older than the export retention (7 days by default, `finance.storage.export-retention`; the bucket lifecycle then deletes it, see xref:operations:job-worker.adoc[]). Exports are available to every workspace member.
 
 `+DELETE /v1/workspaces/{id}+` (owner only) revokes every device at once and returns `202` with a deletion whose progress `+GET /v1/workspaces/{id}/deletion+` reports to the requester. See xref:operations:data-deletion.adoc[].
+
+== Households, reports, extraction and bank feeds (P1)
+
+Four groups of endpoints were added for the P1 features. Each has its own page, and each follows the common rules above for authentication, workspace scope and errors.
+
+Households:: Invitations with a one-time code, the owner, member and viewer roles, per-account sharing and member removal. Hidden accounts are filtered out of the change feed and snapshot. See xref:sync:households.adoc[].
+Reports (REP 01, REP 04):: `+GET /v1/reports/{kind}+` computes the shared report definitions over the workspace's canonical journals. See <<reports>>.
+Optional cloud extraction (AUTO 02):: Owner consent, kept separate from sync consent, and untrusted receipt text. See xref:sync:cloud-extraction.adoc[].
+Bank feeds (BANK 01 to BANK 03):: Connections, consent, webhooks and proposals, with only a sandbox provider wired. See xref:sync:bank-feeds.adoc[].
+
+[[reports]]
+=== Reports
+
+`+GET /v1/reports/{kind}+` computes one of the shared `report.compute` definitions (`spec/fixtures/reports.json`), so the server and the client give the same answer for the same journals. The kinds are `income-vs-expenses`, `spending-by-category`, `spending-by-payee`, `net-worth-history`, `cash-flow` and `account-balances`.
+
+* All kinds except `account-balances` take exactly one period: `from` and `to` (inclusive `YYYY-MM-DD`), `financialYear=2026` (1 July 2026 to 30 June 2027, labelled `FY2026-27`) or `calendarYear=2026`, covering at most 100 years.
+* `account-balances` takes an optional `asOf` date and no period. `cash-flow` also needs `accountIds`.
+* Any member, viewers included, may read reports.
+* The answer holds the `kind`, `title`, currency, `range`, `asOf`, `columns` and `rows`. Each row lists the `journalIds` behind it for drill-through.
+* Only the posted ledger counts (posted and reversed journals). Drafts and pending entries are ignored.
+* Accounts the member may not see, and every journal posting to one, are removed before the report is computed, and `complete` is then `false`.
+* A server report covers only accepted commands, so it never includes a device's unsynchronised changes.
+
+Errors are `404 UNKNOWN_REPORT`, `400 INVALID_PERIOD` (missing, mixed or malformed period, `to` before `from`, or a period for `account-balances`), `400 INVALID_REQUEST` (`cash-flow` without `accountIds`) and `400 UNKNOWN_ACCOUNT` (an account that does not exist or that the member may not see; the two are indistinguishable). See xref:domain:reports-and-insights.adoc[] for the report definitions.
 
 == Errors
 
@@ -241,8 +266,14 @@ Downloading before the scan finishes is `409 ASSET_NOT_AVAILABLE`, and `404` bef
 | `+POST /v1/workspaces+`, `+GET /v1/workspaces+`, `+GET /v1/workspaces/{id}+` | Workspace setup
 | `+DELETE /v1/workspaces/{id}+`, `+GET /v1/workspaces/{id}/deletion+` | Workspace deletion
 | `+POST /v1/devices+`, `+DELETE /v1/devices/{id}+` | Register and revoke devices
+| `+/v1/workspaces/{id}/invitations+`, `+/v1/workspaces/{id}/members+` | Households (see xref:sync:households.adoc[])
+| `+GET /v1/workspaces/{id}/audit-events+` | Audit events (owners)
+| `+GET /v1/reports/{kind}+` | Reports over canonical journals
+| `+GET/PUT /v1/workspaces/{id}/extraction-consent+`, `+GET /v1/receipts/{receiptId}/extraction+` | Cloud extraction consent and results (see xref:sync:cloud-extraction.adoc[])
+| `+/v1/bank-feeds/...+` | Bank feeds (see xref:sync:bank-feeds.adoc[])
+| `+POST /v1/ops/backups+` | Backup reports (`finance.ops` scope only; see xref:operations:metrics.adoc[])
 |===
 
 == End-to-end tests
 
-`tool/e2e/run.sh` starts PostgreSQL and MinIO with podman, runs the server with the `e2e` profile and then runs `packages/finance_store/test/e2e` (`dart test -P e2e`). The server verifies tokens with the committed test-only key in `tool/e2e/keys`, which must never be used anywhere else. A plain `dart test` skips these tests.
+`tool/e2e/run.sh` starts PostgreSQL and MinIO with podman or Docker, runs the server with the `e2e` profile and then runs `packages/finance_store/test/e2e` (`dart test -P e2e`). The server verifies tokens with the committed test-only key in `tool/e2e/keys`, which must never be used anywhere else. A plain `dart test` skips these tests. See xref:ROOT:developer-guide.adoc#end-to-end-tests[the developer guide].

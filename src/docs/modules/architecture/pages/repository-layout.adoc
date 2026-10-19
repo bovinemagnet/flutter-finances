@@ -28,7 +28,7 @@ src/docs/                         This Antora component
 | `packages/finance_core` | Financial rules: money, journals, drafts, projection, corrections, reconciliation, budgets, planning, documents and sync command codecs
 | `packages/finance_store` | Encrypted database, outbox, receipt vault, backup container and sync client; see xref:architecture:local-store.adoc[]
 | `apps/finance_app` | Flutter client: `lib/app` (shell, theme, breakpoints), `lib/data` (application state and services), `lib/features`, `lib/screens`, `lib/platform` (interfaces and adapters), `lib/widgets`, `lib/format`; see xref:architecture:client-application.adoc[]
-| `server/app` | Sync service: `common`, `workspace`, `sync`, `ledger`, `receipts`, `imports`, `exports`, `jobs`, `deletion` and `storage` modules, with Liquibase changelogs in `src/main/resources/db/changelog`; see xref:architecture:sync-service.adoc[]
+| `server/app` | Sync service: `common`, `workspace`, `sync`, `ledger`, `receipts`, `imports`, `exports`, `jobs`, `deletion`, `storage`, `households`, `reports`, `audit`, `bankfeeds`, `extraction` and `ops` modules, with Liquibase changelogs in `src/main/resources/db/changelog`; see xref:architecture:sync-service.adoc[]
 | `server/finance-core` | Java implementation of the shared rules (`money`, `ids`, `ledger`, `planning`, `documents`, `imports`)
 | `spec` | Executable contract shared by the Dart and Java implementations
 | `src/docs` | Antora documentation, built by the Gradle `antora` task

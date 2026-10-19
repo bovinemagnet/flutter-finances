@@ -1,0 +1,95 @@
+= Households
+Paul Snow
+:revnumber: 0.0.0
+
+A synced workspace can be shared by several signed-in people, such as a couple or a family (P1, SEC 05). This page describes invitations, roles, account sharing and member removal. The contract is the "Households" section of `spec/sync/protocol.md`. The server code is in `server/app/src/main/java/com/paulsnow/finance/server/households/`, with the visibility rules applied by the sync module.
+
+Sharing a workspace needs the optional sync service. A local-only workspace has one user and none of this applies. See xref:sync:sign-in.adoc[].
+
+== Roles
+
+Every membership has exactly one role.
+
+[cols="3,1,1,1",options="header"]
+|===
+| Action | Owner | Member | Viewer
+
+| Pull the change feed and snapshot, read reports, start and download exports | yes | yes | yes
+| Register devices, list and revoke their own devices | yes | yes | yes
+| Submit sync commands, preview, commit and roll back imports, upload receipt documents | yes | yes | no
+| Invite, list and revoke invitations, change roles, remove other members | yes | no | no
+| List every member's devices and revoke any of them | yes | no | no
+| Read audit events, delete the workspace | yes | no | no
+| List members, leave the workspace | yes | yes | yes
+|===
+
+A viewer's command is `permission_denied` with `errors: ["NOT_PERMITTED"]`. A viewer's import or receipt upload call is `403 READ_ONLY`, and an owner-only call by anyone else is `403 OWNER_REQUIRED`. Roles never widen what a person can see: an owner does not see another member's private accounts either.
+
+The last owner can be neither demoted nor removed (`409 LAST_OWNER`). Owners are made by changing a role, never by invitation.
+
+== Invitations
+
+An owner creates an invitation with `+POST /v1/workspaces/{workspaceId}/invitations+`, giving a `role` of `member` or `viewer` and an optional `expiresInHours` (72 by default, at most 30 days).
+
+* The response is returned once and carries a `token` of 256 random bits. The server keeps only its SHA-256, so the token can never be shown again.
+* Listing invitations (`GET .../invitations`) returns them newest first with a `status` of `pending`, `expired`, `accepted` or `revoked` and `token: null`.
+* An owner revokes a pending or expired invitation with `+DELETE .../invitations/{invitationId}+`. Any other state is `409 INVITATION_NOT_PENDING`.
+
+The client joins the three values the invitee needs into one *invitation code*, `workspaceId.invitationId.token`, which the owner hands over out of band (`HouseholdInvitation.code` and `InvitationCode.parse` in `packages/finance_store/lib/src/sync/household_client.dart`). The server never sends the code anywhere.
+
+=== Accepting
+
+The invitee signs in as any user and calls `+POST /v1/workspaces/{workspaceId}/invitations/{invitationId}/accept+` with the token. The answer is `{"workspaceId", "role"}`. The invitee then registers a device with `POST /v1/devices` and bootstraps from the change feed, as for any other device.
+
+An invitation is single use, and nothing is revealed before the token is proven.
+
+[cols="1,3",options="header"]
+|===
+| Outcome | Cause
+
+| `404 INVITATION_NOT_FOUND` | Unknown invitation, wrong token or inactive workspace
+| `409 INVITATION_USED` | Already accepted by someone else (the same user accepting again receives `200` with the same answer)
+| `410 INVITATION_REVOKED` | Revoked by an owner
+| `410 INVITATION_EXPIRED` | Past its expiry
+| `409 ALREADY_MEMBER` | The user already belongs to the workspace
+|===
+
+== Members and removal
+
+`+GET /v1/workspaces/{workspaceId}/members+` lists members, owners first, each with a `you` flag. An owner changes a role with `+PATCH .../members/{userId}+`.
+
+`+DELETE .../members/{userId}+` removes a member (by an owner) or lets a member leave (their own `userId`). In the same transaction it revokes every device that person registered in the workspace. Their next sync call is `403 DEVICE_REVOKED` and every workspace call is `404 WORKSPACE_NOT_FOUND`, so removal takes effect at once without waiting for the device to notice.
+
+Invitations, acceptance, role changes, removals and device registrations are audit events that owners can read (see xref:operations:observability-and-security.adoc[]).
+
+== Sharing accounts
+
+Accounts are private by default. An account's `sharing` field is `private` (also assumed when the field is absent) or `shared`, and any other value is `INVALID_FIELD`. Only the person who created the account may change it. Anyone else's command is `permission_denied`. Accounts created by server work with no calling user, or before the server recorded creators, are visible to everyone.
+
+In the app, the account editor (`apps/finance_app/lib/features/accounts/account_editor.dart`) has a *Share with my household* switch, and the *Household* screen (`apps/finance_app/lib/features/sync/household_screen.dart`) lists members and invitations. It lets an owner invite someone, copy the invitation code once, change roles, remove members and revoke invitations. A member can leave. The connect screen (`apps/finance_app/lib/screens/connect_screen.dart`) has an *Invitation code* field: when it is filled in, the app accepts the invitation before it connects to that workspace.
+
+== What each member sees
+
+An account is hidden from a person when it is private and someone else created it. Visibility follows from that:
+
+* an account is visible unless hidden, and every category is visible;
+* a journal is hidden when any posting names a hidden account, so a transfer between a shared and a private account is hidden as a whole;
+* any other entity is hidden when one of `accountId`, `counterAccountId`, `toAccountId`, `fromAccountId` or `accountIds` names a hidden account, or `journalId` or `journalIds` names a hidden journal. Other metadata, such as budget plans and rules, is visible; and
+* a tombstone is never hidden, because a delete change carries only `{"id"}`.
+
+=== Change feed filtering
+
+The change feed judges each change against the accounts hidden at the time of the pull. Hidden changes are skipped, so a page may hold fewer than `limit` changes, or none, while `hasMore` is true. The client keeps paging.
+
+When an entity leaves a member's view, for example because the account becomes private, that member receives a `delete` change for it. When an entity enters their view, they receive an `upsert` with the full entity. Sharing or unsharing an account re-announces, in the same transaction, every journal posting to it and every entity referring to it or to those journals, so each member gains or drops them together. Clients ignore a `delete` for an entity they never had.
+
+The same rules apply elsewhere:
+
+* the snapshot returns only visible live entities;
+* reports and exports are computed from visible entities only, and a report's `complete` flag is `false` when an account was hidden (see xref:sync:protocol.adoc#reports[Reports]);
+* a command against a hidden entity is `permission_denied`, and a posting to a hidden account is `validation_failed` with `UNKNOWN_LEDGER_ACCOUNT`, exactly as for an account that does not exist; and
+* an import for a hidden account is `404 IMPORT_NOT_FOUND`, and downloading an asset of a hidden receipt is `404 NOT_FOUND`.
+
+NOTE: Households share the data held on the sync service. They are not end-to-end encrypted, and the service can read all synced data (SEC 03). See xref:operations:observability-and-security.adoc[].
+
+Workspace deletion removes invitations and memberships along with the rest of the workspace (see xref:operations:data-deletion.adoc[]).

@@ -38,6 +38,10 @@ User accounts map to asset or liability ledger accounts. Categories map to incom
 
 Liquid money is transaction, savings and cash accounts.
 
+== Account sharing
+
+Each `Account` has a `sharing` setting, `AccountSharing.private` (the default) or `shared` (P1 shared households). A private account, its journals and its reports stay visible only to the member who created it. The setting is stored in the account's JSON as `sharing` and reads as private when absent, so accounts saved before households existed stay private. It does not change how postings, balances or net worth are computed. How households, membership and visibility work across devices is described in xref:sync:households.adoc[Households].
+
 == System accounts
 
 System accounts have fixed identifiers so every device agrees on them without syncing.

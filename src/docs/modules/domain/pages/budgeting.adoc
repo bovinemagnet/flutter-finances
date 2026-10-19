@@ -60,7 +60,7 @@ An allocation plans an amount per period for one target, with an optional group 
 * a `goal` (money allocated to a savings goal or sinking fund; see xref:domain:goals-and-reservations.adoc[Goals and reservations]);
 * a `loanPrincipal` (principal repaid on a loan account). Credit cards are rejected because their purchases were already counted as spending.
 
-A version rejects an allocation that names an unknown group or a target that is allocated twice. A plan in `categoryOnly` mode uses the same versions and allocations but has no groups; a `groups` plan uses Needs, Wants and Savings style groups.
+A version rejects an allocation that names an unknown group or a target that is allocated twice. A plan in `categoryOnly` mode uses the same versions and allocations but has no groups; a `groups` plan uses Needs, Wants and Savings style groups. A `zeroBased` plan is described under <<_zero_based_mode>>.
 
 === The 50/30/20 starting point
 
@@ -75,6 +75,12 @@ A version rejects an allocation that names an unknown group or a target that is 
 For a take-home income of 5,000.00 the template gives Needs 2,500.00, Wants 1,500.00 and Savings 1,000.00 with nothing unassigned. For 1,000.01 the cent is given to the group with the largest remainder: Needs 500.01, Wants 300.00 and Savings 200.00.
 
 `BudgetVersion.fromTemplate` goes one step further: each group's amount is split across its categories by integer weights, again exactly. `BudgetVersion.summary()` reports income against allocations per group and overall, showing `unassigned` and `overAllocated` as separate figures rather than netting them, so a plan over-allocated in one group and under-allocated in another stays visible.
+
+=== Zero-based mode
+
+A plan in `zeroBased` mode (BUD 01, P1) uses the same versions and allocations, with no groups, but treats unassigned income as an error to fix rather than a buffer. `checkZeroBased` adds up the planned amounts of every allocation (categories, goals and loan principal) plus the approved adjustments for the period, and compares the total with the version's income. `difference` is income less assigned: positive is unassigned, negative is over-assigned, and zero is `balanced`. Both other states are errors (`isError`). `BudgetPeriodEvaluation.zeroBased` carries this check for a zero-based plan with a version in force, and is null in other modes.
+
+The budget screen shows a banner for the error: "Every dollar needs a job" with the amount not yet assigned, or "Every dollar is assigned more than once" with the amount over income. During onboarding, "Every dollar assigned" is one of three choices beside "Needs, wants, savings" and "Categories only". It starts from the template's category amounts without groups, so whatever the template left for savings shows as unassigned until the user places it.
 
 == Budget arithmetic
 

@@ -2,3 +2,6 @@
 * xref:sync:protocol.adoc[Sync protocol]
 * xref:sync:sign-in.adoc[Sign-in]
 * xref:sync:offline.adoc[Offline behaviour]
+* xref:sync:households.adoc[Households]
+* xref:sync:bank-feeds.adoc[Bank feeds]
+* xref:sync:cloud-extraction.adoc[Cloud extraction]

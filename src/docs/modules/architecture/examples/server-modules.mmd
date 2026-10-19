@@ -9,6 +9,12 @@ flowchart LR
     jobs[jobs: job table and runner]
     deletion[deletion: workspace erasure]
     storage[storage: S3 presigned URLs]
+    households[households: invitations, roles, removal]
+    reports[reports: canonical journal reports]
+    audit[audit: events and retention]
+    bankfeeds[bankfeeds: provider records, proposals]
+    extraction[extraction: optional cloud text]
+    ops[ops: backup reporting]
     core[server/finance-core: shared rules]
 
     workspace --> common
@@ -27,6 +33,22 @@ flowchart LR
     exports --> storage
     deletion --> jobs
     deletion --> storage
+    households --> workspace
+    households --> deletion
+    reports --> ledger
+    reports --> sync
+    reports --> workspace
+    audit --> workspace
+    bankfeeds --> sync
+    bankfeeds --> jobs
+    bankfeeds --> deletion
+    extraction --> receipts
+    extraction --> jobs
+    extraction --> deletion
+    ops --> common
+    households -.->|purger| deletion
+    bankfeeds -.->|purger| deletion
+    extraction -.->|purger| deletion
     sync -.->|purger| deletion
     ledger -.->|purger| deletion
     receipts -.->|purger| deletion

@@ -2,7 +2,7 @@
 Paul Snow
 :revnumber: 0.0.0
 
-This page records how the client is built and what is, and is not, automated. The repository contains no continuous integration configuration and no release scripts: there is no `.github` directory and no shell scripts. Everything below is a manual step unless stated otherwise.
+This page records how the client is built and released. Workflows in `.github/workflows` test every package, build every platform and produce signed releases. Their operating notes, including the secrets they need, are in `tool/packaging/README.md`. Anything not listed below is a manual step.
 
 == Build targets
 
@@ -12,14 +12,16 @@ The Flutter application in `apps/finance_app` has platform folders for `android`
 |===
 | Target | Build host | Status
 
-| Linux | Linux | Run and tested here with `flutter run -d linux` and `flutter test`
-| Android | Host with the Android SDK | Platform folder present; not built or verified in this workflow
-| iOS | macOS with Xcode | Must be built on macOS; not verified here
-| macOS | macOS with Xcode | Must be built on macOS; not verified here
-| Windows | Windows with Visual Studio | Must be built on Windows; not verified here
+| Linux | Linux | Run and tested here with `flutter run -d linux` and `flutter test`. Built and packaged in CI.
+| Android | Host with the Android SDK | Built in CI. Not run or verified on a device in this workflow.
+| iOS | macOS with Xcode | Must be built on macOS. CI builds it without code signing, and a release builds a signed App Store IPA. The release job is unverified until the first tagged release.
+| macOS | macOS with Xcode | Must be built on macOS. Built in CI, and signed and notarised for a release.
+| Windows | Windows with Visual Studio | Must be built on Windows. Built in CI, and packaged as a signed MSIX for a release.
 |===
 
-Release builds use the standard Flutter commands, run in `apps/finance_app`, for example `flutter build linux`, `flutter build appbundle`, `flutter build ios`, `flutter build macos` and `flutter build windows`. The repository does not wrap these in scripts. For the development workflow see xref:ROOT:developer-guide.adoc[].
+Only the Linux build can be produced and run on the development machine. The other targets are built by the CI runners for their own operating systems.
+
+Release builds use the standard Flutter commands, run in `apps/finance_app`, for example `flutter build linux`, `flutter build appbundle`, `flutter build ios`, `flutter build macos` and `flutter build windows`. The workflows below run them, and the Linux packaging has its own script. For the development workflow see xref:ROOT:developer-guide.adoc[].
 
 NOTE: Flutter does not guarantee that a plugin works on every target. Native dependencies, minimum operating system versions and architectures (x64 and ARM64) still need validating on each platform before support is advertised. See xref:capabilities.adoc[].
 
@@ -30,15 +32,65 @@ NOTE: Flutter does not guarantee that a plugin works on every target. Native dep
 * *macOS:* both entitlement files in `apps/finance_app/macos/Runner` enable the app sandbox, network client access and user-selected file read and write access.
 * *Android:* the manifest in `apps/finance_app/android/app/src/main` declares the `INTERNET`, `CAMERA` and `POST_NOTIFICATIONS` permissions.
 
+== Continuous integration and builds
+
+Three workflows live in `.github/workflows`.
+
+[cols="1,2,3",options="header"]
+|===
+| Workflow | Trigger | What it does
+
+| `ci.yml` | Push to `main`, pull requests
+| `dart analyze` and `dart test` for `finance_core` and `finance_store`, `flutter analyze` and `flutter test` for the app, `./gradlew build` for the server on Java 25 and then the end-to-end suite (`tool/e2e/run.sh` with Docker; see xref:ROOT:developer-guide.adoc#end-to-end-tests[End-to-end tests]). CI calls `./gradlew` directly because `gradle25w` is a local wrapper.
+
+| `build.yml` | Push to `main`, pull requests
+| Unsigned builds, each on its own operating system: Android APK and App Bundle, the Linux bundle with a `.tar.gz` and `.deb` on Ubuntu 24.04, Windows, macOS, and iOS with `--no-codesign`. It reads no secrets, so it is safe for pull requests from forks.
+
+| `release.yml` | A tag `vX.Y.Z` or `vX.Y.Z-suffix`
+| Signed Android, signed and notarised macOS, a signed Windows MSIX, a signed iOS App Store IPA, the Linux packages, a dependency inventory, checksums, a build provenance attestation and a draft GitHub release. Publishing the draft is a manual step.
+|===
+
+The release workflow fails closed. Its preflight job stops the release when the tag is malformed or any signing secret is missing, each signing job checks its own secrets again, and the Android build refuses to fall back to the debug key. Signing material is written only to the runner's temporary directory and removed at the end of the job. The release workflow builds from the tag and does not repeat the test jobs, so tag a commit whose `ci.yml` run passed.
+
+== Signing and notarisation
+
+All signing keys come from repository secrets, listed in `tool/packaging/README.md`.
+
+* *Android.* `apps/finance_app/android/app/build.gradle.kts` reads `apps/finance_app/android/key.properties` (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`) when it exists, and signs the release build type with it. Without the file, local release builds use the debug key so that `flutter run --release` keeps working. Setting `FINANCE_REQUIRE_RELEASE_SIGNING=true`, as `release.yml` does, turns a missing file into a build error. The workflow writes `key.properties` and the keystore from secrets, checks the APK with `apksigner` and the bundle with `jarsigner`, fails if either carries the debug certificate, and deletes both files. The secret is the upload key; Google Play App Signing holds the distribution key. `key.properties` and keystores are ignored by git and must never be committed.
+* *macOS.* The app is built, re-signed inside out with the Developer ID certificate and the hardened runtime using `macos/Runner/Release.entitlements`, submitted with `notarytool`, stapled and checked with `spctl`. Any status other than `Accepted` prints the notary log and fails the job.
+* *Windows.* `dart run msix:create` packages the build using the `msix_config` in `apps/finance_app/pubspec.yaml` and signs it with the certificate, and `signtool verify` checks the result.
+* *iOS.* The `ios` job runs `add_share_extension.rb`, imports the Apple Distribution certificate into a temporary keychain and installs the provisioning profiles for both bundle ids. It switches the Release configuration of the Runner and ShareExtension targets to manual signing in the runner's checkout only, then builds an App Store IPA with `flutter build ipa --export-options-plist`. It checks that `ShareExtension.appex` is embedded and that the app is signed by "Apple Distribution", removes the signing material in a step that always runs, and attaches `finance-app-<version>-ios.ipa` to the draft release. The secrets are `IOS_DISTRIBUTION_P12_BASE64`, `IOS_DISTRIBUTION_P12_PASSWORD`, `IOS_APP_PROFILE_BASE64`, `IOS_SHARE_EXTENSION_PROFILE_BASE64` and `IOS_TEAM_ID`, which the preflight job requires.
+* *Linux.* The package is not signed. Its integrity comes from `SHA256SUMS` and the provenance attestation on the release.
+
+== Android build settings
+
+`apps/finance_app/android/app/build.gradle.kts` compiles against `compileSdk = 37`, which the sharing plugin (`receive_sharing_intent`) requires. It also enables core library desugaring (`isCoreLibraryDesugaringEnabled` with `coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")`), because `flutter_local_notifications` uses `java.time` on older Android versions. Source and target compatibility is Java 17, and the Android jobs install JDK 21 to run Gradle.
+
+== Linux packages
+
+`tool/packaging/linux/build-deb.sh` packages the output of `flutter build linux --release`. It always writes `finance-app-<version>-linux-<arch>.tar.gz`, containing the bundle and a `share/` directory with the desktop file, icons and AppStream metainfo. With `dpkg-deb` available it also writes `finance-app_<version>_<arch>.deb`, which installs the bundle in `/opt/finance-app` with a `/usr/bin/finance-app` launcher. The package depends on GTK 3, libsecret (the database key lives in the Secret Service, see SEC 02), WebKitGTK 4.1 and libsoup 3.
+
+* Options are `--version`, `--arch`, `--bundle`, `--out`, `--tarball-only` and `--require-deb`, which makes a missing `dpkg-deb` an error as it is in CI. The version defaults to `apps/finance_app/pubspec.yaml`.
+* Archives are reproducible for a given commit, using `SOURCE_DATE_EPOCH`. The desktop file and metainfo are validated with `desktop-file-validate` and `appstreamcli validate` when installed.
+* Ubuntu 24.04 LTS on x64 is the baseline, and the workflows install the `.deb` there to check it. ARM64 is not validated against the chosen plugins and must not be advertised.
+
+== iOS share extension
+
+Sharing a file into the app on iOS needs a Share Extension target that shares an App Group with the app. `apps/finance_app/ios/tool/add_share_extension.rb` adds it to `Runner.xcodeproj` with the `xcodeproj` gem (version 1.24 or later), so it can run on any machine with Ruby, and it is idempotent:
+
+* it gives the app the bundle id `com.paulsnow.finance.app` and `Runner/Runner.entitlements` with the App Group `group.com.paulsnow.finance.app`;
+* it creates the `ShareExtension` target (bundle id `com.paulsnow.finance.app.ShareExtension`) from `apps/finance_app/ios/ShareExtension`, with its own entitlements and the `receive-sharing-intent` Swift package product; and
+* it embeds the extension in the app ("Embed Foundation Extensions", ahead of "Thin Binary") and adds it as a dependency.
+
+`build.yml` runs the script before `flutter build ios --no-codesign`, and the `ios` job in `release.yml` runs it before the signed build. Both check that `ShareExtension.appex` is embedded. A developer with Xcode may instead run it once and commit the updated `project.pbxproj`.
+
+The handoff uses the App Group. When the user shares a receipt photo or PDF, `ShareViewController` (a subclass of `RSIShareViewController`) copies the files into the App Group container and opens the app through its `ShareMedia-<bundle id>` URL scheme. The app reads them through `PluginShareInbox`, where they become unconfirmed receipt captures. Nothing is posted without the user's review.
+
 == Known gaps before a release
 
-* *iOS share extension.* Sharing a file into the app on iOS needs a separate extension target in Xcode with an App Group. The Flutter side that reads shared files exists (`PluginShareInbox`), but the target has not been added to `apps/finance_app/ios`.
-* *Signing.* Code signing for Android, iOS, macOS and Windows is not configured or automated in the repository.
-* *Notarisation.* macOS notarisation is a release step that is not automated.
-* *Distribution.* No store submission, installer packaging or update mechanism is defined.
-* *Continuous integration.* Builds and tests on each operating system are not automated.
-
-The release steps are therefore performed by hand, on each operating system, with that platform's signing and notarisation tools.
+* *iOS distribution.* `release.yml` builds and signs the App Store IPA, but the `ios` job has not yet run on GitHub Actions and is unverified until the first tagged release. Uploading the IPA to TestFlight is a manual step, using Transporter or `xcrun altool`.
+* *Store submission and updates.* Store submission and an update mechanism are not defined. A release is a draft GitHub release that a person publishes.
+* *Platform verification.* Builds are produced for Android, macOS and Windows, but they have not been run and verified on those systems in this workflow.
 
 == Server and documentation builds
 

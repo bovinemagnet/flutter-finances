@@ -33,3 +33,5 @@ A financial correction is an ordinary edit for the user but is stored as a rever
 A journal that is not in the posted ledger needs no reversal, and an already reversed journal cannot be reversed again. Metadata changes retain revision history rather than creating reversals.
 
 On the server, `journal.correct` applies all three changes atomically; see xref:sync:protocol.adoc[]. Two devices correcting the same amount produce one accepted correction and one conflict.
+
+A bank feed proposal that the user accepts becomes an ordinary journal in the status the provider reported (pending or posted). When the provider later posts a transaction that settles an accepted pending one, that pending entry is corrected instead of a second entry being added; see xref:domain:imports.adoc#_bank_feed_entries[Bank feed entries].

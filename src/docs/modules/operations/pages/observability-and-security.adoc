@@ -19,7 +19,7 @@ IMPORTANT: This page separates two kinds of statement. *Requirement* means taken
 
 Use opaque correlation identifiers. Alert on growing queues and checksum failures without logging merchants, amounts, document contents, tokens or full account numbers. Define an incident owner before enabling cloud sync outside a development environment.
 
-*Implemented.* The server registers meters for six of the eight signals, plus job queue gauges. Extraction latency and backup success have no meter. The names, tags and meanings are on xref:operations:metrics.adoc[]. No alert rules, dashboards or incident owner are defined in the repository.
+*Implemented.* The server registers meters for all eight signals, plus job queue gauges. The names, tags and meanings are on xref:operations:metrics.adoc[]. Backup success is reported to the service by the backup tooling and exposed as gauges, and `server/README.md` gives example alert rules for the backup and extraction targets (see xref:operations:metrics.adoc#_alerting_hooks[Alerting hooks]). No dashboards or incident owner are defined in the repository.
 
 === Logging and correlation (implemented)
 
@@ -28,6 +28,21 @@ Use opaque correlation identifiers. Alert on growing queues and checksum failure
 * `Redactor` masks bearer tokens, JWTs, signed URL credentials, e-mail addresses, money amounts, numbers of six or more digits and database key details. It is a safety net: pattern matching cannot recognise a merchant name, so code must still never log one.
 * Error responses are `{error, message, correlationId}`. The framework settings `server.error.include-message` and `include-stacktrace` are `never`. Job errors are stored redacted and truncated to 500 characters.
 * Job payloads hold identifiers only.
+
+[[audit-events]]
+=== Audit events (implemented)
+
+Security-relevant actions are recorded as audit events (SEC 06), in the `audit_event` table (`server/app/src/main/java/com/paulsnow/finance/server/audit/`). An event is stored in the same transaction as the action that raised it. It holds identifiers and short codes only: the workspace, the acting user, the kind, a subject type and identifier, a short detail such as a role, the correlation identifier and the time. It never holds merchants, amounts, document contents or tokens.
+
+* Kinds include household changes (invitations, acceptance, role changes, removals and device registrations; see xref:sync:households.adoc[]), `extraction.consent_granted` and `extraction.consent_withdrawn` (see xref:sync:cloud-extraction.adoc[]), `bank_feed.*` (see xref:sync:bank-feeds.adoc[]) and `workspace.deletion_completed`.
+* Owners read them with `+GET /v1/workspaces/{workspaceId}/audit-events?limit&before+`, newest first (default 100, at most 500). Other members receive `403 OWNER_REQUIRED`.
+* Events are kept for `finance.audit.retention`, 12 months (365 days) by default. On the worker workload, a daily purge at 03:37 UTC (`finance.audit.purge-cron`, default `0 37 3 * * *`) deletes older events. Without a worker the purge never runs.
+* Events outlive a deleted workspace until that retention ends, because they are not part of the workspace data that the deletion job erases.
+
+[[reports]]
+=== Reports on the server (implemented)
+
+`+GET /v1/reports/{kind}+` (REP 01) computes reports over the canonical journals with the same definitions as the client, from the shared fixture `spec/fixtures/reports.json`. It counts accepted commands only and removes accounts the member may not see, as described in xref:sync:protocol.adoc#reports[the protocol]. The code is in `server/app/src/main/java/com/paulsnow/finance/server/reports/`. Reports are read-only, need no job and are available to viewers. Nothing is logged about their content.
 
 == Security and privacy requirements
 
@@ -55,11 +70,11 @@ The table gives each requirement as written, followed by what the code does toda
 
 | SEC 05 Privacy controls
 | No advertising SDKs, sale of financial data or model training on receipts. Cloud sync and optional external extraction have separate consent controls. Australian residency for cloud data and backups is proposed, with any exception disclosed first. Deleting a workspace revokes sessions and triggers a tracked deletion job.
-| Deletion is implemented: see xref:operations:data-deletion.adoc[]. The storage region defaults to `ap-southeast-2`, which is a default and not an enforced residency control. Consent controls are not part of the server.
+| Deletion is implemented: see xref:operations:data-deletion.adoc[]. The storage region defaults to `ap-southeast-2`, which is a default and not an enforced residency control. Optional cloud extraction needs an owner's consent, recorded separately from sync and naming the provider and its retention, and withdrawing it deletes the results (see xref:sync:cloud-extraction.adoc[]). Bank feed consent is given at the provider and shown in the app (see xref:sync:bank-feeds.adoc[]). Sync consent itself is a client choice: the server has no switch for it.
 
 | SEC 06 Retention and deletion
 | Proposed targets: deletion from active systems within 30 days and expiry from rolling backups within 35 days, except for a documented obligation. Keep a deletion suppression record so a restored backup cannot reintroduce deleted data. Proposed audit and security event retention is 12 months with minimised content.
-| The suppression record is kept and blocks id reuse. Erasure from the database and bucket is implemented. A workspace that reappears after a database restore is refused by the API and erased again by the worker at start-up and every 15 minutes (`SuppressionEnforcer`; see xref:operations:data-deletion.adoc[]). Backup expiry and audit event retention are not implemented. Tombstones are compacted after 90 days (see xref:operations:job-worker.adoc[]).
+| The suppression record is kept and blocks id reuse. Erasure from the database and bucket is implemented. A workspace that reappears after a database restore is refused by the API and erased again by the worker at start-up and every 15 minutes (`SuppressionEnforcer`; see xref:operations:data-deletion.adoc[]). Audit events are kept for 12 months and then purged (see <<audit-events>>). The bucket lifecycle expires staging uploads after one day and export archives after the export retention, 7 days by default (see xref:operations:data-deletion.adoc#_object_storage_lifecycle[Object storage lifecycle]). Backup expiry is not implemented. Tombstones are compacted after 90 days (see xref:operations:job-worker.adoc[]).
 |===
 
 Related topics are covered in xref:sync:protocol.adoc[] (workspace scoping and quarantine of uploads), xref:platform:capabilities.adoc[] (key store availability) and xref:operations:backup-and-restore.adoc[].

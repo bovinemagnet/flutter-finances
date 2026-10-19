@@ -2,7 +2,7 @@
 Paul Snow
 :revnumber: 0.0.0
 
-Reports present ledger and planning figures as tables with drill-through to the source entries. Insights are explainable observations derived from the same figures. The code is in `packages/finance_core/lib/src/planning` (`report.dart`, `ledger_reports.dart`, `planning_reports.dart`, `date_range.dart`, `insights.dart`). These live in the Dart package; the Java mirror in `server/finance-core` does not include them.
+Reports present ledger and planning figures as tables with drill-through to the source entries. Insights are explainable observations derived from the same figures. The code is in `packages/finance_core/lib/src/planning` (`report.dart`, `ledger_reports.dart`, `planning_reports.dart`, `date_range.dart`, `insights.dart`, `subscriptions.dart`, `anomalies.dart`). These live in the Dart package; the Java mirror in `server/finance-core` does not include them.
 
 == The report model
 
@@ -59,9 +59,40 @@ The cash-flow report distinguishes transfers within the included account set fro
 
 | `possibleDuplicate` | The caller supplies a candidate pair of entries; the pair is sorted so the key is stable.
 | `possibleDuplicate:<a>\|<b>`
+
+| `possibleSubscription` | A merchant charges regularly and no schedule covers it yet (see <<_subscription_detection>>). The amount is the latest payment.
+| `possibleSubscription:<merchant>:<frequency>:<amount>`
+
+| `unusualTransaction` | A posted purchase is far above what is usual for its merchant or category (see <<_anomaly_detection>>).
+| `unusualTransaction:<journal>`
+
+| `spendingSpike` | A category's spending in a month is far above its recent months. The amount is the month's spending.
+| `spendingSpike:<category>:<month start>`
 |===
 
-Candidate duplicates are supplied by the matching code; see xref:domain:matching-and-deduplication.adoc[Matching and deduplication].
+The detection rules are fed by `detectSubscriptions`, `detectUnusualTransactions` and `detectSpendingSpikes`, which `AppState.insights` runs for the current budget period (the spike check uses the current calendar month). Candidate duplicates are supplied by the matching code; see xref:domain:matching-and-deduplication.adoc[Matching and deduplication].
+
+=== Subscription detection
+
+`detectSubscriptions` (`subscriptions.dart`, REP 03) looks for merchants that charge regularly. It uses posted expenses with a payee from the last 400 days, grouped by normalised merchant name and then by amount: a payment joins an amount cluster when it is no more than 10% (1000 basis points) above the cluster's smallest amount. A cluster is proposed when it has at least three payments and:
+
+* the median gap between payments falls in a cadence: weekly 6 to 8 days, fortnightly 12 to 16, monthly 26 to 35, quarterly 84 to 98 or annually 358 to 372;
+* every gap fits the cadence, or all but one when there are at least three gaps (a skipped month, say);
+* the series is still active, meaning the last payment is no more than twice the nominal gap (plus the cadence tolerance) before today;
+* no existing schedule has the same normalised payee or name.
+
+Confidence is a heuristic category, never a probability: `high` when every gap fits, every amount is identical and there are at least four payments; `medium` when every gap fits; `low` when one gap does not. Each proposal lists its reasons (same merchant, identical or similar amount, regular or one irregular interval), the payments that form the pattern, and the next due date, which steps on from the last payment (keeping its day of month) until it is on or after today.
+
+The insight offers "Add as bill". `confirmSubscription` then saves the proposal's `toSchedule` as an ordinary expense `RecurringSchedule` (see xref:domain:planning.adoc[Planning and forecasting]), flagged as an estimate when the amounts varied. Nothing is saved until the user chooses that, and once the schedule exists the merchant is no longer proposed. The `confirmed` flag matters to forecasts only for income, so the new bill takes part in the forecast like any expense schedule.
+
+=== Anomaly detection
+
+Both anomaly rules use the same robust test. A value is unusual when its modified z-score exceeds 3.5, computed in exact integer arithmetic as `6745 x (amount - median) > 35000 x MAD`. MAD, the median absolute deviation, is raised to at least a tenth of the median and one minor unit, and an optional minimum excess over the median can also be required.
+
+* `detectUnusualTransactions` compares each posted purchase in the period with earlier purchases from the same merchant in the last 365 days when there are at least five, otherwise with earlier purchases in the same main expense category (the one with the largest expense posting) when there are at least five. With less history the purchase is not judged. The insight shows the amount, the usual median and how many earlier purchases were compared.
+* `detectSpendingSpikes` compares each expense category's net spending in a calendar month (refunds reduce it) with its monthly spending over the previous six months, limited to months since the first posted entry. With fewer than three history months nothing is reported. A category whose history months were all empty is marked as first spending and described as spending after that many months with none.
+
+Anomalies only explain. They never change a budget, recategorise an entry or move money, and like other insights they can be viewed, dismissed, snoozed or switched off.
 
 === Dismiss, snooze and disable
 

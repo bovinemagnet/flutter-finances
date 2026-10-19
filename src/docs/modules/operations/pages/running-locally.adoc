@@ -53,14 +53,14 @@ Health, info, Prometheus and API documentation are reachable without a token. Ev
 [[end-to-end-tests]]
 == End-to-end tests
 
-`tool/e2e/run.sh` runs the Dart sync client against the real server. It needs `podman`, `java`, `curl`, `python3` and `dart` on the path. The script:
+`tool/e2e/run.sh` runs the Dart sync client against the real server. It needs a container engine, `java`, `curl`, `python3` and `dart` on the path. The engine is `podman` when installed and otherwise `docker`, and `CONTAINER_ENGINE=podman|docker` chooses one (CI uses Docker). The script:
 
-. starts PostgreSQL (`docker.io/library/postgres:18`) and MinIO containers with podman on free local ports;
-. builds the server with `gradle25w :server:app:bootJar` (skip with `FINANCE_E2E_SKIP_BUILD=1`) and starts it with the `e2e` profile on a free port, with the API and worker in one process, a 20 second tombstone horizon so expired cursors can be exercised, and the committed test key pair in `tool/e2e/keys`;
+. starts throwaway PostgreSQL (`docker.io/library/postgres:18`) and MinIO containers on free local ports;
+. builds the server with `gradle25w :server:app:bootJar` (skip with `FINANCE_E2E_SKIP_BUILD=1`) and starts it with the `e2e` profile on a free port, with the API and worker in one process, a 20 second tombstone horizon so expired cursors can be exercised, the committed, test-only key pair in `tool/e2e/keys`, a bank feed token key generated freshly for each run (`FINANCE_BANK_FEEDS_TOKEN_KEY`) and the sandbox bank enabled (`finance.bank-feeds.sandbox.enabled`), so the bank feed endpoints can be exercised without a real provider;
 . waits for the health check, then runs `dart test -P e2e test/e2e` in `packages/finance_store` with `FINANCE_E2E_BASE_URL` and `FINANCE_E2E_PRIVATE_KEY` set; and
 . always stops the server and removes the containers, printing the tail of the server log when the run fails. `FINANCE_E2E_KEEP_LOGS=1` keeps the log directory.
 
-Extra arguments go to `dart test`, for example `--name A10`. The images can be replaced with `FINANCE_E2E_POSTGRES_IMAGE` and `FINANCE_E2E_MINIO_IMAGE`.
+Extra arguments go to `dart test`, for example `--name A10`. The images can be replaced with `FINANCE_E2E_POSTGRES_IMAGE` and `FINANCE_E2E_MINIO_IMAGE`, and `GRADLE` replaces the Gradle launcher (`gradle25w` when on the path, otherwise `./gradlew`). The containers are removed even when the run fails.
 
 CAUTION: The test key pair is public and committed to the repository. The `e2e` profile has no default for the key location and must never be pointed at a real environment.
 
@@ -81,6 +81,9 @@ CAUTION: The test key pair is public and committed to the repository. The `e2e` 
 | `FINANCE_S3_ACCESS_KEY`, `FINANCE_S3_SECRET_KEY` | empty (`minioadmin` under `local`) | Static credentials. When empty the default AWS credential chain (a service identity) is used.
 | `FINANCE_S3_PATH_STYLE` | `false` (`true` under `local`) | Path-style bucket addressing, needed by MinIO
 | `FINANCE_WORKER_ENABLED` | `false` (`true` under `local`) | Run the job worker in this process
+| `FINANCE_EXPORT_RETENTION` | `7d` | How long export archives are kept before the bucket lifecycle expires them, rounded up to whole days
+| `FINANCE_S3_MANAGE_LIFECYCLE` | `true` | Let the worker put lifecycle rules on the bucket at start-up. Set `false` when infrastructure code owns them.
+| `FINANCE_BANK_FEEDS_TOKEN_KEY` | empty | Base64 AES key (256 bits recommended) that encrypts bank feed provider tokens. Bank feeds are unavailable (`409 BANK_FEEDS_UNAVAILABLE`) without it. Keep it in a secret store.
 |===
 
 == Other settings
@@ -102,9 +105,21 @@ These properties have no environment variable. Override them with the usual Spri
 | `finance.receipts.max-image-side` | `16384` | Largest image width or height, in pixels
 | `finance.receipts.max-image-pixels` | `50000000` | Largest image area (50 megapixels)
 | `finance.deletion.suppression-cron` | `0 */15 * * * *` (UTC) | How often the worker re-erases deleted workspaces that have reappeared (also run once at start-up), worker only
+| `finance.audit.retention` | `365d` | How long audit events are kept (SEC 06)
+| `finance.audit.purge-cron` | `0 37 3 * * *` (UTC) | Audit retention purge, worker only
+| `finance.bank-feeds.sandbox.enabled` | `false` | Enable the deterministic `sandbox` provider, for development and tests only. No real provider is wired (see xref:sync:bank-feeds.adoc[]).
+| `finance.bank-feeds.webhook-secrets.<provider>` | none | HMAC-SHA256 secret that a provider signs its webhooks with
+| `finance.bank-feeds.webhook-tolerance` | `5m` | How far a webhook timestamp may be from the server clock
+| `finance.bank-feeds.refresh-base-backoff` | `1m` | Delay after the first rate-limited refresh, doubling for each consecutive limit
+| `finance.bank-feeds.refresh-max-backoff` | `6h` | Longest delay between rate-limited refreshes
+| `finance.bank-feeds.max-rate-limit-retries` | `8` | Rate-limited refreshes retried automatically before waiting for a manual refresh or webhook
+| `finance.bank-feeds.stale-after` | `36h` | How long an active feed may go without a successful refresh before it is `stale`
+| `finance.bank-feeds.purge-cron` | `0 47 * * * *` (UTC) | Removal of old webhook delivery records, worker only
 | `finance.imports.max-rows` | `50000` | Largest CSV import
 | `finance.imports.synchronous-row-limit` | `1000` | Imports above this many new rows commit as a job
 | `finance.worker.*` | see xref:operations:job-worker.adoc[] | Worker polling, lease and retry settings
 |===
+
+Cloud text extraction has no configuration key. It is offered only when a deployment declares an `ExtractionProvider` bean, and none ships (see xref:sync:cloud-extraction.adoc[]). Backup reporting needs an OIDC client whose tokens carry the `finance.ops` scope (see xref:operations:metrics.adoc[]).
 
 The service shuts down gracefully, allowing 30 seconds for in-flight work. Error responses never include exception messages or stack traces, and log lines pass through redacting converters; see xref:operations:observability-and-security.adoc[].

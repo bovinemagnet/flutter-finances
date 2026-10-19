@@ -38,7 +38,7 @@ Creating a workspace with a suppressed id is refused with `409 WORKSPACE_DELETED
 The job runs on the worker (see xref:operations:job-worker.adoc[]), so a deletion makes no progress if no worker is enabled. It runs these steps in order:
 
 . `objects`: every object under `workspaces/<workspaceId>/` in the bucket, which holds receipt documents and export archives;
-. one step for each module that stores workspace data, each in its own transaction: `exports`, `imports`, `ledger`, `receipts` and `sync` (the change log, entity rows, idempotency records, device cursors and purge watermark);
+. one step for each module that stores workspace data, each in its own transaction: `bankfeeds` (connections, encrypted tokens, shared accounts and provider records, after withdrawing consent at each provider on a best-effort basis), `exports`, `extraction` (recognised receipt text), `households` (invitations and memberships), `imports`, `ledger`, `receipts` and `sync` (the change log, entity rows, idempotency records, device cursors and purge watermark);
 . `jobs`: the workspace's other queued jobs; and
 . `workspace`: the workspace row with its memberships and devices.
 
@@ -50,12 +50,34 @@ A database restored from a backup taken before a deletion brings the workspace b
 
 The enforcer runs only on a process with the worker enabled: once when the application is ready, which is when a restored database first comes up, and then on the schedule `finance.deletion.suppression-cron` (default every 15 minutes, UTC).
 
+== Object storage lifecycle
+
+Besides erasure on request, the worker puts lifecycle rules on the bucket at start-up (SEC 06). The code is in `server/app/src/main/java/com/paulsnow/finance/server/storage/`.
+
+[cols="2,2,2",options="header"]
+|===
+| Rule | Applies to | Action
+
+| `finance-expire-staging-uploads` | Objects under `workspaces/` tagged `finance-retention=staging`, which are client uploads waiting for verification | Expire one day after they were written
+| `finance-expire-exports` | Objects under `workspaces/` tagged `finance-retention=export`, which are export archives | Expire after `finance.storage.export-retention` (`FINANCE_EXPORT_RETENTION`), 7 days by default, rounded up to whole days
+| `finance-abort-incomplete-uploads` | The whole bucket | Abort incomplete multipart uploads one day after they start, where the store supports it
+|===
+
+Filters match prefixes and not wildcards, so the presigned upload signs the tag `finance-retention=staging` and the export job tags each archive `finance-retention=export`. Verified receipt documents are copied to their permanent key without a tag and never expire. An export older than its retention answers `410 EXPORT_EXPIRED` and the user starts a new one.
+
+Applying the rules replaces only rules whose identifier starts with `finance-` and keeps every other rule, so restarting the worker is harmless. MinIO has no `AbortIncompleteMultipartUpload` action and rejects a configuration containing one. The worker then logs a warning, applies the two expiry rules alone, and relies on MinIO to remove stale multipart uploads. Any other rejection stops the worker from starting. Only the worker's identity needs `s3:GetLifecycleConfiguration` and `s3:PutLifecycleConfiguration`. Set `finance.storage.manage-lifecycle=false` (`FINANCE_S3_MANAGE_LIFECYCLE`) when infrastructure code owns the bucket's lifecycle.
+
+== Audit events
+
+Audit events carry identifiers and short codes only and are not erased with the workspace. They expire after `finance.audit.retention`, 12 months by default (see xref:operations:observability-and-security.adoc[]).
+
 == Retention
 
-IMPORTANT: The retention targets are requirements, not implemented behaviour. Only the first three items below describe the code.
+IMPORTANT: The retention targets are requirements, not implemented behaviour. The items marked *Implemented* describe the code.
 
 * *Implemented:* access is revoked and the workspace hidden immediately; the erasure job removes data from the primary database and object storage; a suppression entry prevents the workspace id being reused.
 * *Implemented:* a workspace that reappears after a restore is erased again (see above).
 * *Requirement, not enforced by code:* deletion from active systems within 30 days (proposed) depends on a worker running; there is no alert tied to this target beyond the deletion backlog gauge.
+* *Implemented:* audit events expire after 12 months, and staging uploads and export archives expire through the bucket lifecycle.
 * *Requirement, not implemented:* expiry from rolling backups within 35 days (proposed). No backup tooling exists in the repository.
 * *Requirement, not implemented:* expiry of the data from the backups themselves. The repository holds no backup tooling; see xref:operations:backup-and-restore.adoc[].

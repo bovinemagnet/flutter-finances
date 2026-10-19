@@ -1,10 +1,52 @@
-= CSV imports
+= Statement imports
 Paul Snow
 :revnumber: 0.0.0
 
-A statement import turns a bank or card CSV file into reviewed drafts. Every row is kept as evidence in a `SourceRecord`, separate from the journals it produced, so correcting an entry never erases where it came from. The client implementation is in `packages/finance_core/lib/src/documents/imports`; the server mirror is in `server/finance-core` (`Fingerprints`) and `server/app/.../server/imports` (`ImportService`). Both compute the same fingerprints through the shared `csv.fingerprint` fixture (see xref:architecture:shared-fixtures.adoc[]).
+A statement import turns a bank or card CSV, OFX or QIF file into reviewed drafts (IMP 01). Every row is kept as evidence in a `SourceRecord`, separate from the journals it produced, so correcting an entry never erases where it came from. The client implementation is in `packages/finance_core/lib/src/documents/imports`; the server mirror is in `server/finance-core` (`Fingerprints`) and `server/app/.../server/imports` (`ImportService`). Both compute the same fingerprints through the shared `csv.fingerprint` fixture (see xref:architecture:shared-fixtures.adoc[]).
 
-The flow is: parse with a mapping, preview against what is already recorded, commit the reviewed decisions, and optionally roll the batch back.
+The flow is: parse (with a mapping for CSV, or directly for OFX and QIF), preview against what is already recorded, commit the reviewed decisions, and optionally roll the batch back.
+
+== OFX and QIF statements
+
+OFX and QIF files need no column mapping. Their parsers return the same row type as the CSV reader (`parseOfx`, `parseOfxBytes`, `parseQif`, `parseQifBytes` in `packages/finance_core/lib/src/documents/imports`), so preview, commit, fingerprints, decisions and rollback behave exactly as described below for CSV.
+
+The application chooses the format with `detectStatementFormat`, by content first and file name second: `OFXHEADER`, an `<OFX>` element or an XML document containing `<OFX` is OFX; a first line starting `!Type:` is QIF; otherwise the file name ending `.ofx` or `.qfx` is OFX, `.qif` is QIF, and anything else is CSV. The import screen shows the CSV mapping controls only for CSV. For the other formats it asks only for the account. `previewStatement` and `commitStatement` in `ImportService` do the rest, using the workspace currency.
+
+=== OFX
+
+Both OFX 1.x (SGML) and 2.x (XML) are read the same way, and XML character entities are decoded. A header naming `CHARSET:1252` or `ISO-8859-1` is decoded as Windows-1252; otherwise the encoding is detected. The statement is the first `STMTRS` (bank) or `CCSTMTRS` (credit card), or the one whose `ACCTID` matches the account id passed in. Each `STMTTRN` becomes a row.
+
+[cols="2,3"]
+|===
+|Row field |Source
+
+|Date |The first eight digits of `DTPOSTED`; any time and zone are ignored.
+|Amount |`TRNAMT`, already signed from the account's point of view (card purchases are negative).
+|Description |`NAME` (or `PAYEE/NAME`), followed by ` - ` and `MEMO` when the memo adds something.
+|Reference |The trimmed `FITID`, so the fingerprint uses the reference form (IMP 02).
+|===
+
+The result also carries the statement's `ACCTID`, `BANKID`, account type, currency, ledger balance with its date, the transaction list dates and the `ACCTID` of any other statements in the file. A transaction reports at most one error: `MISSING_FIELD` (no `DTPOSTED`), `BAD_DATE`, `BAD_AMOUNT`, `MISSING_AMOUNT` or `ZERO_AMOUNT`. Text with no `<OFX>` element or no statement reports `UNRECOGNISED_FORMAT` on row 0.
+
+=== QIF
+
+Records in `!Type:Bank`, `CCard`, `Cash`, `Oth A` and `Oth L` sections are transactions; other sections (such as `!Account`, `!Type:Cat` and `!Type:Invst`) are skipped. A record ends at a `^` line.
+
+[cols="2,3"]
+|===
+|Row field |Source
+
+|Date |The `D` line, read with the application's day-month or month-day convention (`DateConvention`; the application passes the workspace's convention).
+|Amount |The `T` line, or `U` when there is no `T`, read like a CSV amount cell and signed from the account's point of view.
+|Description |`P`, followed by ` - ` and `M` as for OFX.
+|Reference |Always empty. QIF has no provider identifier (the `N` line holds cheque numbers or words such as `ATM`), so the fingerprint uses the date, amount and description form.
+|===
+
+Errors are the same five codes as OFX, and a file with no transaction section reports `UNRECOGNISED_FORMAT` on row 0. QIF fingerprints rely on the occurrence counter to keep two genuine same-day purchases of equal value (A11).
+
+=== Bank feed entries
+
+An entry can also come from a bank feed proposal instead of a file. The user reviews a pre-filled form, and saving it creates an ordinary journal like any other entry. The journal id is derived from the provider's record id (`BankFeedService.journalIdFor`), so the same transaction is never entered twice, even if recording the decision has to be retried. A posted transaction that settles a proposal already accepted as pending corrects that pending entry through the normal correction path (see xref:domain:journal-status.adoc[Journal status and corrections]) rather than adding a second one, so the purchase is counted once. Nothing is posted until the user saves the form. The connection and provider side is described in xref:sync:bank-feeds.adoc[Bank feeds].
 
 == CSV mapping
 

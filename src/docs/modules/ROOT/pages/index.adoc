@@ -26,17 +26,38 @@ a| * Shared domain code in `packages/finance_core`: money, ledger, planning, doc
 * The encrypted local store, receipt vault and backup code in `packages/finance_store`.
 * The Flutter client in `apps/finance_app`, with feature areas for onboarding, accounts, transactions, budget, goals, plan, receipts, reports, imports and settings, an adaptive shell, bill reminders, verified restore on a fresh device, an optional app lock, and optional sync: OIDC sign-in with PKCE, connecting to a server workspace, foreground and mobile background sync, and a conflicts screen. See xref:sync:offline.adoc[].
 * Receipt capture with a scanner and camera fallback, file, paste and drag and drop, metadata stripping, and ML Kit or Tesseract text recognition. See xref:platform:receipt-capture.adoc[].
-* A Spring Boot server in `server/app` and `server/finance-core`, organised into modules for sync, receipts, jobs, imports, exports, deletion, storage, workspace and ledger.
+* A Spring Boot server in `server/app` and `server/finance-core`, organised into modules for sync, receipts, jobs, imports, exports, deletion, storage, workspace, ledger, households, reports, audit, bank feeds, extraction and operations reporting.
 * End-to-end tests of the sync client against the real server (`tool/e2e/run.sh`). See xref:ROOT:developer-guide.adoc#end-to-end-tests[the developer guide].
+* Continuous integration, unsigned builds for every platform, and signed release workflows with notarisation and a signed iOS IPA, a Linux `.deb` package and an iOS share extension script. See xref:platform:building-and-releasing.adoc[].
 * This documentation site, built with `gradle25w antora`.
 
 | Planned or not yet complete
-a| * The iOS share extension target, release signing and notarisation, and continuous integration. See xref:platform:building-and-releasing.adoc[].
+a| * A real bank feed provider. Only a sandbox exists, because the Consumer Data Right provider and participation model are a pending business decision. See xref:sync:bank-feeds.adoc[].
+* Uploading the signed iOS build to TestFlight, and verifying the iOS release job, which has not yet run. See xref:platform:building-and-releasing.adoc[].
 * Screen reader verification on all release targets. See xref:platform:accessibility.adoc[].
 * Android, iOS, macOS and Windows builds; only Linux has been run and tested here.
 |===
 
 Individual pages state when a behaviour is a requirement only rather than something the code does.
+
+== P1 features
+
+P1 capabilities build on the P0 foundation. Each is optional, and none posts to the ledger without the user's review.
+
+[cols="1,3",options="header"]
+|===
+| Area | P1 capability
+
+| Households | Share a synced workspace through single-use invitation codes, with owner, member and viewer roles and accounts that stay private until shared. See xref:sync:households.adoc[].
+| Bank feeds | Bank transactions arrive as proposals that the user reviews. Only a sandbox provider is wired, and no bank password is ever requested. See xref:sync:bank-feeds.adoc[].
+| Cloud extraction | Optional receipt text extraction behind owner consent that is separate from sync. The text is untrusted and only pre-fills a draft. See xref:sync:cloud-extraction.adoc[].
+| Imports | OFX and QIF statements, alongside CSV. See xref:domain:imports.adoc[].
+| Insights | Subscription detection and spending anomalies. See xref:domain:reports-and-insights.adoc[].
+| Planning and budgeting | Debt payoff plans and zero-based budgets. See xref:domain:planning.adoc[] and xref:domain:budgeting.adoc[].
+| Receipts | Line items, warranties, and separating a combined capture into several receipts. See xref:domain:receipts.adoc[].
+| Net worth | Investment holdings, with account values updated on confirmation. See xref:domain:net-worth.adoc[].
+| Reports | Server reports over canonical journals, with the same definitions as the client. See xref:sync:protocol.adoc#reports[the protocol].
+|===
 
 == Local first
 
@@ -82,7 +103,7 @@ P0 does not include payments, bank credential storage, stock trading, financial 
 | xref:developer-guide.adoc[Developer guide] | Commands to install dependencies, run tests, run the client and the server, and build this site
 | xref:architecture:overview.adoc[Architecture] | Components, responsibilities, the client application, local store, sync service, repository layout, the technology decision and shared fixtures
 | xref:domain:money.adoc[Domain] | Money, the ledger model, journal status and corrections, reconciliation, net worth, scenarios, budgeting, planning, goals, reports, receipts, matching, imports, categorisation rules, and exports and backups
-| xref:sync:protocol.adoc[Sync] | Command envelope, revisions, conflicts, change feed, sign-in and offline behaviour
+| xref:sync:protocol.adoc[Sync] | Command envelope, revisions, conflicts, change feed, sign-in, offline behaviour, households, bank feeds and cloud extraction
 | xref:platform:capabilities.adoc[Platform] | Capability matrix, xref:platform:receipt-capture.adoc[receipt capture], xref:platform:building-and-releasing.adoc[building and releasing], adaptive layout and accessibility commitments
-| xref:operations:observability-and-security.adoc[Operations] | Observability and security, running locally, the job worker, metrics, backup and restore, and data deletion
+| xref:operations:observability-and-security.adoc[Operations] | Observability and security, running locally, the job worker, metrics and backup reporting, backup and restore, and data deletion
 |===

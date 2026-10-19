@@ -19,7 +19,7 @@ Each package under `com.paulsnow.finance.server` is a Spring Modulith applicatio
 | Module | Responsibility
 
 | `common` | Error model (`ErrorResponse`, `ApiException`), correlation identifiers (`CorrelationIdFilter`), log redaction (`Redactor`), the clock, and `SecurityConfiguration` (JWT resource server, stateless; `/actuator/health`, `/actuator/info`, `/actuator/prometheus` and the OpenAPI and Swagger paths are open, everything else needs authentication).
-| `workspace` | Users keyed by OIDC subject, workspaces (currency, timezone), memberships (`owner` or `member`) and devices. Every request resolves the caller's workspace here; possession of an identifier is never permission. Owners see every member's devices. Endpoints under `/v1/workspaces` and `/v1/devices`.
+| `workspace` | Users keyed by OIDC subject, workspaces (currency, timezone), memberships (`owner`, `member` or `viewer`) and devices. Every request resolves the caller's workspace here; possession of an identifier is never permission. Owners see every member's devices. Endpoints under `/v1/workspaces` and `/v1/devices`.
 | `sync` | Command intake with idempotency records, the entity store with per-entity and per-field revisions, the ordered change log, tombstones, and the change feed with opaque cursors. Endpoints `POST /v1/sync/commands`, `GET /v1/sync/changes` and `GET /v1/sync/snapshot`. Command types are `journal.post`, `journal.correct`, `entity.upsert` and `entity.delete`. Described in xref:sync:protocol.adoc[].
 | `ledger` | Canonical journals and postings. Validates with the `finance-core` rules plus workspace-level checks, in tables whose balance and immutability the database also enforces.
 | `receipts` | Upload intents, direct upload to private storage, completion that verifies ownership, size, checksum and content by magic bytes, quarantine until a `DocumentScanner` (`StructuralDocumentScanner`) clears the file, and workspace-scoped download links. Endpoints under `/v1/receipts`.
@@ -27,6 +27,12 @@ Each package under `com.paulsnow.finance.server` is a Spring Modulith applicatio
 | `exports` | A background job writes a versioned JSON archive of every live entity and available receipt document, with a manifest of SHA-256 hashes, counts and relationships, to private storage; members download it through a short-lived signed URL. Endpoints under `/v1/exports`.
 | `jobs` | The PostgreSQL job table, the runner and the status endpoint `+GET /v1/jobs/{jobId}+`.
 | `deletion` | Workspace deletion: a request revokes every device and hides the workspace at once, records a deletion suppression entry, and queues a tracked job that erases documents and each module's metadata. Only an owner may request it. Endpoints `+DELETE /v1/workspaces/{workspaceId}+` and `+GET /v1/workspaces/{workspaceId}/deletion+`.
+| `households` | Shared workspaces: single-use invitations with an expiry, roles, member removal that revokes the member's devices, and the account sharing rules that the change feed applies. Endpoints under `+/v1/workspaces/{workspaceId}/invitations+` and `/members`. Described in xref:sync:households.adoc[].
+| `reports` | Reports over canonical journals with the shared `report.compute` definitions, limited to what the caller may see (REP 01). Endpoint `+GET /v1/reports/{kind}+`. Described in xref:sync:protocol.adoc#reports[the protocol].
+| `audit` | Audit events stored with the action that raised them, owner access and 12-month retention (SEC 06). Endpoint `+GET /v1/workspaces/{workspaceId}/audit-events+`. See xref:operations:observability-and-security.adoc[].
+| `bankfeeds` | The `BankFeedProvider` adapter boundary, connections and consent, encrypted provider tokens, refresh jobs, signed webhooks, provider records kept apart from journals, and proposals with reconciliation. Only the `sandbox` provider exists. Endpoints under `/v1/bank-feeds`. Described in xref:sync:bank-feeds.adoc[].
+| `extraction` | Optional cloud text extraction behind owner consent, through an isolated `ExtractionProvider` that returns text only. No provider is configured by default. Described in xref:sync:cloud-extraction.adoc[].
+| `ops` | Backup and restore-drill reporting from operations tooling (token scope `finance.ops`), exposed as metrics. Endpoint `+POST /v1/ops/backups+`. See xref:operations:metrics.adoc[].
 | `storage` | The S3-compatible `ObjectStorage` (AWS SDK v2): presigned PUT and GET URLs, reads for verification and archive writes. Callers build workspace-scoped object keys; the module never decides who may access an object.
 |===
 
@@ -44,7 +50,7 @@ Cursors are opaque (`CursorCodec`, version 1). Tombstones are kept for the confi
 
 Background work uses the `job` table in PostgreSQL. `JobRunner` claims due jobs with `FOR UPDATE SKIP LOCKED`, so several workers never run the same job, marks them `running` with a lease, and records `succeeded` or `failed`. A job whose lease has expired (the worker died) is claimed again. A failure retries with exponential backoff, `base-backoff` multiplied by two to the power of the attempt, up to `max-attempts`; a `PermanentJobFailure` (or a missing handler) fails at once. Error text is redacted and truncated to 500 characters.
 
-Registered job types: `receipts.scan`, `imports.commit`, `exports.archive` and `deletion.workspace`.
+Registered job types: `receipts.scan`, `receipts.extract`, `bankfeeds.refresh`, `imports.commit`, `exports.archive` and `deletion.workspace`.
 
 The runner loop only exists where `finance.worker.enabled` is true (`@ConditionalOnProperty` on `WorkerConfiguration`). Operating detail is in xref:operations:job-worker.adoc[].
 
@@ -101,6 +107,9 @@ Configuration is in `server/app/src/main/resources/application.yml` (production-
 | `finance.receipts.max-image-side` | `16384` | Largest image width or height in pixels
 | `finance.receipts.max-image-pixels` | `50000000` | Largest image area (50 megapixels)
 | `finance.deletion.suppression-cron` | `0 */15 * * * *` (UTC) | How often the worker looks for deleted workspaces that have reappeared
+| `finance.storage.export-retention` | `7d` | Export archives expire after this, rounded up to whole days
+| `finance.audit.retention` | `365d` | How long audit events are kept
+| `finance.bank-feeds.sandbox.enabled` | `false` | Enable the sandbox bank feed provider
 | `finance.imports.max-rows` | `50000` | Largest CSV import
 | `finance.imports.synchronous-row-limit` | `1000` | Imports above this commit through a job
 | `finance.worker.poll-interval` | `2s` | Job polling interval
@@ -128,6 +137,9 @@ Micrometer exposes metrics through Actuator at `/actuator/prometheus` and `/actu
 | `finance.jobs.backlog` | gauge | Jobs waiting or running
 | `finance.jobs.backlog.age` | gauge | Age of the oldest queued job
 | `finance.deletion.backlog` | gauge | Workspace deletions requested but not yet completed
+| `finance.extraction.latency` (tags `job`, `outcome`) | timer | Time taken by a server-side document job
+| `finance.backup.last.success`, `finance.backup.recovery.point` (tag `kind`) | gauge | Latest successful backup run and the point it restores to, as reported by operations tooling
+| `finance.backup.failures` (tag `kind`) | counter | Failed backup runs reported
 |===
 
 See xref:operations:metrics.adoc[] for the operating view and xref:operations:observability-and-security.adoc[] for logging, redaction and correlation identifiers.

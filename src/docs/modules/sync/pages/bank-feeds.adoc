@@ -1,0 +1,150 @@
+= Bank feeds
+Paul Snow
+:revnumber: 0.0.0
+
+A bank feed suggests entries from a person's bank transactions (BANK 01 to BANK 03, P1). It is optional: the application stays fully useful through manual entry and CSV import whenever a provider is unavailable (see xref:domain:imports.adoc[]). The contract is "Bank feeds" in `spec/sync/protocol.md`. The server code is in `server/app/src/main/java/com/paulsnow/finance/server/bankfeeds/`.
+
+IMPORTANT: No real provider is wired. Choosing an Australian Consumer Data Right provider, and the participation model the application operates under (for example as a representative of an accredited intermediary, or as an accredited recipient itself), is a pending business decision (BANK 01). Until it is made, the only provider is the deterministic `sandbox`, and it exists only when `finance.bank-feeds.sandbox.enabled` is true (it is false by default). A real deployment without the sandbox answers `UNKNOWN_PROVIDER`, and the app tells the user that bank connections are not offered yet.
+
+== Principles
+
+* *No bank passwords.* The application never asks for them. Consent is given at the provider or data holder, through the provider's consent URL.
+* *Tokens stay on the server.* Provider tokens never reach clients or logs. They are stored AES-GCM encrypted, with a fresh nonce each time and the connection id as associated data, using the key in `finance.bank-feeds.token-key` (base64). Without the key, connecting is `409 BANK_FEEDS_UNAVAILABLE`.
+* *Provider records are not journals.* Transactions from the provider are kept as provider records, separate from the canonical ledger, and are never posted automatically (see the financial rules in xref:domain:ledger.adoc[]).
+* *The user decides.* A proposal becomes an entry only when the user reviews and saves it, in line with the rule that matches and suggestions need confirmation.
+* *Feeds are not real time.* A connected account is not a promise of immediate transactions, and the app says so.
+
+== Adapter boundary
+
+Each provider is a server-side `BankFeedProvider` adapter. It can:
+
+* list the accounts the person shared;
+* fetch an account's transactions after a cursor, each with its provider id, a status of `pending` or `posted`, the pending id a posted transaction settles, a previous id when the provider changed the id, and the transaction a reversal reverses;
+* report consent status and expiry; and
+* refresh and revoke tokens.
+
+Nothing outside the adapter knows how a provider authenticates or paginates. The `sandbox` provider is a fake institution, "Sandbox Bank", with two accounts and a fixed timeline measured from when the connection was first made:
+
+[cols="1,3",options="header"]
+|===
+| Day | Transactions
+
+| 0 | Three posted transactions and one pending purchase
+| 1 | The pending purchase posts under a new id, and a subscription is added
+| 2 | A transaction's id changes, and the subscription is reversed
+|===
+
+Its consent lasts 90 days and its pages hold two transactions, which exercises paging and every reconciliation case below.
+
+== Connections and consent
+
+All endpoints take `X-Workspace-Id` (or `X-Device-Id`). Another workspace's connection is `404 CONNECTION_NOT_FOUND`. Viewers can read connections but not change them.
+
+A connection shows what BANK 02 requires: the institution, the shared accounts (with masked numbers), the data scope, the stated purpose, the consent status, the consent expiry, the last successful refresh and any current error.
+
+[cols="1,3",options="header"]
+|===
+| Consent status | Meaning
+
+| `pending` | Waiting for the person to consent at the provider. The connection carries a `consentUrl`.
+| `active` | Collection is allowed.
+| `expired` | The consent lapsed. Tokens are deleted. The person reconnects.
+| `revoked` | Withdrawn by the person, or by the provider. Collection has stopped for good.
+|===
+
+[cols="2,3",options="header"]
+|===
+| Endpoint | Behaviour
+
+| `POST /v1/bank-feeds/connections` | Creates a connection. Needs a `provider` and a `purpose` (`400 PURPOSE_REQUIRED` when blank or over 500 characters). Only the two read scopes, `bank:accounts.basic:read` and `bank:transactions:read`, may be requested (`400 INVALID_SCOPE`). A real provider returns `pending` and a `consentUrl`. The sandbox grants at once and queues the backfill.
+| `+POST .../connections/{id}/consent-callback+` | Completes a redirect consent with the `state` and `code`. The state must match the one in the consent URL, and only its SHA-256 is stored (`400 INVALID_CONSENT_STATE`). A refused code is `409 CONSENT_REJECTED`, and nothing waiting is `409 CONSENT_NOT_PENDING`.
+| `GET .../connections`, `+GET .../connections/{id}+` | Read connections.
+| `+POST .../connections/{id}/refresh+` | Queues a refresh and answers `202` with a `jobId`. `409 CONSENT_EXPIRED`, `CONSENT_PENDING` or `CONNECTION_REVOKED` when nothing may be collected.
+| `+POST .../connections/{id}/reconnect+` | Renews consent and keeps the connection's records and cursors, so nothing is proposed twice. It may return a `consentUrl`.
+| `+DELETE .../connections/{id}+` | Revokes. Consent is withdrawn at the provider (best effort), tokens are deleted and collection stops. A refresh already queued collects nothing. Existing provider records and decisions are kept until the workspace is deleted.
+|===
+
+Creating, connecting, reconnecting and revoking are audit events named `bank_feed.*`. Workspace deletion withdraws consent at each provider (best effort) and deletes connections, tokens, accounts and records (see xref:operations:data-deletion.adoc[]).
+
+== Staleness, refresh and backoff
+
+A connection is `stale` when an active feed has not refreshed successfully for `finance.bank-feeds.stale-after` (36 hours). Clients show stale feeds prominently.
+
+The `bankfeeds.refresh` job (see xref:operations:job-worker.adoc[]):
+
+. renews the access token when it is due;
+. confirms the consent is still active, otherwise marks the connection `expired` and deletes its tokens;
+. refreshes the shared accounts; and
+. pages each account from its stored cursor. The first run is the backfill.
+
+Each page and its cursor commit together, after locking the connection, so nothing is collected once a revocation has committed.
+
+When the provider rate-limits, the connection records the error code `RATE_LIMITED` and a `nextRefreshAt`. The job queues its own retry after a delay that starts at `refresh-base-backoff` (1 minute) and doubles for each consecutive limit. The delay is at least the provider's requested delay and at most `refresh-max-backoff` (6 hours). After `max-rate-limit-retries` (8) attempts it waits for the next manual refresh or webhook. Success clears the error and sets `lastSuccessfulRefreshAt`.
+
+== Webhooks
+
+`+POST /v1/bank-feeds/webhooks/{provider}+` needs no user token. The provider signs each delivery with its secret, configured as `finance.bank-feeds.webhook-secrets.<provider>`:
+
+* `X-Webhook-Id` is the delivery id;
+* `X-Webhook-Timestamp` is in Unix seconds; and
+* `X-Webhook-Signature` is `v1=` followed by the hex HMAC-SHA256 of `<id>.<timestamp>.<raw body>`.
+
+A bad or missing signature is `401 INVALID_SIGNATURE`. A timestamp further than `webhook-tolerance` (5 minutes) from the server clock is `401 TIMESTAMP_OUT_OF_TOLERANCE`. An unknown provider is `404`.
+
+Deliveries are deduplicated by id. One already handled answers `200 {"status": "duplicate"}` and does nothing, otherwise the answer is `202 {"status": "accepted"}`. The worker removes old delivery records hourly, keeping them at least a day.
+
+The body, `{"type", "connectionReference"}`, only triggers work. Webhooks never carry transactions the server trusts.
+
+[cols="1,3",options="header"]
+|===
+| Type | Effect
+
+| `transactions.updated` | Queues a refresh
+| `consent.revoked` | Ends collection and deletes the tokens (audited as `bank_feed.revoked_by_provider`)
+| `consent.expired` | Marks the consent expired
+|===
+
+Unknown types and unknown or inactive connections are acknowledged and ignored, so a webhook reveals nothing.
+
+== Proposals and the decision
+
+`+GET /v1/bank-feeds/{connectionId}/proposals?status=open|all|superseded|accepted|dismissed+` (default `open`) returns the provider records as proposals. Each has the provider transaction id, any previous ids, the `pending` or `posted` status, the amount and date, a description, and a `kind` of `new`, `settles_pending` or `reversal`, with links to the related records. Descriptions are untrusted provider text.
+
+.From proposal to decision
+[source,mermaid]
+----
+include::example$bank-feed-proposal-sequence.mmd[]
+----
+
+The client turns an accepted proposal into a journal through the normal command path, then records the decision with `+POST /v1/bank-feeds/{connectionId}/proposals/{recordId}/decision+` and `{"decision": "accepted" | "dismissed", "journalId"?}`.
+
+* A pending record becomes a `pending` journal, which never touches the posted ledger (see xref:domain:journal-status.adoc[]). A posted record becomes a `posted` journal.
+* The journal must be a live journal of the workspace (`400 JOURNAL_NOT_FOUND`). A proposal that is no longer open is `409 PROPOSAL_DECIDED`.
+* Dismissing records only the decision. Nothing is added to the ledger.
+
+== Reconciliation
+
+Reconciliation is explicit and idempotent (BANK 03). The rules are in `RecordReconciler`.
+
+[cols="1,3",options="header"]
+|===
+| Case | Behaviour
+
+| The same provider id again | Updates a pending record, and is otherwise ignored.
+| A pending transaction posts | Arrives as a posted record of kind `settles_pending`, linked both ways. If the pending proposal was still open it becomes `superseded`. If it was accepted it keeps its `journalId`, and the client settles that entry instead of adding a second purchase.
+| The provider changes an id | The existing record is renamed and the old id is listed in `previousProviderTransactionIds`. A late delivery under the old id is ignored.
+| A reversal | A record of kind `reversal`, linked both ways. The user decides how to correct any journal made from the original, with a reversal plus replacement and never an edit of posted history.
+|===
+
+A provider that drops a pending transaction without posting it, or changes an id without reporting the previous one, cannot be detected by cursor-based collection. The user reviews such cases as ordinary proposals. This keeps to the rule that bank data never double counts a purchase (see xref:domain:matching-and-deduplication.adoc[]).
+
+== In the app
+
+The *Bank feeds* screen (`apps/finance_app/lib/features/sync/bank_feeds_screen.dart`) uses `BankFeedClient` (`packages/finance_store/lib/src/sync/bank_feed_client.dart`) and `BankFeedService` (`apps/finance_app/lib/data/bank_feed_service.dart`).
+
+* *Connect.* A dialogue states that consent is given at the bank, never in the app, and the purpose is fixed as "Suggest entries from my bank transactions".
+* *Health.* Each connection shows the consent state, an out-of-date warning for a stale feed, and a note when the bank asked the service to slow down and it will retry. Actions are *Refresh*, *Reconnect* and *Disconnect*. Disconnecting keeps entries already made.
+* *Review.* Choosing a proposal opens the usual transaction form, pre-filled by `BankFeedService.formFor` with the amount, date, description, type and status. Nothing is posted until the user saves it.
+* *Settling.* For a posted transaction that settles an accepted pending one, the form opens on that pending entry (*Settle entry*), and saving corrects it.
+* *Reversals.* A reversal explains whether the original was entered and offers to open that entry or dismiss the suggestion.
+* *Safe retry.* The journal id is derived from the record id (`BankFeedService.journalIdFor`), so retrying after the service could not be reached never creates the same entry twice. The local save is pushed before the decision is recorded.

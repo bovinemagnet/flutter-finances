@@ -19,7 +19,7 @@ include::example$component-diagram.mmd[]
 | Flutter client (`apps/finance_app`) | Adaptive screens, application state, platform adapters (scanner, file import, share inbox, notifications, text recognition), sign-in. See xref:architecture:client-application.adoc[].
 | `finance_core` (`packages/finance_core`) | Pure Dart financial rules: money, journals, projection, budgets, plans, reconciliation, codecs. No Flutter, no IO.
 | `finance_store` (`packages/finance_store`) | Encrypted SQLite database, outbox, receipt vault, backup container and the sync client. See xref:architecture:local-store.adoc[].
-| Sync service (`server/app`) | Spring Boot API: identity integration, workspace authorisation, command validation and deduplication, revisions, change feed, receipts, imports, exports and workspace deletion. See xref:architecture:sync-service.adoc[].
+| Sync service (`server/app`) | Spring Boot API: identity integration, workspace authorisation, command validation and deduplication, revisions, change feed, receipts, imports, exports, households, reports, optional cloud extraction, bank feeds (sandbox provider only) and workspace deletion. See xref:architecture:sync-service.adoc[].
 | Job worker | The same Spring Boot image started with `finance.worker.enabled=true`; runs jobs from the PostgreSQL job table. See xref:operations:job-worker.adoc[].
 | `finance-core` (`server/finance-core`) | Java implementation of the shared financial rules, held to the Dart behaviour by the fixtures in `spec/fixtures`.
 | PostgreSQL | Canonical entities, journals and postings, idempotency records, change log, device cursors, receipt, import, export and job tables. Schema is managed by Liquibase.
@@ -31,7 +31,7 @@ include::example$component-diagram.mmd[]
 
 The backend is a modular monolith with explicit module boundaries, not a microservice estate. The API and worker are deployed from the same codebase and image with independently controlled workloads (`finance.worker.enabled`). A PostgreSQL job table, claimed with `FOR UPDATE SKIP LOCKED`, is the only queue; a dedicated queue is introduced only when measured workload justifies it.
 
-The server modules are `common`, `workspace`, `sync`, `ledger`, `receipts`, `imports`, `exports`, `jobs`, `deletion` and `storage`. They are declared as Spring Modulith application modules, and `server/finance-core` is a separate Gradle subproject. See xref:architecture:sync-service.adoc[] and xref:architecture:repository-layout.adoc[].
+The server modules are `common`, `workspace`, `sync`, `ledger`, `receipts`, `imports`, `exports`, `jobs`, `deletion`, `storage`, `households`, `reports`, `audit`, `bankfeeds`, `extraction` and `ops`. They are declared as Spring Modulith application modules, and `server/finance-core` is a separate Gradle subproject. See xref:architecture:sync-service.adoc[] and xref:architecture:repository-layout.adoc[].
 
 == Data flow
 

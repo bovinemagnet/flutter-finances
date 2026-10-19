@@ -17,6 +17,8 @@ The API and the worker are the same application. The worker is switched on with 
 | `receipts.scan` | Structural check of an uploaded receipt document, moving it from `quarantined` to `available` or `rejected`
 | `imports.commit` | Commits a large CSV import (more than 1,000 new rows)
 | `exports.archive` | Builds the export ZIP and stores it in object storage
+| `receipts.extract` | Sends a released receipt document to the configured cloud extraction provider and stores the text, only while owner consent stands; see xref:sync:cloud-extraction.adoc[]
+| `bankfeeds.refresh` | Collects a connection's transactions after its stored cursor, retrying itself with backoff when rate limited; see xref:sync:bank-feeds.adoc[]
 | `deletion.workspace` | Erases a workspace; see xref:operations:data-deletion.adoc[]
 |===
 
@@ -61,6 +63,13 @@ When the worker is enabled, `SyncMaintenance` runs the tombstone purge daily at 
 * clears the data of tombstoned entities older than the horizon, keeping the row so a pending command cannot resurrect them.
 
 The latest change of every live entity is always kept. If the worker is never enabled, this purge never runs.
+
+When the worker is enabled, two further tasks run:
+
+* `AuditMaintenance` deletes audit events older than `finance.audit.retention` (12 months) daily at 03:37 UTC (`finance.audit.purge-cron`).
+* `BankFeedMaintenance` deletes webhook delivery records that are no longer needed for deduplication, hourly at minute 47 UTC (`finance.bank-feeds.purge-cron`).
+
+At start-up the worker also applies the bucket lifecycle rules for staging uploads and export archives, unless `finance.storage.manage-lifecycle` is false (see xref:operations:data-deletion.adoc#_object_storage_lifecycle[Object storage lifecycle]).
 
 == Monitoring
 

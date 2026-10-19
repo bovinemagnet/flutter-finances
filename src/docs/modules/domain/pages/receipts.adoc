@@ -146,6 +146,68 @@ Confidence is a category, never a percentage.
 
 `buildReceiptReview` merges the confirmed values with the latest extraction. Confirmed values always win and are never highlighted. An extracted value is highlighted when it is not high confidence or has a reason; a missing value is always highlighted. Other candidates are offered as alternatives.
 
+== Line items
+
+`extractReceiptItems` (`receipt_items.dart`, OCR 01, P1) reads the purchased lines of a receipt from the same OCR result as the header fields. Each `ExtractedLineItem` is a candidate only: it records the description, quantity (in thousandths, so 710 is 0.71 kg), unit, unit price, line total, any discount, whether GST applies, the OCR lines it came from and a confidence. It becomes a `ReceiptItem` (which also holds an optional category chosen by the user) only when the user confirms it. Items describe the receipt and never post a second expense.
+
+Like an `Extraction`, an `ItemExtraction` is immutable evidence stamped with the parser version (`receipt-items/1`), so a rerun creates a new one. `reviewReceiptItems` keeps confirmed items as they are and offers the latest extraction's items as suggestions; a rerun can never replace or edit a confirmed item (OCR 03).
+
+[cols="2,3"]
+|===
+|Heuristic |Behaviour
+
+|Item rows |The rows before the first subtotal, total, tax, payment, cash or change row that has an amount. The last amount on a row is the line total.
+|Quantity rows |`0.71 kg @ $4.00/kg` or `2 @ 1.50` gives the item above it its quantity, unit and unit price. With a trailing amount it completes a description-only row above. A trailing `x2` is read too.
+|Discounts |A row with a negative amount reduces the item above it. Positive "saved" rows are informational and ignored.
+|GST |A row starting `*`, `#` or `^`, or an amount followed by the tax code `A`, `G` or `T`, marks GST. When some item is marked, unmarked items have GST false; when none is, it is unknown.
+|Line arithmetic |Quantity times unit price, rounded half away from zero, must equal the line total, otherwise `ITEM_ARITHMETIC_MISMATCH`.
+|===
+
+Reconciliation compares the items with the printed amounts: `consistent` when the items' net total equals the subtotal, or the total after the discounts, charges and rounding printed between them (with or without the printed tax); `inconsistent` (`ITEMS_DO_NOT_RECONCILE`) when a subtotal or total exists and neither holds; `insufficient` without items (`NO_ITEMS_FOUND`) or without a subtotal and total (`ITEMS_NOT_CHECKED`). Item confidence is high when consistent, medium when insufficient, and low when inconsistent or the line's own arithmetic fails.
+
+In the application, `ReceiptService` extracts items every time it extracts the header fields, saves the latest `ItemExtraction` per receipt, and the review screen lists them under "Items" with the reconciliation result ("The items add up to the total", "The items do not add up to the total; check them" or "Not enough was read to check the items").
+
+== Warranties
+
+A `Warranty` (`warranty.dart`, P1) belongs to a receipt, optionally to one confirmed item. It has a description, a start date (the purchase date by default), a period of calendar months (clamped to shorter months) plus days, and a list of reminder lead times in days (default 30). A warranty needs a positive period. `expiresOn` is the start plus the period, less one day, and `isActiveOn` tests a date against the cover.
+
+`warrantyReminders` plans a `PlannedReminder` for each lead time, before the expiry date, in date order. They share the quiet-hours rule and the privacy default of schedule reminders (see xref:domain:planning.adoc#_reminders[Reminders], PLAN 04): the text is "A warranty ends on <date>" unless the preference shows details, in which case it names what is covered. Reminders already in the past are left out, and none are planned when reminders are disabled.
+
+In the application, "Add warranty" on the review screen asks what is covered and the number of months, starts the cover on the receipt's confirmed date (or today), and can remove it again. `planReminders` in `apps/finance_app/lib/data/reminders.dart` adds the warranty reminders to the schedule reminders as local notifications titled "Warranty ending", for the next 30 days, with the private wording unless the details are opted in.
+
+== Separating multi-receipt documents (REC 05)
+
+A scan or PDF may hold several receipts. REC 05 has the user split a multi-receipt PDF manually in P0 and makes automatic separation a P1 feature. `proposeReceiptSeparation` (`receipt_separation.dart`, P1) takes one `OcrResult` per page and proposes where each receipt starts. It is a proposal only: nothing is split, created or changed until the user confirms.
+
+Every page after the first is scored, and a score of 2 or more starts a new receipt.
+
+[cols="3,1"]
+|===
+|Evidence |Score
+
+|Previous page printed a total and this page opens with a merchant heading (`MERCHANT_HEADER_AFTER_TOTAL`) |+3
+|Previous page printed a total but this page has no heading (`PREVIOUS_PAGE_TOTALLED`) |+1
+|This page and the previous one each print a total (`PAGE_HAS_OWN_TOTAL`) |+1
+|The heading names a different merchant (`DIFFERENT_MERCHANT`) |+2
+|A different date (`DIFFERENT_DATE`) |+1
+|A `Page 1 of n` marker (`FIRST_PAGE_MARKER`) |+2
+|Previous page has no total (`PREVIOUS_PAGE_WITHOUT_TOTAL`) |-2
+|No merchant heading (`NO_HEADER`) |-1
+|A `Page k of n` (k above 1) or `continued` marker (`CONTINUATION_MARKER`) |-3
+|===
+
+A start scoring 4 or more is high confidence, 3 medium and 2 low. A continuation scoring -2 or less is high, -1 or 0 medium and 1 low. A page with no recognised text (`BLANK_PAGE`) joins the current receipt with medium confidence. The first page is always a start (`DOCUMENT_START`).
+
+Consecutive pages form a `ReceiptPageGroup` with the weakest decision's confidence (at most medium when no page prints a total, `NO_TOTAL_FOUND`) and a merchant and date hint. A page that holds a total, a new merchant heading, items and another total is flagged `MULTIPLE_RECEIPTS_ON_PAGE`: separation stops at page level, so the group is marked `needsManualSplit`, its confidence is low and the user splits that page by hand. `isSingleReceipt` is true when the whole document looks like one receipt.
+
+In the application, "Suggest how to split" appears on a receipt with more than one page. It recognises each image page on the device (PDF pages are not read, and the button explains when text recognition is unavailable), then either says it looks like a single receipt or asks "Split into n receipts?" with each group's pages and a warning where a page holds more than one receipt. Only on confirmation does `applySeparation` split the pages into new receipts.
+
+== Optional cloud text
+
+When the workspace is synced, the review screen offers "Use cloud text". It fetches text that the server read after cloud recognition was allowed and passes it to `ReceiptService.extractFromText`, which wraps it as an `OcrResult` from the engine `cloud` and runs the same parser as for on-device text. If the server has no text for the receipt, the screen says so. The cloud adapter is optional and consented separately (AUTO 02); see xref:sync:cloud-extraction.adoc[] for the service side.
+
+The text is untrusted. It only produces candidates and item suggestions on an `Extraction` and an `ItemExtraction`; it cannot confirm a field, approve a match, post an entry or invoke any command. The user still reviews everything exactly as for on-device text.
+
 == Review outcomes
 
 `reviewReceipt` completes review with the user's confirmed fields and one `ReviewDecision`. It first applies the `review` event (so it fails with `IllegalTransitionException` while the receipt is extracting), merges the fields, then records a `ReviewOutcome`.

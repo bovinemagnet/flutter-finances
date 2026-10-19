@@ -1,0 +1,56 @@
+= Optional cloud extraction
+Paul Snow
+:revnumber: 0.0.0
+
+Receipt text is read on the device by default (see xref:platform:receipt-capture.adoc[]). A deployment may also offer cloud text extraction (AUTO 02, SEC 05). It is off unless the deployment configures a provider and a workspace owner consents. No provider is configured by default, and the repository ships none. The contract is "Optional cloud extraction" in `spec/sync/protocol.md`. The server code is in `server/app/src/main/java/com/paulsnow/finance/server/extraction/`.
+
+== Consent
+
+Consent to cloud extraction is separate from consent to cloud sync (SEC 05). Only a workspace owner can read or change it. Another member receives `403 OWNER_REQUIRED` and a non-member `404 WORKSPACE_NOT_FOUND`.
+
+`+GET /v1/workspaces/{id}/extraction-consent+` returns the `status` (`none`, `granted` or `withdrawn`), the provider and retention recorded with any consent, and:
+
+* `available`, which is false when no provider is configured; and
+* `offeredProvider` and `offeredRetention`, which the client shows before it asks.
+
+`PUT` on the same path records or withdraws consent.
+
+[cols="1,3",options="header"]
+|===
+| Request | Behaviour
+
+| `{"granted": true, "providerName", "disclosedRetention"}` | Records consent. Both values must repeat what was offered (`400 PROVIDER_MISMATCH`, `400 RETENTION_MISMATCH`), so a recorded consent always names the provider and retention the owner saw. With no provider configured it is `409 EXTRACTION_UNAVAILABLE`.
+| `{"granted": false}` | Withdraws consent and deletes every extraction result of the workspace in the same transaction.
+|===
+
+Both are audited as `extraction.consent_granted` and `extraction.consent_withdrawn`. Consent covers one named provider: if the deployment changes its provider, nothing is sent until an owner consents again.
+
+In the app, the *Cloud text recognition* screen (`apps/finance_app/lib/features/sync/extraction_consent_screen.dart`) shows the provider and how long it keeps receipts. Its confirmation dialogue repeats both, and states that the text only fills in suggestions the user reviews. Stopping states that the text already recognised is deleted from the service. When the service offers no provider, the screen says so. The client calls are in `packages/finance_store/lib/src/sync/extraction_client.dart`.
+
+== How extraction runs
+
+. The receipt upload and scan work as described in xref:sync:protocol.adoc#receipts[Receipt documents]. When the scan releases a `source` asset while consent to the configured provider stands, the server queues a `receipts.extract` job.
+. The job checks consent again, sends the document to the provider adapter and stores what it returns. Storing locks the consent record, so a result is never kept after a withdrawal.
+. The job result holds identifiers and a status, `extracted` or `skipped`, and never any text.
+
+The provider adapter is the `ExtractionProvider` interface. It receives one released document and returns recognised text and lines, nothing else. It has no access to commands, the ledger, matching or any other workspace data, and it returns no amounts, merchants, dates or actions. A deployment that offers extraction declares exactly one bean of this type.
+
+== Results are untrusted
+
+`+GET /v1/receipts/{receiptId}/extraction+` returns the results with `untrusted: true` to members who may see the receipt. Another workspace's receipt, a hidden receipt and a deleted receipt are `404 NOT_FOUND`, and a receipt without results is `404 EXTRACTION_NOT_FOUND`.
+
+The server removes control characters (keeping line breaks and tabs in `text`) and bounds the text to 20,000 characters, 500 lines and 500 characters per line, but never interprets it. A client displays it as plain text and may use it only to pre-fill a draft that the user reviews. It can never post an entry, change an amount or approve a match.
+
+In the app, the receipt review screen has a *Use cloud text* action when the device is synced. It fetches the text and passes it to `ReceiptService.extractFromText` (`apps/finance_app/lib/data/receipt_service.dart`). That parses it exactly as on-device text, with the engine recorded as `cloud`, into a proposal the user must confirm. Values the user has already confirmed are never overwritten by a re-run. When there is no cloud text, the screen says that receipts are read after syncing when cloud recognition is allowed.
+
+== Retention and deletion
+
+Results are deleted:
+
+* when consent is withdrawn;
+* when the receipt entity is deleted, in the deleting command's transaction; and
+* by the workspace deletion job (see xref:operations:data-deletion.adoc[]).
+
+The retention the provider applies to the documents it receives is disclosed in the consent and is the provider's own. The service does not control it.
+
+NOTE: Any future model-based extraction follows the same rules: an isolated, consented adapter that cannot invoke commands, alter amounts or approve matches. Arithmetic and ledger validation stay deterministic (AUTO 02).

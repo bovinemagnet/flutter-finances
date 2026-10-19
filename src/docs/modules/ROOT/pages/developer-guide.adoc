@@ -9,7 +9,8 @@ This guide lists the commands for working in the repository. All commands are ru
 * The Dart and Flutter SDKs. The workspace needs Dart `^3.13.0` and Flutter `>=3.47.0` (see `pubspec.yaml` and `apps/finance_app/pubspec.yaml`).
 * A JDK that supports Java 25, because the server projects compile with `options.release = 25`, and the `gradle25w` wrapper script on the path.
 * For the sync service in local mode: PostgreSQL, an S3-compatible object store such as MinIO, and an OpenID Connect provider. See <<run-the-server>>.
-* For the end-to-end tests: `podman`, which provides PostgreSQL and MinIO, so no provider is needed. See <<end-to-end-tests>>.
+* For the end-to-end tests: `podman` or `docker`, which provides PostgreSQL and MinIO, so no identity provider is needed. See <<end-to-end-tests>>.
+* Optional: the Mermaid command line tool `mmdc`, to check diagrams. See <<mermaid-diagrams>>.
 * Optional: `tesseract` with English data, to try desktop text recognition. See xref:platform:receipt-capture.adoc[].
 
 == Install dependencies
@@ -50,7 +51,7 @@ The end-to-end suite runs the Dart sync client against the real server, PostgreS
 tool/e2e/run.sh
 ----
 
-The script needs `podman`, `java`, `curl`, `python3` and `dart`. It starts PostgreSQL and MinIO containers on free ports, builds the server jar and starts it with the `e2e` profile (access tokens are verified with the static test key pair in `tool/e2e/keys`, not an OIDC provider), waits for the health check, runs `dart test -P e2e test/e2e` in `packages/finance_store`, and always removes the containers and stops the server. Extra arguments go to `dart test`, for example `tool/e2e/run.sh --name A10`. `FINANCE_E2E_SKIP_BUILD=1` reuses the existing jar and `FINANCE_E2E_KEEP_LOGS=1` keeps the server log. The tests in `packages/finance_store/test/e2e` cover registering devices, offline history reaching a second device, idempotent command batches (A09), concurrent corrections (A10), field-level metadata merges, receipt images through object storage, another user being refused a receipt (A17), and a device returning after the tombstone horizon (A15). See xref:operations:running-locally.adoc#end-to-end-tests[Running the server locally].
+The script needs `podman` or `docker` (`CONTAINER_ENGINE=podman|docker`; podman is preferred when installed and CI uses Docker), `java`, `curl`, `python3` and `dart`. It starts throwaway PostgreSQL and MinIO containers on free ports, builds the server jar and starts it with the `e2e` profile (access tokens are verified with the static, test-only key pair in `tool/e2e/keys`, not an OIDC provider; a throwaway bank feed token key is generated for each run and the sandbox bank is enabled), waits for the health check, runs `dart test -P e2e test/e2e` in `packages/finance_store`, and always removes the containers and stops the server. Extra arguments go to `dart test`, for example `tool/e2e/run.sh --name A10`. `FINANCE_E2E_SKIP_BUILD=1` reuses the existing jar and `FINANCE_E2E_KEEP_LOGS=1` keeps the server log. The tests in `packages/finance_store/test/e2e` cover registering devices, offline history reaching a second device, idempotent command batches (A09), concurrent corrections (A10), field-level metadata merges, receipt images through object storage, another user being refused a receipt (A17), and a device returning after the tombstone horizon (A15). See xref:operations:running-locally.adoc#end-to-end-tests[Running the server locally].
 
 == Run the client
 
@@ -105,6 +106,18 @@ gradle25w antora
 ----
 
 The task runs the Antora build with the playbook `antora-playbook.yml` and reports any errors. The sources are under `src/docs`, in the component `finance` with the modules ROOT, architecture, domain, sync, platform and operations.
+
+[[mermaid-diagrams]]
+== Mermaid diagrams
+
+Diagrams are kept as `.mmd` files in the `examples` directory of the module that uses them, for example `src/docs/modules/sync/examples/sync-sequence.mmd`, and pages include them in a `[source,mermaid]` block with `include::example$<file>.mmd[]`. Check that a diagram renders with the Mermaid command line tool before committing it:
+
+[source,shell]
+----
+mmdc -i src/docs/modules/sync/examples/sync-sequence.mmd -o /tmp/check.svg
+----
+
+A syntax error makes `mmdc` fail and name the line. In a restricted environment, such as a container or a CI runner without a sandboxed browser, pass a Puppeteer configuration with `-p` that disables the browser sandbox. The Antora playbook has no Mermaid extension, so `gradle25w antora` does not validate the diagrams and this check is separate.
 
 == Where to look
 
