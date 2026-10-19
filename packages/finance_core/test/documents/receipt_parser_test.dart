@@ -1,7 +1,34 @@
+import 'dart:typed_data';
+
 import 'package:finance_core/finance_core.dart';
 import 'package:test/test.dart';
 
 import 'support/ledger_helpers.dart';
+
+class _FakeProvider implements ExtractionProvider {
+  @override
+  String get name => 'fake-cloud';
+
+  @override
+  String get version => '1';
+
+  @override
+  ProviderDataUse get dataUse => const ProviderDataUse(
+    requiresConsent: true,
+    retention: 'Deleted after processing',
+    region: 'Australia',
+  );
+
+  @override
+  Future<OcrResult> recognise(
+    Uint8List bytes,
+    DocumentContentType type,
+  ) async => OcrResult.fromText(
+    'SHOP\nTOTAL 5.00\n',
+    engine: name,
+    engineVersion: version,
+  );
+}
 
 Extraction parse(
   String text, {
@@ -313,6 +340,59 @@ Total 79.00
         contains(UncertaintyReason.foreignCurrency),
       );
     });
+  });
+
+  test('A06: a wrong total is corrected at review before anything posts', () {
+    // The total row is unreadable and the engine output only shows cash.
+    final extraction = parse('CORNER STORE\n11/07/2026\nTOT?L\nCASH 100.00\n');
+    var receipt =
+        Receipt(
+              id: 'r1',
+              capturedAt: DateTime.utc(2026, 7, 11),
+              source: CaptureSource.camera,
+            )
+            .withExtractionEvent(ExtractionEvent.queue)
+            .withExtractionEvent(ExtractionEvent.start)
+            .withExtractionEvent(ExtractionEvent.succeed);
+    final review = buildReceiptReview(receipt, extraction);
+    expect(review.total.value, isNot(m('100.00')));
+    expect(review.total.highlight, isTrue);
+
+    final result = reviewReceipt(
+      receipt: receipt,
+      confirmed: ReceiptFields(total: m('63.25'), date: review.date.value),
+      decision: const CreateExpense(
+        accountId: 'cash',
+        categoryId: 'groceries',
+        paidInCash: true,
+        accountConfirmed: true,
+      ),
+      chart: testChart,
+      existingLinks: const [],
+      now: DateTime.utc(2026, 7, 11),
+    );
+    receipt = result.receipt;
+    expect(receipt.confirmed.total, m('63.25'));
+    expect(result.draft!.amount, m('63.25'));
+    expect(result.draft!.status, JournalStatus.posted);
+    // Only a draft exists; posting it is a separate confirmed command.
+    expect(result.draft, isA<TransactionDraft>());
+  });
+
+  group('extraction provider boundary (AUTO 02)', () {
+    test(
+      'external providers only return recognised text for local parsing',
+      () async {
+        final provider = _FakeProvider();
+        expect(provider.dataUse.requiresConsent, isTrue);
+        final ocr = await provider.recognise(
+          Uint8List(0),
+          DocumentContentType.jpeg,
+        );
+        final extraction = parse(ocr.text);
+        expect(extraction.total.first.value, m('5.00'));
+      },
+    );
   });
 
   group('review safety (OCR 03)', () {

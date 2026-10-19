@@ -7,6 +7,7 @@ export 'src/documents/exports/restore_verification.dart';
 export 'src/documents/exports/transaction_export.dart';
 export 'src/documents/extraction/extraction.dart';
 export 'src/documents/extraction/extraction_json_codec.dart';
+export 'src/documents/extraction/extraction_provider.dart';
 export 'src/documents/extraction/ocr_result.dart';
 export 'src/documents/extraction/receipt_dates.dart' show DateConvention;
 export 'src/documents/extraction/receipt_parser.dart';
