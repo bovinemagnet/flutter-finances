@@ -1,5 +1,4 @@
 import 'package:finance_app/features/transactions/transaction_list.dart';
-import 'package:finance_core/finance_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
