@@ -1,0 +1,4 @@
+.Platform
+* xref:platform:capabilities.adoc[Capability matrix]
+* xref:platform:adaptive-layout.adoc[Adaptive layout]
+* xref:platform:accessibility.adoc[Accessibility]

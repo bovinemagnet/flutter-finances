@@ -45,7 +45,7 @@ Each entity has an integer `revision`, starting at 1 on creation and
 incremented on every accepted change. `baseRevision` is the revision the
 client last saw (0 for a new entity).
 
-- `journal.post` creates a journal, or replaces one whose stored status is
+- `journal.post` payload `{"journal": Journal}` creates a journal, or replaces one whose stored status is
   `draft` or `pending`. Replacing requires `baseRevision` to equal the stored
   revision; otherwise `conflict`. A posted or reversed journal can only be
   changed with `journal.correct`.
@@ -80,8 +80,13 @@ original exactly (`REVERSAL_MISMATCH`).
 where `data` is the full current entity. An empty cursor starts from the
 beginning. A cursor older than the tombstone horizon (90 days, SYNC 06)
 returns HTTP 410 with `{"error": "CURSOR_EXPIRED"}`; the client then pages
-`GET /v1/sync/snapshot?after=<entityKey>` and rebases its pending commands
-(A15). Pending commands for entities deleted in the meantime are surfaced for
+`GET /v1/sync/snapshot?after=<entityKey>&limit=500` and rebases its pending
+commands (A15). A snapshot page is `{"changes": [...], "after": "entityKey",
+"hasMore": bool, "cursor": "opaque"}`: `changes` uses the change feed item
+shape for every live entity ordered by entity key (`entityType/entityId`),
+`after` is the key to pass for the next page, and `cursor` is the change feed
+position captured when the first page was produced, from which the client
+resumes `GET /v1/sync/changes` after the last page. Pending commands for entities deleted in the meantime are surfaced for
 review, never applied automatically.
 
 ## Receipt documents (SYNC 05)
@@ -96,8 +101,10 @@ review, never applied automatically.
    content type by magic bytes, then marks the asset `quarantined` until the
    scan job marks it `available` or `rejected`. Completing twice is a no-op;
    it never creates a second receipt.
-3. `GET /v1/receipts/{receiptId}/assets/{assetId}/download` returns a
-   short-lived presigned GET only for members of the owning workspace (A17).
+3. `GET /v1/receipts/{receiptId}/assets/{assetId}/download` returns
+   `{"downloadUrl", "expiresAt"}`, a short-lived presigned GET, only for
+   members of the owning workspace (A17). While the asset is still uploading
+   or quarantined it returns HTTP 409 `{"error": "ASSET_NOT_AVAILABLE"}`.
 
 ## Entity JSON
 

@@ -1,0 +1,40 @@
+name: finance_app
+description: Personal finance with budgeting, planning and receipt capture.
+publish_to: none
+version: 0.0.0+1
+resolution: workspace
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.47.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  finance_core: any
+  finance_store: any
+  intl: ^0.20.2
+  cunning_document_scanner: ^3.0.3
+  image_picker: ^1.2.4
+  file_selector: ^1.1.0
+  desktop_drop: ^0.8.4
+  pasteboard: ^0.5.0
+  receive_sharing_intent: ^1.9.0
+  flutter_local_notifications: ^22.3.2
+  workmanager: ^0.10.10
+  flutter_secure_storage: ^11.2.0
+  google_mlkit_text_recognition: ^0.17.1
+  path_provider: ^2.1.6
+  image: ^4.12.0
+  timezone: ^0.11.2
+  meta: ^1.19.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

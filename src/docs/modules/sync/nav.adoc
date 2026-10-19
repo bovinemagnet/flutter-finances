@@ -1,0 +1,3 @@
+.Synchronisation
+* xref:sync:protocol.adoc[Sync protocol]
+* xref:sync:offline.adoc[Offline behaviour]

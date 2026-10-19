@@ -1,0 +1,30 @@
+= Net worth
+Paul Snow
+:revnumber: 0.0.0
+
+== Calculation
+
+Net worth is assets less liabilities. It is computed from ledger balances, not from income and expense balances:
+
+* the sum of the ledger balances of every account whose _include in net worth_ flag is set; plus
+* the balance of `system:reimbursement-receivable` (money owed to the user).
+
+Because liabilities carry negative ledger balances, the sum is assets less liabilities. The calculation can be taken as of a date and counts only the posted ledger (posted and reversed journals).
+
+== Inclusion flags
+
+Each account has three independent flags: include in budget, include in forecast and include in net worth. Archiving an account preserves its history.
+
+== Related figures
+
+[cols="1,3",options="header"]
+|===
+| Figure | Definition
+
+| Liquid money | Ledger balances of transaction, savings and cash accounts included in net worth
+| Liabilities owed | Display balances (money owed) of credit card and loan accounts included in net worth
+| Display balance | The balance as a user reads it: money held, or money owed for a liability
+| Expenses and income | Net posted totals for a period; refunds reduce expenses
+|===
+
+The interface shows liquid money, liabilities and net worth separately.

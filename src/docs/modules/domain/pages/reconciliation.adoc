@@ -1,0 +1,20 @@
+= Reconciliation
+Paul Snow
+:revnumber: 0.0.0
+
+Reconciliation compares an account with a statement (requirement FIN 08).
+
+== Session
+
+The user enters a statement date and closing balance, then marks the entries on this or an earlier statement as cleared. The statement balance is as printed: money held, or money owed for a card or loan.
+
+* The _cleared balance_ sums the postings against the account for cleared journals in the posted ledger with an effective date on or before the statement date. For a liability the sign is flipped to money owed.
+* The _difference_ is the statement balance less the cleared balance.
+
+== Completion
+
+* A zero difference completes the session.
+* A non-zero difference requires an explicitly confirmed balance adjustment, dated on the statement date with the note "Reconciliation adjustment". Without confirmation completion fails and reports the difference.
+* Missing transactions are never invented.
+
+Imported or reported balances are observations. They never silently replace the calculated balance. Each account also records its last reconciliation date.

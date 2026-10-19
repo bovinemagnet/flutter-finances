@@ -1,0 +1,23 @@
+= Accessibility
+Paul Snow
+:revnumber: 0.0.0
+
+IMPORTANT: These are commitments from the product requirements (UX 01). Verification with screen readers on all release targets is planned.
+
+== UX 01 commitments
+
+* Support VoiceOver, TalkBack and desktop screen readers.
+* Support keyboard traversal, high contrast and text scaling to 200%.
+* Provide named actions for charts and icons.
+* Never rely on colour, swipe gestures, hover or biometrics alone.
+* Expose extracted text and editable fields of a receipt image preview in an accessible form.
+
+== Related requirements
+
+* *UX 02 Recovery.* Show empty, loading, offline, permission denied, extraction failed, sync conflict and storage full states, and preserve form drafts after interruption.
+* *UX 03 Trust cues.* Distinguish calculated balances, bank-reported observations, planned amounts, pending transactions and projections.
+* *Reports.* Charts are presented with tables beside them.
+
+== Acceptance
+
+Scenario A18: using a screen reader and 200% text on a tablet, entry, review and receipt linking complete without hidden actions or clipped controls.

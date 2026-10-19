@@ -53,9 +53,9 @@ Operations implemented by both Dart and Java test runners:
 | `money.allocate` | `{total, weights[]}` | `{parts[]}` (largest remainder, ties to lower index) |
 | `journal.validate` | `{postings:[{account, minor, currency}]}` | `{errors:[codes]}` |
 | `ledger.scenario` | `{accounts[], categories[], entries[]}` | `{balances{}, expenses, income, netWorth, journalCount}` |
-| `periods.generate` | `{cycle, anchor, count, endOfMonth}` | `{periods:[{start,end}]}` |
+| `periods.generate` | `{cycle, anchor, count, lengthDays?, endOfMonth?: clamp\|lastDay}` | `{periods:[{start,end}]}` |
 | `schedule.occurrences` | `{frequency, interval, start, until, count}` | `{dates[]}` |
-| `budget.remaining` | `{planned, rollover, adjustments, postedNet, pending}` | `{remaining, pendingRemaining}` |
+| `budget.remaining` | `{planned, rollover, adjustments, postedNet, pending}` | `{remaining, remainingAfterPending}` |
 | `rollover.next` | `{policy, remaining}` | `{opening}` |
 | `discretionary.estimate` | BUD 07 inputs | `{budgetLimit, cashLimit, estimate, shortfall}` |
 | `csv.parse` | `{text, mapping}` | `{rows[], errors[]}` |
@@ -70,20 +70,20 @@ Endpoints: `POST /v1/sync/commands`, `GET /v1/sync/changes?cursor=`, `GET /v1/sy
 ## Sub-plans and tasks
 
 ### Plan 1 — Foundation (`finance_core` money and ledger)
-- [ ] 1.1 Workspace scaffolding, `.gitignore`, analysis options
-- [ ] 1.2 `Currency`, `Money`, parsing, range checks, exact allocation (fixtures: money)
-- [ ] 1.3 `LocalDate`, UUIDv7 ids
-- [ ] 1.4 Ledger model, journal validation (fixture: journal.validate, A03)
-- [ ] 1.5 Transaction drafts → journals: expense, income, transfer, card repayment, refund, opening balance, adjustment, reimbursement, splits (A01–A04, A07)
-- [ ] 1.6 Ledger projection: balances, pending view, net worth with inclusion flags, corrections, reconciliation (FIN 07, FIN 08)
+- [x] 1.1 Workspace scaffolding, `.gitignore`, analysis options
+- [x] 1.2 `Currency`, `Money`, parsing, range checks, exact allocation (fixtures: money)
+- [x] 1.3 `LocalDate`, UUIDv7 ids
+- [x] 1.4 Ledger model, journal validation (fixture: journal.validate, A03)
+- [x] 1.5 Transaction drafts → journals: expense, income, transfer, card repayment, refund, opening balance, adjustment, reimbursement, splits (A01–A04, A07)
+- [x] 1.6 Ledger projection: balances, pending view, net worth with inclusion flags, corrections, reconciliation (FIN 07, FIN 08)
 
 ### Plan 2 — Planning domain (`finance_core`)
-- [ ] 2.1 Budget periods (monthly EOM rule, weekly, fortnightly anchor, custom) (BUD 02, A14)
-- [ ] 2.2 Budget model, 50/30/20 template, versions, remaining arithmetic, rollover (BUD 01, 03)
-- [ ] 2.3 Goals, reservations, sinking funds, debt presentation (BUD 04–06)
-- [ ] 2.4 Recurrence, occurrence edits, bill matching (PLAN 01–02, A13)
-- [ ] 2.5 90-day forecast with scenarios (PLAN 03) and discretionary estimate (BUD 07)
-- [ ] 2.6 Reports, financial years, insights (REP 01–04)
+- [x] 2.1 Budget periods (monthly EOM rule, weekly, fortnightly anchor, custom) (BUD 02, A14)
+- [x] 2.2 Budget model, 50/30/20 template, versions, remaining arithmetic, rollover (BUD 01, 03)
+- [x] 2.3 Goals, reservations, sinking funds, debt presentation (BUD 04–06)
+- [x] 2.4 Recurrence, occurrence edits, bill matching (PLAN 01–02, A13)
+- [x] 2.5 90-day forecast with scenarios (PLAN 03) and discretionary estimate (BUD 07)
+- [x] 2.6 Reports, financial years, insights (REP 01–04)
 
 ### Plan 3 — Documents and imports domain (`finance_core`)
 - [ ] 3.1 Receipt model and state machines (REC 04), content validation rules (REC 05)
@@ -115,6 +115,6 @@ Endpoints: `POST /v1/sync/commands`, `GET /v1/sync/changes?cursor=`, `GET /v1/sy
 - [ ] 6.5 Imports UI, reconciliation, rules, insights, sync and backup settings (Journeys D, E)
 
 ### Plan 7 — Documentation
-- [ ] 7.1 Antora component in `src/docs`, Gradle `antora` task, architecture, domain rules, sync protocol, platform capability matrix, operations
+- [~] 7.1 Antora component in `src/docs`, Gradle `antora` task, architecture, domain rules, sync protocol, platform capability matrix, operations
 
 Each sub-plan is executed TDD: failing test, minimal implementation, passing test, commit.

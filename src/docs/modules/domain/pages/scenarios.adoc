@@ -1,0 +1,82 @@
+= Acceptance scenarios A01 to A04
+Paul Snow
+:revnumber: 0.0.0
+
+The ledger-related acceptance scenarios from the product requirements, worked through with postings. Debit is positive and amounts are shown in dollars for readability (stored as minor units). Account names are illustrative.
+
+== A01: card purchase, then card payment
+
+_Required result: expenses are $120; the payment reduces bank cash and card debt without another expense._
+
+.Spend $120 on a card (expense)
+[cols="2,1",options="header"]
+|===
+| Ledger account | Amount
+
+| Groceries (expense) | 120.00
+| Credit card (liability) | -120.00
+|===
+
+.Pay $120 from the bank account (transfer)
+[cols="2,1",options="header"]
+|===
+| Ledger account | Amount
+
+| Credit card (liability) | 120.00
+| Bank (asset) | -120.00
+|===
+
+The card ledger balance returns to zero, so no debt is owed; the bank balance falls by $120; expense postings total $120.
+
+== A02: transfer to savings
+
+_Required result: net worth and income are unchanged._
+
+[cols="2,1",options="header"]
+|===
+| Ledger account | Amount
+
+| Savings (asset) | 500.00
+| Transaction account (asset) | -500.00
+|===
+
+Both accounts are assets, so net worth is unchanged, and no income or expense account is touched. A savings allocation changes only if the user explicitly assigns it.
+
+== A03: split $103.47 into $80.00 and $23.47
+
+_Required result: the journal balances exactly; $80.00 plus $23.46 is rejected._
+
+[cols="2,1",options="header"]
+|===
+| Ledger account | Amount
+
+| Category one (expense) | 80.00
+| Category two (expense) | 23.47
+| Bank (asset) | -103.47
+|===
+
+The splits sum to the entry total, so the journal balances to zero. With $23.46 the splits total $103.46, which differs from $103.47 and the draft is rejected with `SPLIT_MISMATCH`.
+
+== A04: expense, then a refund next month
+
+_Required result: net expense is $60 across both months; the original period is not silently rewritten._
+
+.Month 1: $100 expense
+[cols="2,1",options="header"]
+|===
+| Ledger account | Amount
+
+| Category (expense) | 100.00
+| Bank (asset) | -100.00
+|===
+
+.Month 2: $40 refund, linked to the original with `refundOf`
+[cols="2,1",options="header"]
+|===
+| Ledger account | Amount
+
+| Bank (asset) | 40.00
+| Category (expense) | -40.00
+|===
+
+Month 1 still shows $100 of expense and month 2 shows -$40, a net of $60. The refund is dated on its own effective date.
