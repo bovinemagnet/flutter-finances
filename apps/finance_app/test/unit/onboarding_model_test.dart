@@ -1,5 +1,6 @@
 import 'package:finance_app/features/onboarding/onboarding_model.dart';
 import 'package:finance_core/finance_core.dart';
+import 'package:finance_store/finance_store.dart' show SyncMode;
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -10,7 +11,7 @@ void main() {
     expect(model.currency, aud);
     expect(model.timezone, 'Australia/Brisbane');
     expect(model.locale, 'en_AU');
-    expect(model.syncMode, SyncMode.localOnly);
+    expect(model.syncMode, SyncMode.local);
     expect(model.payFrequency, Frequency.fortnightly);
   });
 

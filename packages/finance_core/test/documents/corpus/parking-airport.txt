@@ -1,0 +1,10 @@
+SYDNEY AIRPORT PARKING
+T2 Domestic P3
+Receipt No 88213
+Entry 03/10/26 05:10
+Exit 06/10/26 22:15
+Parking fee        96.00
+Booking discount  -10.00
+Amount due         86.00
+Card               86.00
+GST included        7.82

@@ -1,0 +1,335 @@
+{
+  "notes": "Purpose-written synthetic Australian receipts. Expected values are what a careful person reads from the receipt; null means not legible. merchantDateConvention is the date convention a user would set for that merchant.",
+  "receipts": [
+    {
+      "file": "supermarket-woolworths.txt",
+      "class": "supermarket",
+      "merchant": "WOOLWORTHS",
+      "date": "2026-10-19",
+      "total": "25.34",
+      "tax": "0.41",
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "supermarket-coles-savings.txt",
+      "class": "supermarket",
+      "merchant": "Coles Supermarkets Australia Pty Ltd",
+      "date": "2026-11-03",
+      "total": "27.90",
+      "tax": "0.41",
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "supermarket-aldi.txt",
+      "class": "supermarket",
+      "merchant": "ALDI STORES",
+      "date": "2026-08-05",
+      "total": "46.75",
+      "tax": "2.91",
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "supermarket-iga-ambiguous-date.txt",
+      "class": "supermarket",
+      "merchant": "IGA PADDINGTON",
+      "date": "2026-06-04",
+      "total": "7.50",
+      "tax": null,
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "supermarket-harris-farm.txt",
+      "class": "supermarket",
+      "merchant": "HARRIS FARM MARKETS",
+      "date": "2026-09-21",
+      "total": "29.40",
+      "tax": "0.00",
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "cafe-bean-there.txt",
+      "class": "cafe",
+      "merchant": "Bean There Cafe",
+      "date": "2026-10-12",
+      "total": "16.00",
+      "tax": "1.45",
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "cafe-surcharge.txt",
+      "class": "cafe",
+      "merchant": "THE GROUNDS OF ALEXANDRIA",
+      "date": "2026-10-18",
+      "total": "39.60",
+      "tax": "3.60",
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "restaurant-tip.txt",
+      "class": "cafe",
+      "merchant": "SPICE I AM",
+      "date": "2026-10-09",
+      "total": "58.30",
+      "tax": "4.85",
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "restaurant-card-slip.txt",
+      "class": "cafe",
+      "merchant": "MAMAK HAYMARKET",
+      "date": "2026-10-27",
+      "total": "42.80",
+      "tax": null,
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "fuel-shell.txt",
+      "class": "fuel",
+      "merchant": "SHELL COLES EXPRESS",
+      "date": "2026-10-14",
+      "total": "89.23",
+      "tax": "8.11",
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "fuel-ampol-diesel.txt",
+      "class": "fuel",
+      "merchant": "AMPOL FOODARY",
+      "date": "2026-11-02",
+      "total": "127.86",
+      "tax": "11.62",
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "fuel-seven-eleven-cash.txt",
+      "class": "fuel",
+      "merchant": "7-ELEVEN",
+      "date": "2026-09-22",
+      "total": "69.97",
+      "tax": null,
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "parking-wilson.txt",
+      "class": "parking",
+      "merchant": "WILSON PARKING",
+      "date": "2026-10-10",
+      "total": "32.00",
+      "tax": "2.91",
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "parking-meter.txt",
+      "class": "parking",
+      "merchant": "CITY OF SYDNEY",
+      "date": "2026-10-15",
+      "total": "14.40",
+      "tax": "1.31",
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "parking-airport.txt",
+      "class": "parking",
+      "merchant": "SYDNEY AIRPORT PARKING",
+      "date": "2026-10-03",
+      "total": "86.00",
+      "tax": "7.82",
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "online-officeworks-invoice.txt",
+      "class": "online",
+      "merchant": "Officeworks Ltd",
+      "date": "2026-10-07",
+      "total": "96.95",
+      "tax": "8.81",
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "online-software-us-invoice.txt",
+      "class": "online",
+      "merchant": "Acme Software Inc",
+      "date": "2026-10-07",
+      "total": "20.00",
+      "tax": "0.00",
+      "refund": false,
+      "merchantDateConvention": "monthDay"
+    },
+    {
+      "file": "online-ex-gst-invoice.txt",
+      "class": "online",
+      "merchant": "Northside Web Hosting Pty Ltd",
+      "date": "2026-11-01",
+      "total": "264.00",
+      "tax": "24.00",
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "online-amazon-order.txt",
+      "class": "online",
+      "merchant": "amazon.com.au",
+      "date": "2026-10-16",
+      "total": "37.49",
+      "tax": "3.41",
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "refund-jbhifi.txt",
+      "class": "refund",
+      "merchant": "JB HI-FI",
+      "date": "2026-10-08",
+      "total": "449.00",
+      "tax": "40.82",
+      "refund": true,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "refund-kmart-credit.txt",
+      "class": "refund",
+      "merchant": "KMART",
+      "date": "2026-09-16",
+      "total": "12.00",
+      "tax": null,
+      "refund": true,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "refund-store-credit-note.txt",
+      "class": "refund",
+      "merchant": "MYER",
+      "date": "2026-08-30",
+      "total": "79.95",
+      "tax": "7.27",
+      "refund": true,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "faded-total-split-lines.txt",
+      "class": "faded",
+      "merchant": "BAKERS DELIGHT",
+      "date": "2026-10-02",
+      "total": "13.50",
+      "tax": null,
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "faded-missing-total-word.txt",
+      "class": "faded",
+      "merchant": "CHEMIST WAREHOUSE",
+      "date": "2026-10-23",
+      "total": "33.97",
+      "tax": null,
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "faded-no-date.txt",
+      "class": "faded",
+      "merchant": "LOCAL NEWSAGENCY",
+      "date": null,
+      "total": "16.70",
+      "tax": null,
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "faded-unreadable-total.txt",
+      "class": "faded",
+      "merchant": null,
+      "date": null,
+      "total": null,
+      "tax": null,
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "long-bunnings-multiple-totals.txt",
+      "class": "long",
+      "merchant": "BUNNINGS WAREHOUSE",
+      "date": "2026-10-20",
+      "total": "188.54",
+      "tax": "16.82",
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "long-costco.txt",
+      "class": "long",
+      "merchant": "COSTCO WHOLESALE",
+      "date": "2026-01-11",
+      "total": "143.93",
+      "tax": "4.45",
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "long-hotel-folio.txt",
+      "class": "long",
+      "merchant": "HOTEL CANBERRA",
+      "date": "2026-10-14",
+      "total": "514.50",
+      "tax": "46.77",
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "cash-corner-store-a06.txt",
+      "class": "cash",
+      "merchant": "CORNER STORE",
+      "date": "2026-07-11",
+      "total": "63.25",
+      "tax": null,
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "cash-market-stall.txt",
+      "class": "cash",
+      "merchant": "EVELEIGH FARMERS MARKET",
+      "date": "2026-10-17",
+      "total": "24.00",
+      "tax": null,
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "cash-pub-rounding.txt",
+      "class": "cash",
+      "merchant": "THE RUSSIAN HOTEL",
+      "date": "2026-10-16",
+      "total": "39.25",
+      "tax": null,
+      "refund": false,
+      "merchantDateConvention": null
+    },
+    {
+      "file": "cash-taxi.txt",
+      "class": "cash",
+      "merchant": "13CABS",
+      "date": "2026-11-01",
+      "total": "41.10",
+      "tax": "3.74",
+      "refund": false,
+      "merchantDateConvention": null
+    }
+  ]
+}

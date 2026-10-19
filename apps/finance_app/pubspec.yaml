@@ -14,7 +14,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   finance_core: any
-  flutter_riverpod: ^3.3.2
+  finance_store: any
   intl: ^0.20.2
   cunning_document_scanner: ^3.0.3
   image_picker: ^1.2.4

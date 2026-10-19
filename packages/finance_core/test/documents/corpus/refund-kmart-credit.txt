@@ -1,0 +1,7 @@
+KMART
+Bondi Junction
+RETURN
+Towel bath white       12.00 CR
+TOTAL                  12.00 CR
+EFTPOS REFUND          12.00
+16/09/2026

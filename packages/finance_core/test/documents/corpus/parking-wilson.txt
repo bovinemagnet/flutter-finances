@@ -1,0 +1,9 @@
+WILSON PARKING
+Goulburn St Car Park
+Tax Invoice ABN 82 000 123 456
+Entry 10/10/2026 09:02
+Exit  10/10/2026 13:47
+Duration 4h 45m
+Fee                 $32.00
+GST                  $2.91
+Paid Mastercard     $32.00

@@ -1,0 +1,13 @@
+SPICE I AM
+90 Wentworth Ave Surry Hills
+TAX INVOICE  Table 12  Covers 2
+Pad Thai              19.90
+Green Curry           22.90
+Coconut Rice           4.00
+Thai Iced Tea          6.50
+Subtotal              53.30
+Tip                    5.00
+Total                 58.30
+Mastercard            58.30
+GST incl               4.85
+Date: 09/10/2026

@@ -1,0 +1,222 @@
+{
+  "schemaVersion": 1,
+  "area": "documents",
+  "notes": "CSV import, fingerprints, export sanitisation and content sniffing. See the Documents operations section of README.md. Amounts are integer minor units; csv.parse uses exponent 2 unless the input gives one.",
+  "cases": [
+    {
+      "id": "csv-parse-signed-quoted-reference",
+      "op": "csv.parse",
+      "input": {
+        "text": "Date,Description,Amount,Reference\n01/07/2026,\"WOOLWORTHS 1234, SYDNEY\",-63.25,R1\n02/07/2026,\"Say \"\"hi\"\"\",2500.00,\n",
+        "mapping": {"id": "m1", "name": "Bank", "accountId": "bank", "dateColumn": "Date", "dateFormat": "dd/MM/yyyy", "descriptionColumn": "Description", "amountColumn": "Amount", "referenceColumn": "Reference"}
+      },
+      "expect": {
+        "rows": [
+          {"row": 2, "date": "2026-07-01", "amountMinor": -6325, "description": "WOOLWORTHS 1234, SYDNEY", "reference": "R1"},
+          {"row": 3, "date": "2026-07-02", "amountMinor": 250000, "description": "Say \"hi\""}
+        ],
+        "errors": []
+      }
+    },
+    {
+      "id": "csv-parse-embedded-newline-crlf-and-blank-lines",
+      "op": "csv.parse",
+      "input": {
+        "text": "﻿Date,Description,Amount\r\n\r\n03/07/2026,\"Two\nlines\",-1.00\r\n04/07/2026,Plain,-2.00",
+        "mapping": {"id": "m1", "name": "Bank", "accountId": "bank", "dateColumn": "Date", "descriptionColumn": "Description", "amountColumn": "Amount"}
+      },
+      "expect": {
+        "rows": [
+          {"row": 3, "date": "2026-07-03", "amountMinor": -100, "description": "Two\nlines"},
+          {"row": 4, "date": "2026-07-04", "amountMinor": -200, "description": "Plain"}
+        ],
+        "errors": []
+      }
+    },
+    {
+      "id": "csv-parse-debit-credit-columns-without-header",
+      "op": "csv.parse",
+      "input": {
+        "text": "2026-07-01,Coffee,4.50,\n2026-07-02,Refund,,10.00\n2026-07-03,Both,1.00,2.00\n2026-07-04,Neither,,\n2026-07-05,Zero padded,0.00,7.00\n2026-07-06,Negative debit,-3.00,\n",
+        "mapping": {"id": "m2", "name": "Card", "accountId": "card", "hasHeader": false, "dateColumn": 0, "dateFormat": "yyyy-MM-dd", "descriptionColumn": 1, "debitColumn": 2, "creditColumn": 3}
+      },
+      "expect": {
+        "rows": [
+          {"row": 1, "date": "2026-07-01", "amountMinor": -450, "description": "Coffee"},
+          {"row": 2, "date": "2026-07-02", "amountMinor": 1000, "description": "Refund"},
+          {"row": 5, "date": "2026-07-05", "amountMinor": 700, "description": "Zero padded"},
+          {"row": 6, "date": "2026-07-06", "amountMinor": -300, "description": "Negative debit"}
+        ],
+        "errors": [
+          {"row": 3, "code": "BOTH_DEBIT_AND_CREDIT"},
+          {"row": 4, "code": "MISSING_AMOUNT"}
+        ]
+      }
+    },
+    {
+      "id": "csv-parse-comma-decimal-separator",
+      "op": "csv.parse",
+      "input": {
+        "text": "Date;Description;Amount\n01/07/2026;Groceries;-1.234,50\n02/07/2026;Bracketed;($12,00)\n03/07/2026;Trailing minus;7,25-\n04/07/2026;Too precise;1,234\n",
+        "mapping": {"id": "m3", "name": "Comma", "accountId": "bank", "delimiter": ";", "decimalSeparator": ",", "dateColumn": "Date", "descriptionColumn": "Description", "amountColumn": "Amount"}
+      },
+      "expect": {
+        "rows": [
+          {"row": 2, "date": "2026-07-01", "amountMinor": -123450, "description": "Groceries"},
+          {"row": 3, "date": "2026-07-02", "amountMinor": -1200, "description": "Bracketed"},
+          {"row": 4, "date": "2026-07-03", "amountMinor": -725, "description": "Trailing minus"}
+        ],
+        "errors": [{"row": 5, "code": "BAD_AMOUNT"}]
+      }
+    },
+    {
+      "id": "csv-parse-debits-shown-positive",
+      "op": "csv.parse",
+      "input": {
+        "text": "Date,Description,Amount\n01/07/2026,Card purchase,$63.25\n02/07/2026,Payment received,-500.00\n",
+        "mapping": {"id": "m4", "name": "Card", "accountId": "card", "debitSign": "positive", "dateColumn": "Date", "descriptionColumn": "Description", "amountColumn": "Amount"}
+      },
+      "expect": {
+        "rows": [
+          {"row": 2, "date": "2026-07-01", "amountMinor": -6325, "description": "Card purchase"},
+          {"row": 3, "date": "2026-07-02", "amountMinor": 50000, "description": "Payment received"}
+        ],
+        "errors": []
+      }
+    },
+    {
+      "id": "csv-parse-bad-dates-and-short-rows",
+      "op": "csv.parse",
+      "input": {
+        "text": "Date,Description,Amount\n31/02/2026,Impossible date,-1.00\n2026-07-01,Wrong format,-1.00\n01/07/2026,Bad amount,abc\n01/07/2026,Zero,0.00\n01/07/2026\n02/07/2026,Good,-5.00\n",
+        "mapping": {"id": "m1", "name": "Bank", "accountId": "bank", "dateColumn": "Date", "descriptionColumn": "Description", "amountColumn": "Amount"}
+      },
+      "expect": {
+        "rows": [
+          {"row": 7, "date": "2026-07-02", "amountMinor": -500, "description": "Good"}
+        ],
+        "errors": [
+          {"row": 2, "code": "BAD_DATE"},
+          {"row": 3, "code": "BAD_DATE"},
+          {"row": 4, "code": "BAD_AMOUNT"},
+          {"row": 5, "code": "ZERO_AMOUNT"},
+          {"row": 6, "code": "MISSING_FIELD"}
+        ]
+      }
+    },
+    {
+      "id": "csv-parse-month-names-two-digit-years-and-times",
+      "op": "csv.parse",
+      "input": {
+        "text": "Date,Description,Amount\n01-JUL-26,Short year,-1.00\n9-Aug-26 14:22:05,With time,-2.00\n",
+        "mapping": {"id": "m5", "name": "Names", "accountId": "bank", "dateColumn": "Date", "dateFormat": "d-MMM-yy", "descriptionColumn": "Description", "amountColumn": "Amount"}
+      },
+      "expect": {
+        "rows": [
+          {"row": 2, "date": "2026-07-01", "amountMinor": -100, "description": "Short year"},
+          {"row": 3, "date": "2026-08-09", "amountMinor": -200, "description": "With time"}
+        ],
+        "errors": []
+      }
+    },
+    {
+      "id": "csv-parse-missing-header-column",
+      "op": "csv.parse",
+      "input": {
+        "text": "When,Description,Amount\n01/07/2026,x,-1.00\n",
+        "mapping": {"id": "m1", "name": "Bank", "accountId": "bank", "dateColumn": "Date", "descriptionColumn": "Description", "amountColumn": "Amount"}
+      },
+      "expect": {"rows": [], "errors": [{"row": 1, "code": "COLUMN_NOT_FOUND"}]}
+    },
+    {
+      "id": "csv-parse-unterminated-quote",
+      "op": "csv.parse",
+      "input": {
+        "text": "Date,Description,Amount\n01/07/2026,Fine,-1.00\n02/07/2026,\"Never closed,-2.00\n03/07/2026,Lost,-3.00\n",
+        "mapping": {"id": "m1", "name": "Bank", "accountId": "bank", "dateColumn": "Date", "descriptionColumn": "Description", "amountColumn": "Amount"}
+      },
+      "expect": {
+        "rows": [
+          {"row": 2, "date": "2026-07-01", "amountMinor": -100, "description": "Fine"}
+        ],
+        "errors": [{"row": 3, "code": "UNTERMINATED_QUOTE"}]
+      }
+    },
+    {
+      "id": "A11-fingerprint-identical-same-day-purchases",
+      "op": "csv.fingerprint",
+      "input": {
+        "account": "bank",
+        "rows": [
+          {"date": "2026-07-01", "amountMinor": -450, "description": "Coffee Cart"},
+          {"date": "2026-07-01", "amountMinor": -450, "description": "COFFEE  CART"},
+          {"date": "2026-07-01", "amountMinor": -900, "description": "Coffee Cart"},
+          {"date": "2026-07-02", "amountMinor": -450, "description": "Coffee Cart"}
+        ]
+      },
+      "expect": {
+        "fingerprints": [
+          "fp|bank|2026-07-01|-450|coffee cart#1",
+          "fp|bank|2026-07-01|-450|coffee cart#2",
+          "fp|bank|2026-07-01|-900|coffee cart#1",
+          "fp|bank|2026-07-02|-450|coffee cart#1"
+        ]
+      }
+    },
+    {
+      "id": "fingerprint-bank-reference-wins",
+      "op": "csv.fingerprint",
+      "input": {
+        "account": "bank",
+        "rows": [
+          {"date": "2026-07-01", "amountMinor": -450, "description": "Coffee", "reference": " TXN-0001 "},
+          {"date": "2026-07-01", "amountMinor": -450, "description": "Coffee", "reference": "TXN-0002"},
+          {"date": "2026-07-01", "amountMinor": -450, "description": "Coffee", "reference": ""}
+        ]
+      },
+      "expect": {
+        "fingerprints": [
+          "ref|bank|TXN-0001#1",
+          "ref|bank|TXN-0002#1",
+          "fp|bank|2026-07-01|-450|coffee#1"
+        ]
+      }
+    },
+    {
+      "id": "fingerprint-description-normalisation",
+      "op": "csv.fingerprint",
+      "input": {
+        "account": "card",
+        "rows": [
+          {"date": "2026-07-03", "amountMinor": 1250, "description": "  Café—Déjà Vu, Pty. Ltd!  "},
+          {"date": "2026-07-03", "amountMinor": 1250, "description": "***"}
+        ]
+      },
+      "expect": {
+        "fingerprints": [
+          "fp|card|2026-07-03|1250|caf d j vu pty ltd#1",
+          "fp|card|2026-07-03|1250|#1"
+        ]
+      }
+    },
+    {"id": "sanitise-equals", "op": "csv.sanitise", "input": {"value": "=HYPERLINK(\"http://x\")"}, "expect": {"value": "'=HYPERLINK(\"http://x\")"}},
+    {"id": "sanitise-plus", "op": "csv.sanitise", "input": {"value": "+61 400 000 000"}, "expect": {"value": "'+61 400 000 000"}},
+    {"id": "sanitise-minus", "op": "csv.sanitise", "input": {"value": "-2+3"}, "expect": {"value": "'-2+3"}},
+    {"id": "sanitise-at", "op": "csv.sanitise", "input": {"value": "@SUM(A1)"}, "expect": {"value": "'@SUM(A1)"}},
+    {"id": "sanitise-tab", "op": "csv.sanitise", "input": {"value": "\t=1"}, "expect": {"value": "'\t=1"}},
+    {"id": "sanitise-carriage-return", "op": "csv.sanitise", "input": {"value": "\r=1"}, "expect": {"value": "'\r=1"}},
+    {"id": "sanitise-plain-text", "op": "csv.sanitise", "input": {"value": "Groceries = food"}, "expect": {"value": "Groceries = food"}},
+    {"id": "sanitise-empty", "op": "csv.sanitise", "input": {"value": ""}, "expect": {"value": ""}},
+    {"id": "sniff-jpeg", "op": "content.sniff", "input": {"base64": "/9j/4AAQSkZJRgA="}, "expect": {"contentType": "image/jpeg"}},
+    {"id": "sniff-png", "op": "content.sniff", "input": {"base64": "iVBORw0KGgoAAAANSUhEUg=="}, "expect": {"contentType": "image/png"}},
+    {"id": "sniff-heic", "op": "content.sniff", "input": {"base64": "AAAAGGZ0eXBoZWljAAAAAG1pZjFoZWlj"}, "expect": {"contentType": "image/heic"}},
+    {"id": "sniff-heif-mif1", "op": "content.sniff", "input": {"base64": "AAAAGGZ0eXBtaWYxAAAAAG1pZjFoZWlj"}, "expect": {"contentType": "image/heif"}},
+    {"id": "sniff-avif-unsupported", "op": "content.sniff", "input": {"base64": "AAAAGGZ0eXBhdmlmAAAAAG1pZjFhdmlm"}, "expect": {"error": "UNSUPPORTED_TYPE"}},
+    {"id": "sniff-pdf", "op": "content.sniff", "input": {"base64": "JVBERi0xLjcKJSVFT0YK"}, "expect": {"contentType": "application/pdf"}},
+    {"id": "sniff-pdf-after-leading-whitespace", "op": "content.sniff", "input": {"base64": "ICAKJVBERi0xLjQK"}, "expect": {"contentType": "application/pdf"}},
+    {"id": "sniff-gif-unsupported", "op": "content.sniff", "input": {"base64": "R0lGODlhAQABAA=="}, "expect": {"error": "UNSUPPORTED_TYPE"}},
+    {"id": "sniff-csv-text-unsupported", "op": "content.sniff", "input": {"base64": "RGF0ZSxBbW91bnQK"}, "expect": {"error": "UNSUPPORTED_TYPE"}},
+    {"id": "sniff-near-miss-pdf", "op": "content.sniff", "input": {"base64": "JVBEWC0xLjcK"}, "expect": {"error": "UNSUPPORTED_TYPE"}},
+    {"id": "sniff-empty", "op": "content.sniff", "input": {"base64": ""}, "expect": {"error": "EMPTY_FILE"}}
+  ]
+}
