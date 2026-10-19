@@ -85,8 +85,9 @@ class _PlanPageState extends State<PlanPage> {
                         firstDate: DateTime(2000),
                         lastDate: DateTime(2100),
                       );
-                      if (picked != null)
+                      if (picked != null) {
                         setState(() => date = LocalDate.fromDateTime(picked));
+                      }
                     },
                   ),
                 ),
@@ -430,6 +431,8 @@ class _ScheduleEditorState extends State<ScheduleEditor> {
   String? _categoryId;
   late LocalDate _start = widget.state.today();
   var _leadDays = 2;
+  var _showDetails = false;
+  var _quietHours = false;
   String? _error;
 
   static const _frequencies = {
@@ -547,6 +550,19 @@ class _ScheduleEditorState extends State<ScheduleEditor> {
             ],
             onChanged: (v) => setState(() => _leadDays = v!),
           ),
+          SwitchListTile(
+            value: _showDetails,
+            title: const Text('Show the amount and name in notifications'),
+            subtitle: const Text(
+              'Off by default so your lock screen stays private',
+            ),
+            onChanged: (v) => setState(() => _showDetails = v),
+          ),
+          SwitchListTile(
+            value: _quietHours,
+            title: const Text('Quiet hours 9 pm to 7 am'),
+            onChanged: (v) => setState(() => _quietHours = v),
+          ),
           const SizedBox(height: 16),
           const Text(
             'Scheduling never records a payment; you confirm each one.',
@@ -576,7 +592,12 @@ class _ScheduleEditorState extends State<ScheduleEditor> {
                   accountId: _accountId!,
                   categoryId: _categoryId,
                   payee: _name.text.trim(),
-                  reminder: ReminderPreference(leadDays: _leadDays),
+                  reminder: ReminderPreference(
+                    leadDays: _leadDays,
+                    showDetails: _showDetails,
+                    quietStartMinute: _quietHours ? 21 * 60 : null,
+                    quietEndMinute: _quietHours ? 7 * 60 : null,
+                  ),
                 ),
               );
             },

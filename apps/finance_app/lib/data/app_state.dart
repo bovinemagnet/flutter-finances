@@ -357,8 +357,9 @@ class AppState extends ChangeNotifier {
     if (days >= 30 && since > 0) {
       return 'Your last backup was $days days ago and there are newer changes.';
     }
-    if (since >= 200)
+    if (since >= 200) {
       return 'You have made $since changes since your last backup.';
+    }
     return null;
   }
 
@@ -372,8 +373,9 @@ class AppState extends ChangeNotifier {
       _put(AppEntityTypes.entryDraft, 'current', {'id': 'current', ...fields});
 
   Future<void> clearEntryDraft() async {
-    if (entryDraft != null)
+    if (entryDraft != null) {
       await store.deleteEntity(AppEntityTypes.entryDraft, 'current');
+    }
   }
 
   Future<bool> undo() async {
