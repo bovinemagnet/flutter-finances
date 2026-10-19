@@ -467,3 +467,48 @@ $800 reservation in an excluded savings account is not subtracted); buffer
 $500. The lowest balance is $2,200, so the cash limit is $1,700. Wants has
 $950 − $250 − $100 = $600 for dining plus $150 − $150 commitment = $0 for
 streaming, so the budget limit and estimate are $600.
+
+## Reports operation
+
+Cases live in `reports.json`; the server's `GET /v1/reports/{kind}`
+computes the same reports from canonical journals.
+
+`report.compute`
+: Input: the `ledger.scenario` chart and entries (`currency`, `exponent`,
+  `accounts`, `categories`, `entries`; every entry has a `ref`, entries may
+  carry a `payee`, and a `correct` entry names its replacement with `ref`
+  and its reversal with `reversalRef`), plus `report`:
+  `{kind, period?, asOf?, accounts?}`. `period` is
+  `{type: "calendarYear", year}`, `{type: "financialYear", startYear}`
+  (1 July to 30 June) or `{type: "custom", start, end}`, inclusive.
+  Output `{rows: [{key, label?, amounts: {column: decimal}, journals:
+  [ref]}]}`, the complete row list in order.
+
+  Definitions shared by every kind: posted and reversed journals form the
+  posted ledger (a corrected entry counts as original + reversal +
+  replacement); pending and draft journals never count. Journal lists are
+  in effective date order, ties in ledger (insertion) order, each journal
+  once per row.
+
+  - `income-vs-expenses`: one row per calendar month of the period, key
+    `YYYY-MM`, columns `income` (minus the income-category postings),
+    `expenses` (expense-category postings, so refunds reduce them) and
+    `net`; journals touching an income or expense category. Transfers
+    touch neither and are excluded.
+  - `spending-by-category`: column `spending`, the net expense postings per
+    category with any in the period, largest first, ties by key.
+  - `spending-by-payee`: as above per journal payee (all expense postings
+    of a journal); no payee is key `""` labelled `No payee`.
+  - `account-balances`: one row per account in chart order, column
+    `balance` as the user reads it (liabilities negated), journals dated on
+    or before `asOf` (every journal when absent).
+  - `net-worth-history`: one row per month keyed by the month's last day
+    within the period, column `netWorth`: the running total of postings to
+    accounts included in net worth plus `system:reimbursement-receivable`,
+    starting from everything before the period. Journals touching those
+    accounts in the month, even when they net to zero.
+  - `cash-flow`: rows `inflows`, `outflows`, `internalTransfers` and `net`
+    (column `amount`) for the account set `accounts`. A journal whose
+    postings to the set net to zero is internal (its positive postings are
+    the amount); otherwise its net is an inflow or outflow. `net` lists the
+    boundary-crossing journals.

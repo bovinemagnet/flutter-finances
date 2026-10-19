@@ -21,12 +21,12 @@ import tools.jackson.databind.node.ObjectNode;
  */
 final class EntityRules {
 
-    private enum Kind { STRING, BOOLEAN, DATE, ACCOUNT_TYPE, CATEGORY_KIND, OPTIONAL_STRING }
+    private enum Kind { STRING, BOOLEAN, DATE, ACCOUNT_TYPE, CATEGORY_KIND, OPTIONAL_STRING, SHARING }
 
     private static final Map<String, Map<String, Kind>> FIELDS = Map.of(
             "account", Map.of("name", Kind.STRING, "type", Kind.ACCOUNT_TYPE, "includeInBudget", Kind.BOOLEAN,
                     "includeInForecast", Kind.BOOLEAN, "includeInNetWorth", Kind.BOOLEAN, "archived", Kind.BOOLEAN,
-                    "dataSource", Kind.STRING, "lastReconciledOn", Kind.DATE),
+                    "dataSource", Kind.STRING, "lastReconciledOn", Kind.DATE, "sharing", Kind.SHARING),
             "category", Map.of("name", Kind.STRING, "kind", Kind.CATEGORY_KIND, "parentId", Kind.OPTIONAL_STRING,
                     "archived", Kind.BOOLEAN));
 
@@ -82,6 +82,8 @@ final class EntityRules {
             case DATE -> value.isNull() || (value.isString() && isDate(value.asString()));
             case ACCOUNT_TYPE -> value.isString() && parses(() -> AccountType.fromWire(value.asString()));
             case CATEGORY_KIND -> value.isString() && parses(() -> CategoryKind.fromWire(value.asString()));
+            case SHARING -> value.isString() && ("shared".equals(value.asString())
+                    || "private".equals(value.asString()));
         };
     }
 

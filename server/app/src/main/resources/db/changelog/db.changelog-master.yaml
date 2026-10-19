@@ -26,3 +26,9 @@ databaseChangeLog:
   - include:
       file: deletion.sql
       relativeToChangelogFile: true
+  - include:
+      file: audit.sql
+      relativeToChangelogFile: true
+  - include:
+      file: households.sql
+      relativeToChangelogFile: true

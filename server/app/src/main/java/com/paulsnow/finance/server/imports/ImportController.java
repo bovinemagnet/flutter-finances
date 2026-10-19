@@ -40,6 +40,7 @@ class ImportController {
     @Operation(summary = "Parse a CSV statement and preview rows, totals, errors and candidates; the same file "
             + "and settings return the same batch")
     BatchView preview(CurrentMember member, @RequestBody ImportViews.PreviewRequest request) {
+        member.requireWriter();
         if (request == null) {
             throw ApiException.badRequest("INVALID_REQUEST", "Send the statement and mapping.");
         }
@@ -51,6 +52,8 @@ class ImportController {
             + "202 with a job to poll")
     ResponseEntity<BatchView> commit(CurrentMember member, @PathVariable UUID batchId,
             @RequestBody(required = false) ImportViews.CommitRequest request) {
+        member.requireWriter();
+        imports.requireVisible(member, batchId);
         ImportService.CommitOutcome outcome = imports.commit(member, batchId,
                 request == null ? null : request.decisions());
         return ResponseEntity.status(outcome.accepted() ? HttpStatus.ACCEPTED : HttpStatus.OK).body(outcome.batch());
@@ -59,6 +62,8 @@ class ImportController {
     @PostMapping("/{batchId}/rollback")
     @Operation(summary = "Reverse the entries a batch created; entries edited since are held for review")
     BatchView rollback(CurrentMember member, @PathVariable UUID batchId) {
+        member.requireWriter();
+        imports.requireVisible(member, batchId);
         return imports.rollback(member, batchId);
     }
 
@@ -66,6 +71,7 @@ class ImportController {
     @Operation(summary = "Return a batch with a page of its rows and their provenance")
     BatchView get(CurrentMember member, @PathVariable UUID batchId,
             @RequestParam(required = false) Integer offset, @RequestParam(required = false) Integer limit) {
+        imports.requireVisible(member, batchId);
         return imports.get(member, batchId, offset, limit);
     }
 }

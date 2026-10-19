@@ -9,10 +9,12 @@ import java.util.function.LongSupplier;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.paulsnow.finance.server.common.AuditEvent;
 import com.paulsnow.finance.server.jobs.Job;
 import com.paulsnow.finance.server.jobs.JobHandler;
 import com.paulsnow.finance.server.jobs.JobService;
@@ -46,11 +48,13 @@ class DeletionJobHandler implements JobHandler {
     private final WorkspaceDirectory workspaces;
     private final JsonMapper json;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
 
     DeletionJobHandler(JdbcClient jdbc, TransactionTemplate transactions, ObjectStorage storage,
             List<WorkspaceDataPurger> purgers, JobService jobs, WorkspaceDirectory workspaces, JsonMapper json,
-            Clock clock) {
+            Clock clock, ApplicationEventPublisher events) {
         this.jdbc = jdbc;
+        this.events = events;
         this.transactions = transactions;
         this.storage = storage;
         this.purgers = purgers.stream().sorted(Comparator.comparingInt(WorkspaceDataPurger::order)).toList();
@@ -80,6 +84,8 @@ class DeletionJobHandler implements JobHandler {
         });
         jdbc.sql("update deletion_request set status = 'completed', completed_at = ? where id = ?")
                 .params(Timestamp.from(clock.instant()), deletionId).update();
+        events.publishEvent(AuditEvent.of(workspaceId, null, "workspace.deletion_completed", "deletion",
+                deletionId));
         LOG.info("Workspace deletion {} completed", deletionId);
         return JsonNodeFactory.instance.objectNode().put("deletionId", deletionId.toString())
                 .put("status", "completed");

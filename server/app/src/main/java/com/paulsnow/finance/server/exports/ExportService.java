@@ -5,12 +5,14 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.paulsnow.finance.core.ids.Ids;
 import com.paulsnow.finance.server.common.ApiException;
+import com.paulsnow.finance.server.common.AuditEvent;
 import com.paulsnow.finance.server.jobs.JobService;
 import com.paulsnow.finance.server.storage.ObjectStorage;
 import com.paulsnow.finance.server.storage.PresignedRequest;
@@ -38,8 +40,11 @@ public class ExportService {
     private final JobService jobs;
     private final ObjectStorage storage;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
 
-    ExportService(JdbcClient jdbc, JobService jobs, ObjectStorage storage, Clock clock) {
+    ExportService(JdbcClient jdbc, JobService jobs, ObjectStorage storage, Clock clock,
+            ApplicationEventPublisher events) {
+        this.events = events;
         this.jdbc = jdbc;
         this.jobs = jobs;
         this.storage = storage;
@@ -47,13 +52,15 @@ public class ExportService {
     }
 
     @Transactional
-    ExportView start(UUID workspaceId) {
+    ExportView start(UUID workspaceId, UUID requestedBy) {
         UUID exportId = Ids.newUuid();
         UUID jobId = jobs.enqueue(ARCHIVE_JOB, workspaceId,
-                JsonNodeFactory.instance.objectNode().put("exportId", exportId.toString()));
-        jdbc.sql("insert into export_archive (id, workspace_id, job_id, status, created_at) "
-                        + "values (?, ?, ?, 'pending', ?)")
-                .params(exportId, workspaceId, jobId, Timestamp.from(clock.instant())).update();
+                JsonNodeFactory.instance.objectNode().put("exportId", exportId.toString())
+                        .put("requestedBy", requestedBy.toString()));
+        jdbc.sql("insert into export_archive (id, workspace_id, job_id, status, created_at, requested_by) "
+                        + "values (?, ?, ?, 'pending', ?, ?)")
+                .params(exportId, workspaceId, jobId, Timestamp.from(clock.instant()), requestedBy).update();
+        events.publishEvent(AuditEvent.of(workspaceId, requestedBy, "export.requested", "export", exportId));
         return find(workspaceId, exportId);
     }
 

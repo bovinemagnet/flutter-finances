@@ -56,7 +56,7 @@ class ExportController {
         if (request != null && request.format() != null && !"json".equals(request.format())) {
             throw ApiException.badRequest("UNSUPPORTED_FORMAT", "Only the json format is available.");
         }
-        ExportService.ExportView export = exports.start(member.workspaceId());
+        ExportService.ExportView export = exports.start(member.workspaceId(), member.user().id());
         return new ExportStarted(export.exportId(), export.jobId(), export.status());
     }
 

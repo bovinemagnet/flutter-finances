@@ -42,9 +42,10 @@ class EntityStore {
      * @param data           current JSON, null when deleted
      * @param fieldRevisions revision at which each top-level field last changed
      * @param deleted        whether it is a tombstone
+     * @param createdBy      user who created it, or null when the server did
      */
     record StoredEntity(UUID id, String type, long revision, ObjectNode data, ObjectNode fieldRevisions,
-            boolean deleted) {
+            boolean deleted, UUID createdBy) {
 
         /** Revision at which {@code field} last changed; 0 for a field the server never had. */
         long fieldRevision(String field) {
@@ -63,8 +64,9 @@ class EntityStore {
         }
     }
 
-    /** A change log row. */
-    record Change(long sequence, String entityType, UUID entityId, long revision, String op, JsonNode data) {
+    /** A change log row; {@code visibilityChange} marks a change to what other members may see. */
+    record Change(long sequence, String entityType, UUID entityId, long revision, String op, JsonNode data,
+            boolean visibilityChange) {
     }
 
     private final JdbcClient jdbc;
@@ -83,8 +85,8 @@ class EntityStore {
     }
 
     Optional<StoredEntity> lock(UUID workspaceId, UUID entityId) {
-        return jdbc.sql("select entity_id, entity_type, revision, data, field_revisions, deleted from sync_entity "
-                        + "where workspace_id = ? and entity_id = ? for update")
+        return jdbc.sql("select entity_id, entity_type, revision, data, field_revisions, deleted, created_by "
+                        + "from sync_entity where workspace_id = ? and entity_id = ? for update")
                 .params(workspaceId, entityId)
                 .query(EntityStore::mapEntity)
                 .optional();
@@ -127,13 +129,15 @@ class EntityStore {
         return result;
     }
 
-    /** Creates an entity at revision 1 and appends its change. */
-    long create(UUID workspaceId, String type, UUID entityId, ObjectNode data, UUID commandId, UUID deviceId) {
+    /** Creates an entity at revision 1, created by {@code userId} (null for the server), and appends its change. */
+    long create(UUID workspaceId, String type, UUID entityId, ObjectNode data, UUID commandId, UUID deviceId,
+            UUID userId) {
         ObjectNode revisions = FieldRevisionsSupport.initial(data, 1);
         Timestamp now = Timestamp.from(clock.instant());
         jdbc.sql("insert into sync_entity (workspace_id, entity_id, entity_type, revision, data, field_revisions, "
-                        + "created_at, updated_at) values (?, ?, ?, 1, ?::jsonb, ?::jsonb, ?, ?)")
-                .params(workspaceId, entityId, type, JsonValues.write(data), JsonValues.write(revisions), now, now)
+                        + "created_at, updated_at, created_by) values (?, ?, ?, 1, ?::jsonb, ?::jsonb, ?, ?, ?)")
+                .params(workspaceId, entityId, type, JsonValues.write(data), JsonValues.write(revisions), now, now,
+                        userId)
                 .update();
         return append(workspaceId, type, entityId, 1, "upsert", data, commandId, deviceId);
     }
@@ -173,13 +177,48 @@ class EntityStore {
     }
 
     List<Change> changesAfter(UUID workspaceId, long sequence, int limit) {
-        return jdbc.sql("select sequence, entity_type, entity_id, revision, op, data from sync_change "
-                        + "where workspace_id = ? and sequence > ? order by sequence limit ?")
+        return jdbc.sql("select sequence, entity_type, entity_id, revision, op, data, visibility_change "
+                        + "from sync_change where workspace_id = ? and sequence > ? order by sequence limit ?")
                 .params(workspaceId, sequence, limit)
                 .query((rs, row) -> new Change(rs.getLong("sequence"), rs.getString("entity_type"),
                         rs.getObject("entity_id", UUID.class), rs.getLong("revision"), rs.getString("op"),
-                        JsonValues.parseObject(rs.getString("data"))))
+                        JsonValues.parseObject(rs.getString("data")), rs.getBoolean("visibility_change")))
                 .list();
+    }
+
+    /** Marks an appended change as one that changes what other members may see. */
+    void markVisibilityChange(long sequence) {
+        jdbc.sql("update sync_change set visibility_change = true where sequence = ?").param(sequence).update();
+    }
+
+    /**
+     * Announces again, as visibility changes, every live journal in
+     * {@code journalIds} and every live opaque entity that references
+     * {@code accountId} or one of those journals, so that members who gain
+     * or lose sight of an account receive (or drop) its dependants.
+     *
+     * @return the last sequence appended, or 0 when nothing was
+     */
+    long reannounce(UUID workspaceId, String accountId, List<UUID> journalIds, UUID commandId, UUID deviceId) {
+        String[] journals = journalIds.stream().map(UUID::toString).toArray(String[]::new);
+        List<StoredEntity> dependants = jdbc.sql("select entity_id, entity_type, revision, data, field_revisions, "
+                        + "deleted, created_by from sync_entity where workspace_id = ? and not deleted and ("
+                        + "entity_id = any(?) or (entity_type not in ('account', 'journal', 'category') and ("
+                        + "data ->> 'accountId' = ? or data ->> 'counterAccountId' = ? or data ->> 'toAccountId' = ? "
+                        + "or data ->> 'fromAccountId' = ? or data ->> 'journalId' = any(?) "
+                        + "or jsonb_exists(coalesce(data -> 'accountIds', '[]'::jsonb), ?) "
+                        + "or jsonb_exists_any(coalesce(data -> 'journalIds', '[]'::jsonb), ?)))) "
+                        + "order by entity_type, entity_id")
+                .params(workspaceId, journalIds.toArray(UUID[]::new), accountId, accountId, accountId, accountId,
+                        journals, accountId, journals)
+                .query(EntityStore::mapEntity).list();
+        long last = 0;
+        for (StoredEntity entity : dependants) {
+            last = append(workspaceId, entity.type(), entity.id(), entity.revision(), "upsert", entity.data(),
+                    commandId, deviceId);
+            markVisibilityChange(last);
+        }
+        return last;
     }
 
     private long append(UUID workspaceId, String type, UUID entityId, long revision, String op, JsonNode data,
@@ -197,6 +236,7 @@ class EntityStore {
         ObjectNode revisions = JsonValues.parseObject(rs.getString("field_revisions"));
         return new StoredEntity(rs.getObject("entity_id", UUID.class), rs.getString("entity_type"),
                 rs.getLong("revision"), data,
-                revisions == null ? JsonNodeFactory.instance.objectNode() : revisions, rs.getBoolean("deleted"));
+                revisions == null ? JsonNodeFactory.instance.objectNode() : revisions, rs.getBoolean("deleted"),
+                rs.getObject("created_by", UUID.class));
     }
 }
