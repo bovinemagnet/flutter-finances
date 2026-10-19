@@ -64,12 +64,19 @@ jobs:
           APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
           WINDOWS_CERTIFICATE_PFX_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_PFX_BASE64 }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          IOS_DISTRIBUTION_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_P12_BASE64 }}
+          IOS_DISTRIBUTION_P12_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_P12_PASSWORD }}
+          IOS_APP_PROFILE_BASE64: ${{ secrets.IOS_APP_PROFILE_BASE64 }}
+          IOS_SHARE_EXTENSION_PROFILE_BASE64: ${{ secrets.IOS_SHARE_EXTENSION_PROFILE_BASE64 }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
         run: |
           missing=0
           for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD \
                       MACOS_CERTIFICATE_P12_BASE64 MACOS_CERTIFICATE_PASSWORD MACOS_SIGNING_IDENTITY \
                       APPSTORE_API_KEY_P8_BASE64 APPSTORE_API_KEY_ID APPSTORE_API_ISSUER_ID \
-                      WINDOWS_CERTIFICATE_PFX_BASE64 WINDOWS_CERTIFICATE_PASSWORD; do
+                      WINDOWS_CERTIFICATE_PFX_BASE64 WINDOWS_CERTIFICATE_PASSWORD \
+                      IOS_DISTRIBUTION_P12_BASE64 IOS_DISTRIBUTION_P12_PASSWORD \
+                      IOS_APP_PROFILE_BASE64 IOS_SHARE_EXTENSION_PROFILE_BASE64 IOS_TEAM_ID; do
             if [[ -z "${!name}" ]]; then
               echo "::error::Release secret $name is not set"
               missing=1
@@ -255,6 +262,138 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+  ios:
+    name: iOS (signed IPA with the share extension)
+    needs: preflight
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.preflight.outputs.version }}
+      BUILD_NUMBER: ${{ needs.preflight.outputs.build-number }}
+      APP_BUNDLE_ID: com.paulsnow.finance.app
+      EXTENSION_BUNDLE_ID: com.paulsnow.finance.app.ShareExtension
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      # receive_sharing_intent is distributed as a Swift package only.
+      - run: flutter config --enable-swift-package-manager
+      - run: flutter pub get
+      - name: Add the share extension target
+        working-directory: apps/finance_app
+        run: |
+          gem install --user-install --no-document xcodeproj
+          ruby ios/tool/add_share_extension.rb
+      - name: Import the distribution certificate and profiles
+        env:
+          IOS_DISTRIBUTION_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_P12_BASE64 }}
+          IOS_DISTRIBUTION_P12_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_P12_PASSWORD }}
+          IOS_APP_PROFILE_BASE64: ${{ secrets.IOS_APP_PROFILE_BASE64 }}
+          IOS_SHARE_EXTENSION_PROFILE_BASE64: ${{ secrets.IOS_SHARE_EXTENSION_PROFILE_BASE64 }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          for name in IOS_DISTRIBUTION_P12_BASE64 IOS_DISTRIBUTION_P12_PASSWORD \
+                      IOS_APP_PROFILE_BASE64 IOS_SHARE_EXTENSION_PROFILE_BASE64 IOS_TEAM_ID; do
+            [[ -n "${!name}" ]] || { echo "::error::$name is not set"; exit 1; }
+          done
+          KEYCHAIN="$RUNNER_TEMP/ios-signing.keychain-db"
+          keychain_password=$(openssl rand -base64 32)
+          echo "::add-mask::$keychain_password"
+          security create-keychain -p "$keychain_password" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$keychain_password" "$KEYCHAIN"
+          printf '%s' "$IOS_DISTRIBUTION_P12_BASE64" | base64 --decode >"$RUNNER_TEMP/distribution.p12"
+          security import "$RUNNER_TEMP/distribution.p12" -k "$KEYCHAIN" -f pkcs12 \
+            -P "$IOS_DISTRIBUTION_P12_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/distribution.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$KEYCHAIN" >/dev/null
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          profiles="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$profiles"
+          install_profile() {
+            local file="$RUNNER_TEMP/$1.mobileprovision" plist uuid name
+            printf '%s' "$2" | base64 --decode >"$file"
+            plist=$(security cms -D -i "$file")
+            uuid=$(plutil -extract UUID raw - <<<"$plist")
+            name=$(plutil -extract Name raw - <<<"$plist")
+            cp "$file" "$profiles/$uuid.mobileprovision"
+            rm -f "$file"
+            echo "$name"
+          }
+          app_profile=$(install_profile app "$IOS_APP_PROFILE_BASE64")
+          extension_profile=$(install_profile extension "$IOS_SHARE_EXTENSION_PROFILE_BASE64")
+          {
+            echo "APP_PROFILE=$app_profile"
+            echo "EXTENSION_PROFILE=$extension_profile"
+          } >>"$GITHUB_ENV"
+      - name: Use manual signing for the release build
+        working-directory: apps/finance_app
+        env:
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          ruby -e '
+            require "xcodeproj"
+            project = Xcodeproj::Project.open("ios/Runner.xcodeproj")
+            profiles = { "Runner" => ENV.fetch("APP_PROFILE"), "ShareExtension" => ENV.fetch("EXTENSION_PROFILE") }
+            profiles.each do |target_name, profile|
+              target = project.targets.find { |t| t.name == target_name } or abort "#{target_name} target missing"
+              target.build_configurations.select { |c| c.name == "Release" }.each do |config|
+                config.build_settings["CODE_SIGN_STYLE"] = "Manual"
+                config.build_settings["DEVELOPMENT_TEAM"] = ENV.fetch("IOS_TEAM_ID")
+                config.build_settings["CODE_SIGN_IDENTITY"] = "Apple Distribution"
+                config.build_settings["PROVISIONING_PROFILE_SPECIFIER"] = profile
+              end
+            end
+            project.save
+          '
+          cat >"$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>$IOS_TEAM_ID</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>$APP_BUNDLE_ID</key><string>$APP_PROFILE</string>
+              <key>$EXTENSION_BUNDLE_ID</key><string>$EXTENSION_PROFILE</string>
+            </dict>
+          </dict>
+          </plist>
+          EOF
+      - name: Build the IPA
+        working-directory: apps/finance_app
+        run: |
+          flutter build ipa --release --build-name "$VERSION" --build-number "$BUILD_NUMBER" \
+            --export-options-plist "$RUNNER_TEMP/ExportOptions.plist"
+      - name: Check the signature and the embedded extension
+        run: |
+          ipa=$(find apps/finance_app/build/ios/ipa -name '*.ipa' | head -n 1)
+          [[ -n "$ipa" ]] || { echo "::error::No IPA was produced"; exit 1; }
+          unzip -q "$ipa" -d "$RUNNER_TEMP/ipa"
+          app=$(find "$RUNNER_TEMP/ipa/Payload" -maxdepth 1 -name '*.app' | head -n 1)
+          test -d "$app/PlugIns/ShareExtension.appex"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dvv "$app" 2>&1 | grep -q 'Authority=Apple Distribution'
+          mkdir -p dist
+          cp "$ipa" "dist/finance-app-$VERSION-ios.ipa"
+      - name: Remove signing material
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/ios-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/distribution.p12" "$HOME/Library/MobileDevice/Provisioning Profiles/"*.mobileprovision
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-ios
+          path: dist/
+          if-no-files-found: error
+
   windows:
     name: Windows (signed MSIX)
     needs: preflight
@@ -389,7 +528,7 @@ jobs:
 
   publish:
     name: Draft GitHub release
-    needs: [preflight, android, macos, windows, linux, inventory]
+    needs: [preflight, android, ios, macos, windows, linux, inventory]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

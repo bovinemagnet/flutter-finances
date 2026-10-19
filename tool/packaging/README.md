@@ -9,7 +9,7 @@ and the release checks in section 16).
 | --- | --- | --- |
 | `ci.yml` | push to `main`, pull requests | `dart analyze` and `dart test` for `finance_core` and `finance_store`; `flutter analyze` and `flutter test` for the app; `./gradlew build` for the server on Java 25; the end-to-end suite (`tool/e2e/run.sh` with Docker) |
 | `build.yml` | push to `main`, pull requests | Unsigned builds, each on its own OS: Android APK and AAB, Linux bundle plus `.tar.gz`/`.deb` (Ubuntu 24.04), Windows, macOS, iOS with `--no-codesign` |
-| `release.yml` | tag `vX.Y.Z` or `vX.Y.Z-suffix` | Signed Android, signed and notarised macOS, signed Windows MSIX, Linux packages, dependency inventory, checksums, build provenance attestation and a **draft** GitHub release |
+| `release.yml` | tag `vX.Y.Z` or `vX.Y.Z-suffix` | Signed Android, signed iOS IPA (with the share extension), signed and notarised macOS, signed Windows MSIX, Linux packages, dependency inventory, checksums, build provenance attestation and a **draft** GitHub release |
 
 `gradle25w` is a local wrapper that selects Java 25 before calling `./gradlew`;
 CI installs Java 25 with `actions/setup-java` and calls `./gradlew` directly.
@@ -36,6 +36,11 @@ secrets again, and the Android build refuses to fall back to the debug key
 | `APPSTORE_API_ISSUER_ID` | macOS | Issuer ID of the App Store Connect team |
 | `WINDOWS_CERTIFICATE_PFX_BASE64` | Windows | Code signing certificate and key as `.pfx`, base64 encoded; its subject becomes the MSIX publisher |
 | `WINDOWS_CERTIFICATE_PASSWORD` | Windows | Password of the `.pfx` |
+| `IOS_DISTRIBUTION_P12_BASE64` | iOS | "Apple Distribution" certificate and private key exported as `.p12`, base64 encoded |
+| `IOS_DISTRIBUTION_P12_PASSWORD` | iOS | Password of the `.p12` |
+| `IOS_APP_PROFILE_BASE64` | iOS | App Store provisioning profile for `com.paulsnow.finance.app` (App Group `group.com.paulsnow.finance.app` enabled), base64 encoded |
+| `IOS_SHARE_EXTENSION_PROFILE_BASE64` | iOS | App Store provisioning profile for `com.paulsnow.finance.app.ShareExtension` with the same App Group, base64 encoded |
+| `IOS_TEAM_ID` | iOS | Apple Developer team ID |
 
 Signing material is written only to the runner's temporary directory and is
 removed in an `always()` step. Keystores, certificates and `key.properties`
@@ -122,9 +127,16 @@ bundle id `com.paulsnow.finance.app.ShareExtension`, App Group
 `receive-sharing-intent` Swift package product, and the
 "Embed Foundation Extensions" phase ahead of "Thin Binary". The script is
 idempotent; a developer with Xcode can run it once and commit the updated
-`project.pbxproj`. App Store signing needs a distribution certificate,
-provisioning profiles for both bundle ids with the App Group capability, and
-an App Store Connect upload step; that is not automated yet.
+`project.pbxproj`.
+
+`release.yml` runs the same script, installs the distribution certificate in
+a temporary keychain and both provisioning profiles, switches the Release
+configuration of Runner and ShareExtension to manual signing (in the runner's
+checkout only) and builds an App Store IPA with `flutter build ipa`. It then
+checks that the extension is embedded and that the app is signed with
+"Apple Distribution", and attaches the IPA to the draft release. Uploading it
+to TestFlight stays a manual step (Transporter or `xcrun altool`), like the
+other store roll-outs below.
 
 ## Release provenance
 
