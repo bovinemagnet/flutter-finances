@@ -60,6 +60,28 @@ void main() {
     expect(log.added, [AddAction.transfer]);
   });
 
+  testWidgets('the sidebar groups destinations and shows their shortcuts', (
+    tester,
+  ) async {
+    final log = await pump(tester, const Size(1280, 800));
+    expect(find.byType(NavigationRail), findsNothing);
+    for (final group in ['MONEY', 'PLAN', 'REVIEW']) {
+      expect(find.text(group), findsOneWidget);
+    }
+    expect(find.text('Ctrl 3'), findsOneWidget);
+    Finder inSidebar(String text) =>
+        find.descendant(of: find.byType(Sidebar), matching: find.text(text));
+    for (final d in Destination.values) {
+      expect(inSidebar(d.label), findsOneWidget, reason: d.label);
+    }
+    expect(
+      tester.getSemantics(inSidebar('Overview')),
+      isSemantics(isSelected: true, isButton: true),
+    );
+    await tester.tap(inSidebar('Receipts'));
+    expect(log.selected, [Destination.receipts]);
+  });
+
   testWidgets('keyboard shortcuts navigate and add', (tester) async {
     final log = await pump(tester, const Size(1280, 800));
     await tester.sendKeyDownEvent(LogicalKeyboardKey.control);

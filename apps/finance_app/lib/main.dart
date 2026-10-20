@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'app/app_lock.dart';
 import 'app/app_scope.dart';
+import 'app/font_licences.dart';
 import 'app/theme.dart';
 import 'background_sync.dart';
 import 'data/app_state.dart';
@@ -29,6 +30,7 @@ import 'screens/startup_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  registerFontLicences();
   await initializeDateFormatting('en_AU');
   final capabilities = await PlatformCapabilities.detect();
   final support = await getApplicationSupportDirectory();

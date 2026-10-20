@@ -12,7 +12,7 @@ Layouts are driven by window width, never by operating system checks. Width clas
 
 | Compact | Below 600 | Bottom navigation bar with the primary destinations, an add button and a "Scan receipt" button
 | Medium | 600 to 1023 | Navigation rail with labels for the primary destinations
-| Expanded | 1024 or above | Extended, labelled sidebar listing all destinations
+| Expanded | 1024 or above | Sidebar listing all destinations in groups, with the add menu at the top (see <<_sidebar>>)
 |===
 
 The breakpoints are design starting points rather than device classifications. Content is tested at the boundary widths.
@@ -22,6 +22,25 @@ The breakpoints are design starting points rather than device classifications. C
 Primary destinations are Overview, Transactions, Budget, Receipts and Plan. Reports, Accounts and Settings are secondary: reached from Overview on compact widths and from the sidebar on expanded widths. Medium widths show only the primary destinations in the rail.
 
 A single global add action offers expense, income, transfer and receipt capture.
+
+== Sidebar
+
+At expanded widths the `Sidebar` (`apps/finance_app/lib/app/shell.dart`) shows the Add menu at the top, the destinations in three groups, and Settings at the foot:
+
+[cols="1,3",options="header"]
+|===
+| Group | Destinations
+
+| Money | Overview, Transactions, Accounts
+| Plan | Budget, Plan
+| Review | Receipts, Reports
+|===
+
+Each destination appears once. A hint (Ctrl 1 to Ctrl 5) is shown beside the five primary destinations. Medium widths keep the navigation rail and compact widths the bottom bar.
+
+== Overview dashboard
+
+The Overview page adapts to the width of its content rather than the window. Below 960 logical pixels (`overviewDashboardWidth` in `apps/finance_app/lib/screens/pages/overview_page.dart`) it is a single column: the "Available until payday" card, figure tiles, Your money, Coming up and Needs attention. Wider content shows more figure tiles (spent this period, and owed on cards and loans) and a two-column dashboard that adds a spending pace chart and recent transactions. The chart compares cumulative posted spending through the budget period with an even daily pace of the period's category budget. It is presentation only: the budget is still evaluated by the budget rules.
 
 == Keyboard shortcuts
 

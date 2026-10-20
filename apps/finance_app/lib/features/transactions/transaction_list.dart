@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/breakpoints.dart';
+import '../../app/theme.dart';
 import '../../format/formatters.dart';
 
 /// A journal plus the labels and states the list needs.
@@ -201,10 +202,11 @@ class _TransactionListState extends State<TransactionList> {
     return Wrap(
       spacing: 4,
       children: [
-        if (journal.status == JournalStatus.pending) const _Tag('Pending'),
+        if (journal.status == JournalStatus.pending)
+          const _Tag('Pending', attention: true),
         if (journal.status == JournalStatus.draft) const _Tag('Draft'),
         if (journal.status == JournalStatus.reversed) const _Tag('Corrected'),
-        if (!item.reviewed) const _Tag('To review'),
+        if (!item.reviewed) const _Tag('To review', attention: true),
         if (item.unsynced) const _Tag('Not synced'),
       ],
     );
@@ -212,12 +214,13 @@ class _TransactionListState extends State<TransactionList> {
 
   Widget _amount(TransactionListItem item) {
     final amount = item.signedAmount;
-    final scheme = Theme.of(context).colorScheme;
+    final palette = FinancePalette.of(context);
     return Text(
       formatMoney(amount),
-      style: TextStyle(
-        fontFeatures: const [FontFeature.tabularFigures()],
-        color: amount.isNegative ? null : scheme.primary,
+      style: palette.figure(
+        size: 14,
+        weight: FontWeight.w600,
+        color: amount.isNegative ? null : palette.accentText,
       ),
     );
   }
@@ -341,17 +344,33 @@ class _TransactionListState extends State<TransactionList> {
 }
 
 class _Tag extends StatelessWidget {
-  const _Tag(this.text);
+  const _Tag(this.text, {this.attention = false});
   final String text;
 
+  /// Pending and unreviewed entries are outlined in amber.
+  final bool attention;
+
   @override
-  Widget build(BuildContext context) => Container(
-    margin: const EdgeInsets.only(top: 2),
-    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-    decoration: BoxDecoration(
-      border: Border.all(color: Theme.of(context).colorScheme.outline),
-      borderRadius: BorderRadius.circular(4),
-    ),
-    child: Text(text, style: Theme.of(context).textTheme.labelSmall),
-  );
+  Widget build(BuildContext context) {
+    final palette = FinancePalette.of(context);
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+      decoration: BoxDecoration(
+        color: attention ? palette.warningSoft : palette.cardMuted,
+        border: Border.all(
+          color: attention ? palette.warning : Colors.transparent,
+        ),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        text,
+        style: palette.figure(
+          size: 11,
+          weight: FontWeight.w500,
+          color: attention ? palette.onWarningSoft : palette.text,
+        ),
+      ),
+    );
+  }
 }

@@ -1,0 +1,70 @@
+= Visual design
+Paul Snow
+:revnumber: 0.0.0
+
+The client uses a dark-first design with a single mint accent. The theme follows the system light or dark setting, and the system high contrast setting selects a stronger variant of each. The tokens are defined in `apps/finance_app/lib/app/theme.dart`; `buildTheme` turns them into a Material 3 theme.
+
+== Palette
+
+`FinancePalette` is a `ThemeExtension` holding two token sets, `FinancePalette.dark` and `FinancePalette.light`. Widgets read the current set with `FinancePalette.of(context)`.
+
+[cols="2,1,1,3",options="header"]
+|===
+| Token | Dark | Light | Use
+
+| `background` | `#0B0D0E` | `#F3F6F5` | Page background
+| `sidebar` | `#0F1213` | `#FFFFFF` | Sidebar and navigation rail
+| `card` | `#15181A` | `#FFFFFF` | Cards, dialogs and the bottom bar
+| `cardMuted` | `#23282B` | `#E6ECE9` | Progress tracks and raised surfaces
+| `field` | `#101315` | `#FFFFFF` | Input field fill
+| `line` | `#262C2F` | `#DDE5E1` | Card borders and dividers
+| `fieldLine` | `#3A4246` | `#A9B5B2` | Input and button outlines
+| `text` | `#EEF2F0` | `#101715` | Main text
+| `muted` | `#9BA6A2` | `#56625E` | Secondary text
+| `accent` | `#19E3A0` | `#19D696` | Mint fill: buttons, the add action, bars and chart lines
+| `onAccent` | `#03251A` | `#03251A` | Text and icons on the mint fill
+| `accentText` | `#3CEDB0` | `#007A52` | Mint used as text or an icon
+| `accentSoft` | `#0F2C22` | `#DDF7EC` | Selected navigation indicator
+| `negative` | `#FF8A80` | `#B3261E` | Errors and money out
+| `warning` | `#F5B94A` | `#C98A12` | Items that need the user
+| `warningSoft` | `#241C0C` | `#FFF4DE` | Fill behind amber tags
+| `warningLine` | `#4A3714` | `#F0D29A` | Border of amber tags
+| `onWarningSoft` | `#F7CB78` | `#5C3A00` | Text on `warningSoft`
+|===
+
+Amber is reserved for things that need the user: pending items, entries still to review, stale bank feeds and the backup reminder. The Transactions list shows the Pending and To review tags in amber.
+
+== Mapping to Material 3
+
+`buildTheme` maps the palette to a Material 3 `ColorScheme`:
+
+* `primary` is `accentText`, because primary is used for text and icons and must stay readable. The mint fill is `primaryContainer`, which filled buttons, the floating add action and progress indicators use.
+* Surfaces map to `background`, `card` and `cardMuted`; outlines map to `fieldLine` and `line`.
+* Error uses `negative`; the tertiary colours use the amber tokens.
+
+Component themes are set for the app bar, cards (16 px radius with a `line` border and no elevation), navigation bar and rail, buttons, chips, input fields, dialogs and progress indicators.
+
+== High contrast
+
+`buildTheme(brightness, highContrast: true)` uses `FinancePalette.highContrast`, which raises `muted` to the main `text` colour and strengthens borders (`line` becomes `fieldLine`, and `fieldLine` becomes `text`). The application supplies these as the high contrast light and dark themes, so they apply when the system asks for high contrast.
+
+== Typography
+
+Three font families are bundled in `apps/finance_app/assets/fonts` and are never fetched at run time.
+
+[cols="1,1,3",options="header"]
+|===
+| Family | Role | Used for
+
+| Inter | Body | Body text, buttons and labels
+| Space Grotesk | Headings | Screen titles, app bar titles and headline text styles
+| JetBrains Mono | Figures | Amounts and dates (`FinancePalette.figure`, with tabular figures), and small spaced capital labels
+|===
+
+Section labels above groups and figures use `SectionLabel` (`apps/finance_app/lib/app/section_label.dart`). It shows the text in capitals, marks it as a heading for screen readers and exposes the text as written, so it is not read letter by letter.
+
+The SIL Open Font Licence file for each family is bundled as an asset and registered with Flutter's `LicenseRegistry` by `registerFontLicences` (`apps/finance_app/lib/app/font_licences.dart`), so the licences appear on the application's licences page.
+
+== Testing
+
+`apps/finance_app/test/unit/theme_test.dart` checks, for both palettes, that text pairs meet a 4.5:1 contrast ratio (see xref:platform:accessibility.adoc[]), that the themes carry the palette and the bundled fonts, and that high contrast raises secondary text.

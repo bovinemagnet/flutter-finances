@@ -12,6 +12,14 @@ IMPORTANT: These are commitments from the product requirements (UX 01). Text sca
 * Never rely on colour, swipe gestures, hover or biometrics alone.
 * Expose extracted text and editable fields of a receipt image preview in an accessible form.
 
+== Colour and contrast
+
+The colour tokens are described in xref:platform:visual-design.adoc[]. `apps/finance_app/test/unit/theme_test.dart` checks, for the dark and light palettes, that these pairs meet a contrast ratio of 4.5:1: main and muted text on the background and on cards, mint text (`accentText`) on cards and on its soft fill, the ink on the mint fill, negative amounts on cards, and amber tag text on its soft fill. The mint fill itself is never used for text; text in the accent colour uses `accentText`.
+
+Colour is never the only signal. Pending and To review tags carry text as well as amber.
+
+When the system requests high contrast, the application uses the high contrast themes, which raise secondary text to the main text colour and strengthen borders.
+
 == Related requirements
 
 * *UX 02 Recovery.* Show empty, loading, offline, permission denied, extraction failed, sync conflict and storage full states, and preserve form drafts after interruption.

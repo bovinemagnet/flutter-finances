@@ -36,6 +36,12 @@ The product requirements document proposes Riverpod as the state management choi
 
 Every write goes through `FinanceStore`, which saves the change and its outbox command in one transaction; `AppState` then drops its derived caches (the `Chart` of accounts and categories and the `LedgerProjection`) and notifies listeners. Figures are always recomputed from journals and persisted plans, never stored as editable balances. `AppState.refresh()` is called after anything outside the class changes the store, such as a sync pull. `AppState.unsyncedCount` and `isUnsynced` expose outbox state so screens can show the unsynced indicator.
 
+== Theme and fonts
+
+The theme is built in `app/theme.dart`. `FinancePalette` is a `ThemeExtension` with dark and light token sets (background, sidebar, card, text, muted, the mint accent, amber warning tokens and others). `buildTheme(brightness, highContrast:)` maps a palette to a Material 3 `ColorScheme` and component themes, and attaches the palette so widgets read it with `FinancePalette.of(context)`. `MaterialApp` is given light, dark, high contrast light and high contrast dark themes, so the system settings choose between them. See xref:platform:visual-design.adoc[] for the tokens and their values.
+
+Inter, Space Grotesk and JetBrains Mono are bundled under `assets/fonts` and never fetched at run time. `app/font_licences.dart` registers their SIL Open Font Licence files with `LicenseRegistry`, so they appear on the licences page. `SectionLabel` (`app/section_label.dart`) renders the small spaced capital labels.
+
 == Dependency wiring
 
 `main()` in `lib/main.dart` builds the dependencies once:

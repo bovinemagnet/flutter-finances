@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'breakpoints.dart';
+import 'section_label.dart';
+import 'theme.dart';
 
 /// Primary destinations shown on every surface.
 enum Destination {
@@ -162,7 +164,8 @@ class AdaptiveShell extends StatelessWidget {
   }
 
   Widget _railLayout(BuildContext context, {required bool extended}) {
-    final items = extended ? Destination.values : Destination.primaries;
+    if (extended) return _sidebarLayout(context);
+    final items = Destination.primaries;
     final index = items.indexOf(selected);
     return Scaffold(
       appBar: _appBar(context),
@@ -170,13 +173,10 @@ class AdaptiveShell extends StatelessWidget {
         child: Row(
           children: [
             NavigationRail(
-              extended: extended,
-              labelType: extended
-                  ? NavigationRailLabelType.none
-                  : NavigationRailLabelType.all,
+              labelType: NavigationRailLabelType.all,
               leading: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
-                child: AddMenuButton(onAdd: onAdd, extended: extended),
+                child: AddMenuButton(onAdd: onAdd),
               ),
               selectedIndex: index < 0 ? null : index,
               onDestinationSelected: (i) => onSelect(items[i]),
@@ -192,6 +192,190 @@ class AdaptiveShell extends StatelessWidget {
             const VerticalDivider(width: 1),
             Expanded(child: body),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sidebarLayout(BuildContext context) => Scaffold(
+    body: SafeArea(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Sidebar(selected: selected, onSelect: onSelect, onAdd: onAdd),
+          const VerticalDivider(width: 1),
+          Expanded(
+            child: Scaffold(appBar: _appBar(context), body: body),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// The sidebar's sections; every destination appears exactly once.
+const sidebarGroups = <(String, List<Destination>)>[
+  (
+    'Money',
+    [Destination.overview, Destination.transactions, Destination.accounts],
+  ),
+  ('Plan', [Destination.budget, Destination.plan]),
+  ('Review', [Destination.receipts, Destination.reports]),
+];
+
+/// Labelled navigation for expanded widths, grouped by task, with the
+/// keyboard shortcut shown beside each primary destination.
+class Sidebar extends StatelessWidget {
+  const Sidebar({
+    super.key,
+    required this.selected,
+    required this.onSelect,
+    required this.onAdd,
+  });
+
+  final Destination selected;
+  final ValueChanged<Destination> onSelect;
+  final ValueChanged<AddAction> onAdd;
+
+  String? _shortcut(Destination d) {
+    final index = Destination.primaries.indexOf(d);
+    return index < 0 ? null : 'Ctrl ${index + 1}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = FinancePalette.of(context);
+    Widget item(Destination d) => _SidebarItem(
+      destination: d,
+      selected: d == selected,
+      shortcut: _shortcut(d),
+      onTap: () => onSelect(d),
+    );
+    return Material(
+      color: palette.sidebar,
+      child: SizedBox(
+        width: 248,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(12, 20, 12, 16),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, 20),
+              child: Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: palette.accent,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.show_chart,
+                      size: 20,
+                      color: palette.onAccent,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      'Finances',
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: AddMenuButton(onAdd: onAdd, extended: true),
+            ),
+            for (final (title, destinations) in sidebarGroups) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 20, 12, 6),
+                child: SectionLabel(title),
+              ),
+              for (final d in destinations) item(d),
+            ],
+            const SizedBox(height: 20),
+            Divider(color: palette.line),
+            const SizedBox(height: 8),
+            item(Destination.settings),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SidebarItem extends StatelessWidget {
+  const _SidebarItem({
+    required this.destination,
+    required this.selected,
+    required this.shortcut,
+    required this.onTap,
+  });
+
+  final Destination destination;
+  final bool selected;
+  final String? shortcut;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = FinancePalette.of(context);
+    final colour = selected ? palette.accentText : palette.text;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Semantics(
+        selected: selected,
+        button: true,
+        child: Material(
+          color: selected ? palette.accentSoft : Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: SizedBox(
+              height: 44,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Row(
+                  children: [
+                    Icon(
+                      selected ? destination.selectedIcon : destination.icon,
+                      size: 20,
+                      color: selected ? palette.accentText : palette.muted,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        destination.label,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: colour,
+                          fontWeight: selected
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    if (shortcut != null)
+                      Text(
+                        shortcut!,
+                        style: palette.figure(
+                          size: 10,
+                          weight: FontWeight.w500,
+                          color: selected ? palette.accentText : palette.muted,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

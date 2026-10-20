@@ -4,3 +4,4 @@
 * xref:platform:building-and-releasing.adoc[Building and releasing]
 * xref:platform:adaptive-layout.adoc[Adaptive layout]
 * xref:platform:accessibility.adoc[Accessibility]
+* xref:platform:visual-design.adoc[Visual design]

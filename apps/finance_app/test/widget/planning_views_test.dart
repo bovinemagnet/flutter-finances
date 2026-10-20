@@ -48,7 +48,9 @@ void main() {
       tester,
       DiscretionaryCard(estimate: world.estimate(), accountName: world.nameFor),
     );
-    expect(find.text('Available for discretionary spending'), findsOneWidget);
+    expect(find.text('AVAILABLE UNTIL PAYDAY'), findsOneWidget);
+    await tester.tap(find.text('How this is worked out'));
+    await tester.pumpAndSettle();
     expect(find.textContaining('Budget limit:'), findsOneWidget);
     expect(find.textContaining('Cash limit:'), findsOneWidget);
     expect(find.text('Only confirmed income is counted.'), findsOneWidget);

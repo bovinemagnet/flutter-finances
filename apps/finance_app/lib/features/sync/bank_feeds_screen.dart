@@ -2,8 +2,10 @@ import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
 import 'package:flutter/material.dart';
 
+import '../../app/theme.dart';
 import '../../data/bank_feed_service.dart';
 import '../../data/sync_controller.dart';
+import '../../format/formatters.dart';
 import '../../screens/editors.dart';
 import '../transactions/transaction_form.dart';
 
@@ -269,7 +271,7 @@ class _BankFeedsScreenState extends State<BankFeedsScreen> {
 
   Widget _connectionCard(BuildContext context, _Feed feed) {
     final c = feed.connection;
-    final theme = Theme.of(context);
+    final palette = FinancePalette.of(context);
     final open = feed.proposals.where((p) => p.proposalStatus == 'open');
     final lastRefresh = c.lastSuccessfulRefreshAt;
     return Card(
@@ -295,15 +297,22 @@ class _BankFeedsScreenState extends State<BankFeedsScreen> {
             ),
           ),
           if (c.stale && c.consentStatus == BankConsentStatus.active)
-            ListTile(
-              leading: Icon(
-                Icons.warning_amber,
-                color: theme.colorScheme.error,
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              decoration: BoxDecoration(
+                color: palette.warningSoft,
+                border: Border.all(color: palette.warningLine),
+                borderRadius: BorderRadius.circular(12),
               ),
-              title: const Text('This feed is out of date'),
-              subtitle: const Text(
-                'It has not refreshed recently, so recent transactions may be '
-                'missing. Refresh it or reconnect.',
+              child: ListTile(
+                iconColor: palette.onWarningSoft,
+                textColor: palette.onWarningSoft,
+                leading: const Icon(Icons.schedule),
+                title: const Text('This feed is out of date'),
+                subtitle: const Text(
+                  'It has not refreshed recently, so recent transactions may be '
+                  'missing. Refresh it or reconnect.',
+                ),
               ),
             ),
           if (c.errorCode != null)
@@ -317,7 +326,10 @@ class _BankFeedsScreenState extends State<BankFeedsScreen> {
             ),
           for (final proposal in open)
             ListTile(
-              title: Text(proposal.description),
+              title: Text(
+                proposal.description,
+                style: palette.figure(size: 13, weight: FontWeight.w500),
+              ),
               subtitle: Text(
                 [
                   proposal.date,
@@ -336,10 +348,17 @@ class _BankFeedsScreenState extends State<BankFeedsScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    Money(
-                      proposal.amountMinor,
-                      widget.controller.state.currency,
-                    ).toDecimalString(),
+                    formatMoney(
+                      Money(
+                        proposal.amountMinor,
+                        widget.controller.state.currency,
+                      ),
+                      signed: true,
+                    ),
+                    style: palette.figure(
+                      size: 14,
+                      color: proposal.isMoneyOut ? null : palette.accentText,
+                    ),
                   ),
                   IconButton(
                     tooltip: 'Dismiss',

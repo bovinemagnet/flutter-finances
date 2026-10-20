@@ -43,6 +43,26 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # Bundled so the app never fetches fonts; licences are registered at
+  # start-up (lib/app/font_licences.dart).
+  assets:
+    - assets/fonts/OFL-Inter.txt
+    - assets/fonts/OFL-JetBrainsMono.txt
+    - assets/fonts/OFL-SpaceGrotesk.txt
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Variable.ttf
+    - family: Space Grotesk
+      fonts:
+        - asset: assets/fonts/SpaceGrotesk-Variable.ttf
+    - family: JetBrains Mono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+        - asset: assets/fonts/JetBrainsMono-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/JetBrainsMono-Bold.ttf
+          weight: 700
 
 # Windows MSIX package (`dart run msix:create`). The release workflow builds
 # with `--build-windows false` after `flutter build windows`, and passes the
