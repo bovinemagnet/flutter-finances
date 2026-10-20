@@ -2,7 +2,7 @@
 Paul Snow
 :revnumber: 0.0.0
 
-The client uses a dark-first design with a single mint accent. The theme follows the system light or dark setting, and the system high contrast setting selects a stronger variant of each. The tokens are defined in `apps/finance_app/lib/app/theme.dart`; `buildTheme` turns them into a Material 3 theme.
+The client uses a dark-first design with a single mint accent. By default the theme follows the system light or dark setting. The user can instead choose System, Light or Dark in the Display section of the settings page, and the choice is kept on the device only (see xref:architecture:client-application.adoc#_theme_and_fonts[Theme and fonts]). The system high contrast setting selects a stronger variant of whichever theme is in use. The tokens are defined in `apps/finance_app/lib/app/theme.dart`; `buildTheme` turns them into a Material 3 theme.
 
 == Palette
 
@@ -46,7 +46,7 @@ Component themes are set for the app bar, cards (16 px radius with a `line` bord
 
 == High contrast
 
-`buildTheme(brightness, highContrast: true)` uses `FinancePalette.highContrast`, which raises `muted` to the main `text` colour and strengthens borders (`line` becomes `fieldLine`, and `fieldLine` becomes `text`). The application supplies these as the high contrast light and dark themes, so they apply when the system asks for high contrast.
+`buildTheme(brightness, highContrast: true)` uses `FinancePalette.highContrast`, which raises `muted` to the main `text` colour and strengthens borders (`line` becomes `fieldLine`, and `fieldLine` becomes `text`). The application supplies these as the high contrast light and dark themes, so they apply when the system asks for high contrast, whichever appearance is chosen.
 
 == Typography
 

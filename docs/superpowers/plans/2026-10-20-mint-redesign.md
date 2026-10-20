@@ -24,3 +24,7 @@
 - [x] **T6 Figures across screens:** amounts and dates in the figure style in the transaction list and bank feed screen; status tags restyled.
 - [x] **T7 Verify:** `flutter analyze`, all app tests, `dart test` in both packages, Linux release build, launch and screenshot in both modes.
 - [x] **T8 Docs:** describe the look, fonts and licences in `src/docs`; `gradle25w antora` clean.
+
+## Follow-up
+
+- [x] **T9 Appearance setting:** System / Light / Dark in a new Settings "Display" section (`lib/app/appearance.dart`), saved per device in `appearance.json` beside `sync-settings.json` and read before `runApp` so the unlock and setup screens follow it. Tests: `test/unit/appearance_test.dart`, `test/widget/appearance_tile_test.dart`, `test/widget/settings_page_test.dart`.

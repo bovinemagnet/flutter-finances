@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'app/app_lock.dart';
 import 'app/app_scope.dart';
+import 'app/appearance.dart';
 import 'app/font_licences.dart';
 import 'app/theme.dart';
 import 'background_sync.dart';
@@ -35,6 +36,9 @@ Future<void> main() async {
   final capabilities = await PlatformCapabilities.detect();
   final support = await getApplicationSupportDirectory();
   final workspace = Directory('${support.path}/workspace');
+  final appearance = await Appearance.load(
+    File('${support.path}/appearance.json'),
+  );
   final services = AppServices(
     capabilities: capabilities,
     scanner: FallbackReceiptScanner(
@@ -60,16 +64,23 @@ Future<void> main() async {
   runApp(
     FinanceApp(
       services: services,
+      appearance: appearance,
       gate: WorkspaceGate(workspace, PlatformSecureKeyStore()),
     ),
   );
 }
 
 class FinanceApp extends StatefulWidget {
-  const FinanceApp({super.key, required this.services, required this.gate});
+  const FinanceApp({
+    super.key,
+    required this.services,
+    required this.gate,
+    required this.appearance,
+  });
 
   final AppServices services;
   final WorkspaceGate gate;
+  final Appearance appearance;
 
   @override
   State<FinanceApp> createState() => _FinanceAppState();
@@ -119,8 +130,23 @@ class _FinanceAppState extends State<FinanceApp> {
 
   @override
   Widget build(BuildContext context) {
-    final app = MaterialApp(
+    final app = ValueListenableBuilder(
+      valueListenable: widget.appearance,
+      builder: (context, themeMode, _) => _materialApp(themeMode),
+    );
+    return AppScope(
+      state: _state,
+      services: widget.services,
+      sync: _sync,
+      appearance: widget.appearance,
+      child: app,
+    );
+  }
+
+  Widget _materialApp(ThemeMode themeMode) {
+    return MaterialApp(
       title: 'Finances',
+      themeMode: themeMode,
       debugShowCheckedModeBanner: false,
       theme: buildTheme(Brightness.light),
       darkTheme: buildTheme(Brightness.dark),
@@ -144,12 +170,6 @@ class _FinanceAppState extends State<FinanceApp> {
               authenticator: widget.services.authenticator,
               child: HomeScreen(syncSection: SyncSection(controller: _sync!)),
             ),
-    );
-    return AppScope(
-      state: _state,
-      services: widget.services,
-      sync: _sync,
-      child: app,
     );
   }
 }

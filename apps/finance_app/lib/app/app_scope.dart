@@ -6,6 +6,7 @@ import '../data/app_state.dart';
 import '../data/sync_controller.dart';
 import '../platform/capabilities.dart';
 import 'app_lock.dart';
+import 'appearance.dart';
 import '../platform/services.dart';
 import '../platform/text_recognition.dart';
 
@@ -42,12 +43,16 @@ class AppScope extends InheritedNotifier<AppState> {
     required this.services,
     required super.child,
     this.sync,
+    this.appearance,
   }) : super(notifier: state);
 
   final AppServices services;
 
   /// Sync for the open workspace; null before one is open and in tests.
   final SyncController? sync;
+
+  /// The device's light or dark choice; null in tests.
+  final Appearance? appearance;
 
   static AppState of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppScope>()!.notifier!;
@@ -57,4 +62,7 @@ class AppScope extends InheritedNotifier<AppState> {
 
   static SyncController? syncOf(BuildContext context) =>
       context.getInheritedWidgetOfExactType<AppScope>()!.sync;
+
+  static Appearance? appearanceOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<AppScope>()!.appearance;
 }

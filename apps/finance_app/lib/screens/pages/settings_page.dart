@@ -5,6 +5,7 @@ import 'package:finance_store/finance_store.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
+import '../../app/appearance.dart';
 import '../../data/entity_types.dart';
 import '../../features/imports/import_screen.dart';
 import '../../features/settings/rules_screen.dart';
@@ -336,6 +337,10 @@ class SettingsPage extends StatelessWidget {
           },
         ),
         if (syncSection != null) ...[const _Header('Sync'), syncSection!],
+        if (AppScope.appearanceOf(context) case final appearance?) ...[
+          const _Header('Display'),
+          AppearanceTile(appearance: appearance),
+        ],
         const _Header('Planning'),
         ListTile(
           leading: const Icon(Icons.shield_outlined),
