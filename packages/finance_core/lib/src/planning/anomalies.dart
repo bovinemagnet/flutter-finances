@@ -140,44 +140,45 @@ List<UnusualTransaction> detectUnusualTransactions({
     return payee.isEmpty ? null : normaliseMerchant(payee);
   }
 
+  // Each key is worked out once and purchases are grouped by it. [all] is in
+  // date order, so every group is too, and the purchases a journal is
+  // compared with are one contiguous run of its group. Journals are judged
+  // in date order, so each group's run only moves forward.
+  final merchants = [for (final j in all) merchantOf(j)];
+  final categories = [for (final j in all) _mainCategory(chart, j)];
+  final byMerchant = <String, _History>{};
+  final byCategory = <String, _History>{};
+  for (var i = 0; i < all.length; i++) {
+    if (merchants[i] case final m?) (byMerchant[m] ??= _History()).add(all[i]);
+    if (categories[i] case final c?) {
+      (byCategory[c] ??= _History()).add(all[i]);
+    }
+  }
+
   final found = <UnusualTransaction>[];
-  for (final journal in all) {
+  for (var i = 0; i < all.length; i++) {
+    final journal = all[i];
     if (!period.contains(journal.effectiveDate)) continue;
     final earliest = journal.effectiveDate.addDays(-lookbackDays);
-    final earlier = [
-      for (final j in all)
-        if (j.effectiveDate < journal.effectiveDate &&
-            j.effectiveDate >= earliest)
-          j,
-    ];
-    final merchant = merchantOf(journal);
-    final category = _mainCategory(chart, journal);
+    final merchant = merchants[i];
+    final category = categories[i];
     var basis = AnomalyBasis.merchant;
-    var history = merchant == null
-        ? const <Journal>[]
-        : [
-            for (final j in earlier)
-              if (merchantOf(j) == merchant) j,
-          ];
-    if (history.length < minHistory) {
+    var history = byMerchant[merchant]
+      ?..moveTo(earliest, journal.effectiveDate);
+    if ((history?.length ?? 0) < minHistory) {
       basis = AnomalyBasis.category;
-      history = category == null
-          ? const []
-          : [
-              for (final j in earlier)
-                if (_mainCategory(chart, j) == category) j,
-            ];
+      history = byCategory[category]?..moveTo(earliest, journal.effectiveDate);
     }
-    if (history.length < minHistory) continue;
-    final values = [for (final j in history) j.amount!.minor];
-    if (!isUnusuallyHigh(
+    if (history == null || history.length < minHistory) continue;
+    final stats = medianAndMadOfSorted(history.sortedAmounts);
+    if (!exceedsSpread(
       journal.amount!.minor,
-      values,
+      stats,
       minimumExcess: minimumExcess?.minor ?? 0,
     )) {
       continue;
     }
-    final (:median4, :mad4) = medianAndMad(values);
+    final (:median4, :mad4) = stats;
     found.add(
       UnusualTransaction(
         journalId: journal.id,
@@ -190,11 +191,52 @@ List<UnusualTransaction> detectUnusualTransactions({
             : chart.category(category!).name,
         median: Money(divideRounded(median4, 4), chart.currency),
         deviation: Money(divideRounded(mad4, 4), chart.currency),
-        historyJournalIds: [for (final j in history) j.id],
+        historyJournalIds: [for (final j in history.journals) j.id],
       ),
     );
   }
   return found;
+}
+
+/// The date-ordered purchases of one merchant or category, with a window
+/// over those dated in `[from, before)` whose amounts are kept sorted.
+class _History {
+  final List<Journal> _all = [];
+  final List<int> sortedAmounts = [];
+  var _start = 0;
+  var _end = 0;
+
+  void add(Journal journal) => _all.add(journal);
+
+  int get length => _end - _start;
+
+  /// The window's purchases, in date order.
+  List<Journal> get journals => _all.sublist(_start, _end);
+
+  /// Moves the window forward; [from] and [before] never decrease.
+  void moveTo(LocalDate from, LocalDate before) {
+    while (_end < _all.length && _all[_end].effectiveDate < before) {
+      final amount = _all[_end++].amount!.minor;
+      sortedAmounts.insert(_lowerBound(amount), amount);
+    }
+    while (_start < _end && _all[_start].effectiveDate < from) {
+      sortedAmounts.removeAt(_lowerBound(_all[_start++].amount!.minor));
+    }
+  }
+
+  int _lowerBound(int amount) {
+    var low = 0;
+    var high = sortedAmounts.length;
+    while (low < high) {
+      final mid = (low + high) >> 1;
+      if (sortedAmounts[mid] < amount) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+    return low;
+  }
 }
 
 LocalDate _monthStart(LocalDate date) => LocalDate(date.year, date.month, 1);

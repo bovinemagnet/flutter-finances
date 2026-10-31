@@ -48,6 +48,7 @@ class AppState extends ChangeNotifier {
   void refresh() {
     _chart = null;
     _ledger = null;
+    _insights = null;
     notifyListeners();
   }
 
@@ -643,9 +644,31 @@ class AppState extends ChangeNotifier {
 
   /// Insights for the current budget period, with dismissed, snoozed and
   /// disabled ones removed (REP 03).
+  ///
+  /// Worked out once per day and set of receipt-linked entries until the
+  /// next [refresh], so rebuilding the Overview stays quick (NFR 02).
   List<Insight> insights({Set<String> receiptJournalIds = const {}}) {
-    final evaluation = budgetEvaluation();
     final now = today();
+    final cached = _insights;
+    if (cached != null &&
+        cached.today == now &&
+        setEquals(cached.receiptJournalIds, receiptJournalIds)) {
+      return cached.insights;
+    }
+    final result = _workOutInsights(now, receiptJournalIds);
+    _insights = (
+      today: now,
+      receiptJournalIds: Set.of(receiptJournalIds),
+      insights: result,
+    );
+    return result;
+  }
+
+  ({LocalDate today, Set<String> receiptJournalIds, List<Insight> insights})?
+  _insights;
+
+  List<Insight> _workOutInsights(LocalDate now, Set<String> receiptJournalIds) {
+    final evaluation = budgetEvaluation();
     final period = evaluation == null
         ? DateRange(LocalDate(now.year, now.month, 1), now)
         : DateRange(evaluation.period.start, evaluation.period.end);

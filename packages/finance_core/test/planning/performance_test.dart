@@ -104,4 +104,13 @@ void main() {
     });
     expect(ms, lessThan(1000), reason: 'took $ms ms');
   });
+
+  test('anomaly detection for a month (NFR 02 Overview insights)', () {
+    final month = DateRange(LocalDate(2026, 6, 1), LocalDate(2026, 6, 30));
+    final ms = timeMs(() {
+      detectUnusualTransactions(ledger: ledger, period: month);
+      detectSpendingSpikes(ledger: ledger, month: month.start);
+    });
+    expect(ms, lessThan(1000), reason: 'took $ms ms');
+  });
 }

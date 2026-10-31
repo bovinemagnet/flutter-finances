@@ -32,6 +32,50 @@ class OverviewPage extends StatelessWidget {
   final ValueChanged<List<String>> onOpenEntries;
   final Set<String> receiptJournalIds;
 
+  InsightList _insightList(
+    AppState state, {
+    int? limit,
+    VoidCallback? onShowAll,
+  }) => InsightList(
+    insights: state.insights(receiptJournalIds: receiptJournalIds),
+    limit: limit,
+    onShowAll: onShowAll,
+    onOpen: (insight) => onOpenEntries(insight.entryIds),
+    onDismiss: state.dismissInsight,
+    onSnooze: state.snoozeInsight,
+    onDisableRule: (rule) => state.setRuleEnabled(rule, false),
+    onAddAsBill: (insight) async {
+      final proposal = state
+          .subscriptionProposals()
+          .where((p) => p.journalIds.any(insight.entryIds.contains))
+          .firstOrNull;
+      if (proposal != null) await state.confirmSubscription(proposal);
+    },
+  );
+
+  /// Every insight, built lazily as it scrolls into view (NFR 09).
+  void _showAll(BuildContext context) {
+    final state = AppScope.of(context);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => Scaffold(
+          appBar: AppBar(title: const Text('Needs attention')),
+          body: ListenableBuilder(
+            listenable: state,
+            builder: (context, _) {
+              final list = _insightList(state);
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: list.insights.length,
+                itemBuilder: (context, i) => list.card(list.insights[i]),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
@@ -82,20 +126,7 @@ class OverviewPage extends StatelessWidget {
           padding: EdgeInsets.fromLTRB(4, 0, 4, 8),
           child: SectionLabel('Needs attention'),
         ),
-        InsightList(
-          insights: state.insights(receiptJournalIds: receiptJournalIds),
-          onOpen: (insight) => onOpenEntries(insight.entryIds),
-          onDismiss: state.dismissInsight,
-          onSnooze: state.snoozeInsight,
-          onDisableRule: (rule) => state.setRuleEnabled(rule, false),
-          onAddAsBill: (insight) async {
-            final proposal = state
-                .subscriptionProposals()
-                .where((p) => p.journalIds.any(insight.entryIds.contains))
-                .firstOrNull;
-            if (proposal != null) await state.confirmSubscription(proposal);
-          },
-        ),
+        _insightList(state, limit: 5, onShowAll: () => _showAll(context)),
       ],
     );
     final money = _YourMoney(state: state, onNavigate: onNavigate);

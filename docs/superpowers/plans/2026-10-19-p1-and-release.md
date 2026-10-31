@@ -36,6 +36,7 @@ Identical to the roadmap. Additionally: entity ids that reach the server are UUI
 - [x] R3 iOS share extension target and App Group handoff
 - [x] R4 Render and check every Mermaid diagram (all nine render with the system Chrome)
 - [x] R5 Release check against PRD §15–16: A01–A18 each have tagged tests. NFR 12 gap closed: `UNSUPPORTED_SCHEMA_VERSION` now leaves the command pending and raises `SyncUpdateRequiredException`, and the app asks for an update instead of offering to discard the change (`sync_test.dart`, `sync_controller_test.dart`)
+- [x] R6 NFR 02 dashboard benchmark (`dashboard_benchmark_test.dart`): at 100,000 transactions the first Overview frame took 184 s. Causes: `detectUnusualTransactions` compared each purchase with every earlier one (now grouped, with a sorted sliding window and linear median/MAD, same results); every insight was built on the Overview (now five, with a lazily built "Show all"); `AppState.insights` was recomputed on every build (now cached until `refresh()`). Now about 1.4 s cold and 0.24 s warm p95 in a debug build
 
 ### Client
 - [x] C1 Wire household sharing, P1 insights, imports, debt, holdings, bank feed proposals and cloud extraction consent into the app
