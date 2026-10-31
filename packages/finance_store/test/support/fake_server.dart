@@ -98,6 +98,10 @@ class FakeSyncServer {
 
   int commandCount = 0;
 
+  /// The newest command schema this server accepts; lower it to act as an
+  /// older server receiving commands from a newer client (NFR 12).
+  int supportedSchemaVersion = 1;
+
   static const maxPageSize = 500;
   static const maxCommandsPerBatch = 500;
   static const maxSizeBytes = 20 * 1024 * 1024;
@@ -423,7 +427,7 @@ class FakeSyncServer {
       }
       return {...previous.result, 'status': 'previously_applied'};
     }
-    final result = command.schemaVersion != 1
+    final result = command.schemaVersion > supportedSchemaVersion
         ? _fail(command, ['UNSUPPORTED_SCHEMA_VERSION'])
         : switch (command.type) {
             CommandType.journalPost => _journalPost(command),

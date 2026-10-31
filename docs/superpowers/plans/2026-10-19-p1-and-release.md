@@ -35,6 +35,7 @@ Identical to the roadmap. Additionally: entity ids that reach the server are UUI
 - [x] R2 Release signing and notarisation driven by secrets; Linux package
 - [x] R3 iOS share extension target and App Group handoff
 - [x] R4 Render and check every Mermaid diagram (all nine render with the system Chrome)
+- [x] R5 Release check against PRD §15–16: A01–A18 each have tagged tests. NFR 12 gap closed: `UNSUPPORTED_SCHEMA_VERSION` now leaves the command pending and raises `SyncUpdateRequiredException`, and the app asks for an update instead of offering to discard the change (`sync_test.dart`, `sync_controller_test.dart`)
 
 ### Client
 - [x] C1 Wire household sharing, P1 insights, imports, debt, holdings, bank feed proposals and cloud extraction consent into the app

@@ -299,6 +299,12 @@ other entity type, such as `receipt`, `documentAsset` and
 `journalAnnotation`, is opaque JSON with field-level merge. Unknown
 envelope and entity fields are ignored and preserved (NFR 12).
 
+**Unsupported schema version (NFR 12).** Rejections are not recorded
+against the `commandId`, so a client that receives
+`UNSUPPORTED_SCHEMA_VERSION` keeps the command pending rather than holding
+it for review, stops pushing and tells the user to update the app or the
+sync service. The same command is sent again after the update.
+
 **Feed and snapshot.** A delete change carries `data: {"id"}`. `limit` is
 capped at 500. A non-empty cursor expires (410) when it was issued more than
 the horizon ago, or when a tombstone purge that ran after it was issued

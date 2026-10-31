@@ -30,6 +30,16 @@ class WorkspaceMergeRefusedException implements Exception {
       'merged automatically. Restore or start a new workspace instead';
 }
 
+/// The server does not support this client's command schema (NFR 12).
+/// Unsent changes stay on the device and are sent again once the app or the
+/// sync service is updated.
+class SyncUpdateRequiredException implements Exception {
+  @override
+  String toString() =>
+      'Syncing needs a newer version of the app or the sync service; '
+      'unsent changes are kept on this device';
+}
+
 class StalePreviewException implements Exception {
   @override
   String toString() => 'The workspace changed since the preview; preview again';
@@ -278,6 +288,7 @@ class SyncClient {
         ..accepted += t.accepted
         ..conflicts += t.conflicts
         ..rejected += t.rejected;
+      if (t.updateRequired > 0) throw SyncUpdateRequiredException();
     }
     return PushResult(
       sent: sent,

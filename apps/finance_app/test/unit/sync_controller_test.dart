@@ -119,4 +119,38 @@ void main() {
       await b.store.close();
     },
   );
+
+  test(
+    'NFR 12: an unsupported schema asks for an update and keeps changes',
+    () async {
+      final (a, syncA) = await device('a');
+      final remote = (await syncA.remoteWorkspaces()).single;
+      await syncA.enable(await syncA.prepare(existing: remote));
+      server.supportedSchemaVersion = 0;
+      await a.store.createAccount(
+        const Account(
+          id: 'bank',
+          name: 'Everyday',
+          type: AccountType.transaction,
+        ),
+      );
+      await syncA.syncNow();
+      expect(syncA.phase, SyncPhase.failed);
+      expect(
+        syncA.lastError,
+        'Update the app or the sync service to keep syncing. '
+        'Your changes are kept on this device.',
+      );
+      expect(a.unsyncedCount, 1);
+      expect(a.store.openReviewItems(), isEmpty);
+
+      server.supportedSchemaVersion = 1;
+      await syncA.syncNow();
+      expect(syncA.phase, SyncPhase.idle, reason: syncA.lastError ?? '');
+      expect(a.unsyncedCount, 0);
+
+      syncA.dispose();
+      await a.store.close();
+    },
+  );
 }

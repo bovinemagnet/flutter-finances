@@ -233,6 +233,11 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     } on AuthenticationRequiredException {
       lastError = 'Sign in again to continue syncing';
       phase = SyncPhase.failed;
+    } on SyncUpdateRequiredException {
+      lastError =
+          'Update the app or the sync service to keep syncing. '
+          'Your changes are kept on this device.';
+      phase = SyncPhase.failed;
     } on Exception catch (e) {
       // Changes stay safely in the outbox and are retried later.
       lastError = 'Sync paused: $e';
