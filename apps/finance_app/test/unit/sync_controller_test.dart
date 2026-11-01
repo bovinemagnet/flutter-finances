@@ -5,6 +5,7 @@ import 'package:finance_app/data/oidc.dart';
 import 'package:finance_app/data/sync_controller.dart';
 import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_test/flutter_test.dart';
 
 // The store's protocol-faithful fake server, shared rather than duplicated.
@@ -45,6 +46,8 @@ void main() {
       accessToken: () async => FakeSyncServer.defaultUser,
       deviceName: name,
       platform: 'test',
+      longPollWait: const Duration(seconds: 1),
+      waitRetryDelay: const Duration(milliseconds: 20),
     );
     await controller.saveSettings(
       SyncSettings(
@@ -54,6 +57,24 @@ void main() {
       ),
     );
     return (state, controller);
+  }
+
+  Future<void> until(bool Function() condition, {int ms = 3000}) async {
+    final end = DateTime.now().add(Duration(milliseconds: ms));
+    while (!condition()) {
+      if (DateTime.now().isAfter(end)) fail('condition not met in ${ms}ms');
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+  }
+
+  Future<(AppState, SyncController)> synced(
+    String name, {
+    RemoteWorkspace? to,
+  }) async {
+    final (s, c) = await device(name);
+    final remote = to ?? (await c.remoteWorkspaces()).single;
+    await c.enable(await c.prepare(existing: remote));
+    return (s, c);
   }
 
   test('one device uploads its history and another receives it', () async {
@@ -153,4 +174,87 @@ void main() {
       await a.store.close();
     },
   );
+
+  group('waiting (NFR 05)', () {
+    test(
+      "an open device receives another device's change without a sync",
+      () async {
+        final (a, syncA) = await synced('a');
+        final (b, syncB) = await synced('b');
+        await until(() => syncB.isWaiting && server.waiting == 1);
+
+        await a.store.createAccount(
+          const Account(
+            id: 'bank',
+            name: 'Everyday',
+            type: AccountType.transaction,
+          ),
+        );
+        await syncA.syncNow();
+        await until(
+          () => b.store.accounts().any((x) => x.id == 'bank'),
+          ms: 2000,
+        );
+
+        syncA.dispose();
+        syncB.dispose();
+        await a.store.close();
+        await b.store.close();
+      },
+    );
+
+    test('waiting stops when hidden and starts on resume', () async {
+      final (a, syncA) = await synced('a');
+      await until(() => syncA.isWaiting);
+
+      syncA.didChangeAppLifecycleState(AppLifecycleState.hidden);
+      expect(syncA.isWaiting, isFalse);
+      syncA.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      expect(syncA.isWaiting, isTrue);
+      // Resuming also syncs; let it finish before the store closes.
+      await until(() => syncA.phase != SyncPhase.syncing);
+
+      syncA.dispose();
+      await a.store.close();
+    });
+
+    test('an older server turns waiting off', () async {
+      server.supportsWait = false;
+      final (a, syncA) = await synced('a');
+      await until(() => !syncA.isWaiting && _waits(server) >= 1);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(syncA.isWaiting, isFalse);
+      expect(_waits(server), lessThanOrEqualTo(2));
+
+      syncA.dispose();
+      await a.store.close();
+    });
+
+    test('waiting backs off while offline', () async {
+      final (a, syncA) = await synced('a');
+      await until(() => syncA.isWaiting && server.waiting == 1);
+      final before = _waits(server);
+      server.offline = true;
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      final during = _waits(server) - before;
+      server.offline = false;
+      expect(during, lessThanOrEqualTo(5));
+
+      syncA.dispose();
+      await a.store.close();
+    });
+
+    test('sign-out stops waiting', () async {
+      final (a, syncA) = await synced('a');
+      await until(() => syncA.isWaiting);
+      await syncA.signOut();
+      expect(syncA.isWaiting, isFalse);
+
+      syncA.dispose();
+      await a.store.close();
+    });
+  });
 }
+
+int _waits(FakeSyncServer server) =>
+    server.requests.where((r) => r.contains('wait=')).length;
