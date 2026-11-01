@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -32,7 +33,8 @@ class ChangeFeedService {
     }
 
     /** A page of the feed. */
-    record ChangePage(List<ChangeView> changes, String cursor, boolean hasMore) {
+    record ChangePage(List<ChangeView> changes, String cursor, boolean hasMore,
+            @JsonInclude(JsonInclude.Include.NON_NULL) Boolean waited) {
     }
 
     /**
@@ -61,21 +63,32 @@ class ChangeFeedService {
         this.clock = clock;
     }
 
+    /**
+     * Decodes the cursor and checks it has not outlived the tombstone horizon
+     * or missed a purge. An empty cursor is position 0.
+     */
+    @Transactional(readOnly = true)
+    long validatedSequence(CurrentDevice device, String cursorText) {
+        if (cursorText == null || cursorText.isBlank()) {
+            return 0;
+        }
+        UUID workspaceId = device.workspaceId();
+        CursorCodec.Cursor cursor = CursorCodec.decode(cursorText.strip(), workspaceId);
+        long after = cursor.sequence();
+        if (after > 0 && (cursor.issuedAt().plus(properties.tombstoneHorizon()).isBefore(clock.instant())
+                || missedPurge(workspaceId, cursor))) {
+            throw ApiException.gone("CURSOR_EXPIRED",
+                    "This cursor is older than the tombstone horizon; rebuild from a snapshot.");
+        }
+        return after;
+    }
+
     @Transactional
     ChangePage changes(CurrentDevice device, String cursorText, Integer limit) {
         UUID workspaceId = device.workspaceId();
         int pageSize = pageSize(limit);
-        long after = 0;
         Instant now = clock.instant();
-        if (cursorText != null && !cursorText.isBlank()) {
-            CursorCodec.Cursor cursor = CursorCodec.decode(cursorText.strip(), workspaceId);
-            after = cursor.sequence();
-            if (after > 0 && (cursor.issuedAt().plus(properties.tombstoneHorizon()).isBefore(now)
-                    || missedPurge(workspaceId, cursor))) {
-                throw ApiException.gone("CURSOR_EXPIRED",
-                        "This cursor is older than the tombstone horizon; rebuild from a snapshot.");
-            }
-        }
+        long after = validatedSequence(device, cursorText);
         List<EntityStore.Change> rows = store.changesAfter(workspaceId, after, pageSize + 1);
         boolean hasMore = rows.size() > pageSize;
         Visibility sees = visibility.forMember(workspaceId, device.member().user().id());
@@ -97,7 +110,7 @@ class ChangeFeedService {
                         + "values (?, ?, ?, ?) on conflict (device_id) do update "
                         + "set last_sequence = excluded.last_sequence, pulled_at = excluded.pulled_at")
                 .params(device.deviceId(), workspaceId, last, Timestamp.from(now)).update();
-        return new ChangePage(changes, CursorCodec.encode(workspaceId, last, now), hasMore);
+        return new ChangePage(changes, CursorCodec.encode(workspaceId, last, now), hasMore, null);
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)

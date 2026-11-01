@@ -176,6 +176,12 @@ class EntityStore {
                 .params(workspaceId, workspaceId).query(Long.class).single();
     }
 
+    /** The workspace's newest surviving change record; unlike {@link #headSequence}, purged records do not count. */
+    long latestChangeSequence(UUID workspaceId) {
+        return jdbc.sql("select coalesce(max(sequence), 0) from sync_change where workspace_id = ?")
+                .param(workspaceId).query(Long.class).single();
+    }
+
     List<Change> changesAfter(UUID workspaceId, long sequence, int limit) {
         return jdbc.sql("select sequence, entity_type, entity_id, revision, op, data, visibility_change "
                         + "from sync_change where workspace_id = ? and sequence > ? order by sequence limit ?")

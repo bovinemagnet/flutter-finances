@@ -13,6 +13,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.TransactionSystemException;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.paulsnow.finance.server.workspace.WorkspaceInfo;
@@ -45,9 +47,11 @@ class CommandProcessor {
     private final SyncMetrics metrics;
     private final Clock clock;
     private final VisibilityService visibility;
+    private final ChangeWaiter waiter;
 
     CommandProcessor(TransactionTemplate transactions, JdbcClient jdbc, EntityStore store, CommandHandlers handlers,
-            SyncMetrics metrics, Clock clock, VisibilityService visibility) {
+            SyncMetrics metrics, Clock clock, VisibilityService visibility, ChangeWaiter waiter) {
+        this.waiter = waiter;
         this.visibility = visibility;
         this.transactions = transactions;
         this.jdbc = jdbc;
@@ -126,6 +130,15 @@ class CommandProcessor {
                     // recorded; a rejected command is re-evaluated on retry,
                     // for example after the client rebases it.
                     store(workspace.id(), commandId, hash, result);
+                    if (!CommandResult.PREVIOUSLY_APPLIED.equals(result.status())) {
+                        // After commit, also when this joined an outer transaction.
+                        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                            @Override
+                            public void afterCommit() {
+                                waiter.changed(workspace.id());
+                            }
+                        });
+                    }
                 } else {
                     status.setRollbackOnly();
                 }
