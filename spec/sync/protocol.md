@@ -97,6 +97,48 @@ position captured when the first page was produced, from which the client
 resumes `GET /v1/sync/changes` after the last page. Pending commands for entities deleted in the meantime are surfaced for
 review, never applied automatically.
 
+### Waiting for changes (NFR 05)
+
+`GET /v1/sync/changes?cursor=<opaque>&limit=500&wait=<seconds>` holds the
+request open until a change is recorded or the wait ends, so an open second
+device sees a change within seconds (NFR 05: 10 s) without polling.
+
+- `wait` is optional, in whole seconds, default 0 (no waiting). The server
+  clamps it to at most 25, which keeps the request inside the client's 30 s
+  timeout and under common proxy idle timeouts.
+- The cursor is checked before waiting: an expired cursor returns 410
+  `CURSOR_EXPIRED` straight away. If changes already exist after the cursor
+  the server answers straight away.
+- With `wait > 0` and nothing after the cursor, the server answers when a
+  change is recorded in the workspace, or when the wait ends with an empty
+  page, in the usual shape.
+- A server that supports waiting adds `"waited": true` to every answer to a
+  request with `wait > 0`, including an immediate one. An older server
+  leaves it out; that is how a client learns it cannot long-poll.
+- Waking is per workspace, on any recorded change, including changes the
+  device's member cannot see (household visibility). The answer is filtered
+  as usual, so such a wake returns an empty page with an advanced cursor.
+- The server also re-checks the newest change sequence every 2 s, so changes
+  written by the worker or another server instance end a wait promptly.
+
+Client rules:
+
+- The waiting request is sent outside the client's serial lock, so a push is
+  never held behind it. The page is applied under the lock only if the stored
+  cursor is still the one the request was sent with; otherwise another pull
+  got there first and the page is dropped.
+- `hasMore` and 410 lead to the normal pull and rebuild paths.
+- A response without `"waited": true` stops long-polling for the life of the
+  client; the periodic sync (every 2 minutes) remains as a safety net.
+- On a network or server error the client waits 5 s before trying again,
+  doubling up to 2 minutes. Authentication and update-required failures stop
+  waiting.
+- The app keeps one waiting request open only while the workspace is synced,
+  signed in and the app is in the foreground.
+- The app pushes about 1 s after a save (further saves within that second
+  restart the timer); a sync that leaves changes pending does not retrigger
+  itself.
+
 ## Receipt documents (SYNC 05)
 
 1. `POST /v1/receipts/upload-intents` with

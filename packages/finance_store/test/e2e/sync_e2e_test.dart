@@ -561,4 +561,37 @@ void main() {
       expect(revoked.consentStatus, BankConsentStatus.revoked);
     },
   );
+
+  e2eTest(
+    'NFR 05: a change reaches a waiting device within 10 seconds',
+    () async {
+      final s = await twoDevices();
+      final elapsed = <Duration>[];
+      for (var i = 0; i < 10; i++) {
+        final waiting = s.b.client.waitForChanges();
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        final clock = Stopwatch()..start();
+        final account = Account(
+          id: newId(),
+          name: 'Account $i',
+          type: AccountType.savings,
+        );
+        await s.a.store.createAccount(account);
+        await s.a.client.push();
+        final result = await waiting;
+        expect(result.supported, isTrue);
+        if (result.needsPull) await s.b.client.pull();
+        expect(s.b.store.account(account.id), isNotNull);
+        elapsed.add(clock.elapsed);
+      }
+      final slowest = elapsed.reduce((a, b) => a > b ? a : b);
+      // ignore: avoid_print
+      print(
+        'NFR 05 propagation (ms): '
+        '${elapsed.map((e) => e.inMilliseconds).join(', ')}; '
+        'slowest ${slowest.inMilliseconds}',
+      );
+      expect(slowest, lessThan(const Duration(seconds: 10)));
+    },
+  );
 }
