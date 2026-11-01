@@ -169,8 +169,10 @@ class Outbox {
               .columnAt(0)
           as int;
 
-  /// The highest sequence number ever issued. It never decreases, so a rise
-  /// means a command was queued, whatever has been sent since.
+  /// The highest sequence number in the outbox. Sent commands are kept, so
+  /// sending never lowers it; only [delete] (undo) of the newest command
+  /// does. Sequence numbers are never reused, so a rise means a command was
+  /// queued, whatever has been sent since.
   int get highWaterMark =>
       (db.select('SELECT max(seq) FROM outbox').first.columnAt(0) as int?) ?? 0;
 
