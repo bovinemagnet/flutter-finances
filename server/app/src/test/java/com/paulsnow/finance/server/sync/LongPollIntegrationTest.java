@@ -69,7 +69,7 @@ class LongPollIntegrationTest extends IntegrationTestSupport {
             assertThat(timed.result().getResponse().getStatus()).isEqualTo(200);
             assertThat(page.path("changes")).hasSize(1);
             assertThat(page.path("waited").asBoolean()).isTrue();
-            assertThat(millisBetween(committed, timed.finishedNanos())).isLessThan(2000);
+            assertThat(millisBetween(committed, timed.finishedNanos())).isLessThan(1000);
         }
     }
 
