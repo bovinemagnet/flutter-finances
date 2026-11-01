@@ -55,6 +55,23 @@ class FakeSyncServer {
   int _seq = 0;
   int _horizon = 0;
 
+  /// Long polling (NFR 05): when false the server ignores `wait` and leaves
+  /// `waited` out, like a server that predates it.
+  bool supportsWait = true;
+
+  /// The longest a `wait` request is held (the real hold is the smaller of
+  /// the requested seconds and this).
+  Duration maxHold = const Duration(milliseconds: 300);
+
+  /// When set, an answered `wait` request is delayed until this completes
+  /// (lets a test slip another call in before the response arrives).
+  Completer<void>? waitedResponseGate;
+
+  /// The number of change-feed requests currently held.
+  int waiting = 0;
+
+  Completer<void> _wake = Completer<void>();
+
   /// Receipt objects by asset id.
   final Map<String, UploadIntent> intents = {};
   final Map<String, Uint8List> objects = {};
@@ -517,6 +534,9 @@ class FakeSyncServer {
     );
     _seq++;
     _log.add(_Change(_seq, id));
+    final wake = _wake;
+    _wake = Completer<void>();
+    wake.complete();
   }
 
   /// Parses a journal; null when malformed (`INVALID_JOURNAL`).
@@ -818,13 +838,28 @@ class FakeSyncServer {
     return limit.clamp(1, maxPageSize);
   }
 
-  http.Response _changes(Map<String, String> query) {
+  Future<http.Response> _changes(Map<String, String> query) async {
     final cursor = query['cursor'] ?? '';
     final limit = _limit(query);
     final from = cursor.isEmpty ? 0 : int.parse(cursor.substring(1));
     if (cursor.isNotEmpty && from < _horizon) {
       throw _HttpError(410, 'CURSOR_EXPIRED');
     }
+    final seconds = int.tryParse(query['wait'] ?? '') ?? 0;
+    final waits = supportsWait && seconds > 0;
+    if (waits && !_log.any((c) => c.seq > from)) {
+      final hold = Duration(seconds: seconds);
+      waiting++;
+      try {
+        await _wake.future.timeout(
+          hold < maxHold ? hold : maxHold,
+          onTimeout: () {},
+        );
+      } finally {
+        waiting--;
+      }
+    }
+    if (waits) await waitedResponseGate?.future;
     // Only the latest change per entity matters; older ones are skipped.
     final pending = _log.where((c) => c.seq > from).toList();
     final page = pending.take(limit).toList();
@@ -840,6 +875,7 @@ class FakeSyncServer {
       ],
       'cursor': 'c$next',
       'hasMore': pending.length > page.length,
+      if (waits) 'waited': true,
     });
   }
 
