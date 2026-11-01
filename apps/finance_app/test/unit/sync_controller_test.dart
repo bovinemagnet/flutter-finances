@@ -337,17 +337,23 @@ void main() {
     });
 
     test('a failed sync does not retrigger itself', () async {
-      final (a, syncA) = await synced('a');
+      final (a, syncA) = await synced(
+        'a',
+        retry: const RetryPolicy(maxAttempts: 1),
+      );
       await until(() => syncA.phase == SyncPhase.idle);
       server.offline = true;
       final before = server.requests.length;
       await saveAccount(a, 'bank');
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-      final attempts = server.requests
+      await until(() => syncA.phase == SyncPhase.failed);
+      int syncRequests() => server.requests
           .skip(before)
-          .where((r) => r.contains('/v1/sync/commands'))
+          .where((r) => r.contains('/v1/sync/') && !r.contains('wait='))
           .length;
-      expect(attempts, lessThanOrEqualTo(const RetryPolicy().maxAttempts));
+      final failedAt = syncRequests();
+      expect(failedAt, greaterThanOrEqualTo(1));
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect(syncRequests(), failedAt);
       server.offline = false;
       await until(() => syncA.phase != SyncPhase.syncing);
 
@@ -368,6 +374,8 @@ void main() {
               .any((r) => r.contains('objects.test')),
           ms: 2000,
         );
+        // The post-save sync itself did not carry the upload.
+        expect(syncA.lastReport!.uploads, isNull);
         final sent = server.requests.skip(before).toList();
         final firstCommand = sent.indexWhere((r) => r == 'POST $_commandsUrl');
         final firstObject = sent.indexWhere((r) => r.contains('objects.test'));
