@@ -838,8 +838,9 @@ class FinanceStore {
 
   int get pendingCommandCount => _ctx.outbox.pendingCount;
 
-  /// The newest outbox sequence number; it only ever rises, so it shows that
-  /// something was saved even when a sync emptied the outbox meanwhile.
+  /// The newest outbox sequence number. A sync never lowers it (undo can),
+  /// so a rise shows that something was saved even when a sync emptied the
+  /// outbox meanwhile.
   int get outboxHighWaterMark => _ctx.outbox.highWaterMark;
 
   List<OutboxEntry> pendingCommands() => _ctx.outbox.pending();

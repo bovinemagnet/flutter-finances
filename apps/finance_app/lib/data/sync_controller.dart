@@ -234,9 +234,10 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     _syncQueued = false;
   }
 
-  /// Only a newly queued command is a save. The mark never falls, so a sync
-  /// that empties the outbox neither hides a save made during it nor starts
-  /// another push.
+  /// Only a newly queued command is a save. A sync never lowers the mark, so
+  /// one that empties the outbox neither hides a save made during it nor
+  /// starts another push. An undo lowers it, but the next save still rises
+  /// above it because sequence numbers are never reused.
   void _onStateChanged() {
     final mark = state.savedCommandMark;
     final saved = mark > _lastSavedMark;

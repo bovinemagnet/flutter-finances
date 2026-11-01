@@ -42,7 +42,8 @@ class AppState extends ChangeNotifier {
 
   int get unsyncedCount => store.pendingCommandCount;
 
-  /// Rises with every saved command and never falls.
+  /// Rises with every saved command. A sync never lowers it; undoing the
+  /// newest action does.
   int get savedCommandMark => store.outboxHighWaterMark;
   bool isUnsynced(String type, String id) => store.isUnsynced(type, id);
 

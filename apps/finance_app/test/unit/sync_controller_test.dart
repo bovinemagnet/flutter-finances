@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -9,6 +10,8 @@ import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
 import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 // The store's protocol-faithful fake server, shared rather than duplicated.
 import '../../../../packages/finance_store/test/support/fake_server.dart';
@@ -35,6 +38,7 @@ void main() {
   Future<(AppState, SyncController)> device(
     String name, {
     RetryPolicy retry = const RetryPolicy(),
+    http.Client? httpClient,
   }) async {
     final store = await FinanceStore.create(
       Directory('${root.path}/$name'),
@@ -47,7 +51,7 @@ void main() {
       settingsStore: MemorySyncSettingsStore(),
       redirectUri: 'test:/oauth',
       browserSignIn: (_) async {},
-      httpClient: server.client,
+      httpClient: httpClient ?? server.client,
       accessToken: () async => FakeSyncServer.defaultUser,
       deviceName: name,
       platform: 'test',
@@ -78,8 +82,9 @@ void main() {
     String name, {
     RemoteWorkspace? to,
     RetryPolicy retry = const RetryPolicy(),
+    http.Client? httpClient,
   }) async {
-    final (s, c) = await device(name, retry: retry);
+    final (s, c) = await device(name, retry: retry, httpClient: httpClient);
     final remote = to ?? (await c.remoteWorkspaces()).single;
     await c.enable(await c.prepare(existing: remote));
     return (s, c);
@@ -268,6 +273,85 @@ void main() {
       syncA.dispose();
       await a.store.close();
     });
+
+    test('a failed pull asked for by a wait backs off', () async {
+      final (a, syncA) = await synced(
+        'a',
+        retry: const RetryPolicy(maxAttempts: 1),
+      );
+      final (b, syncB) = await synced('b');
+      await until(() => syncA.isWaiting);
+      // Device a misses b's change, then its cursor expires.
+      syncA.didChangeAppLifecycleState(AppLifecycleState.hidden);
+      await until(() => server.waiting == 0);
+      await b.store.createAccount(
+        const Account(
+          id: 'bank',
+          name: 'Everyday',
+          type: AccountType.transaction,
+        ),
+      );
+      await syncB.syncNow();
+      syncB.dispose();
+      await b.store.close();
+      server
+        ..expireTombstones()
+        ..failPath = '/v1/sync/snapshot'
+        ..failRequests = 1000;
+
+      // Every wait now asks for a pull, and every pull fails.
+      syncA.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await until(() => _snapshots(server) >= 1);
+      final before = _snapshots(server);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      final during = _snapshots(server) - before;
+      // Retries happen (20, 40, 80, 160 ms) but not in a tight loop.
+      expect(during, inInclusiveRange(1, 6));
+
+      syncA.didChangeAppLifecycleState(AppLifecycleState.hidden);
+      server.failRequests = 0;
+      syncA.dispose();
+      await until(() => syncA.phase != SyncPhase.syncing);
+      await a.store.close();
+    });
+
+    test('an unexpected error ends waiting so it can start again', () async {
+      var malformed = false;
+      final tampering = MockClient((request) async {
+        if (malformed && request.url.queryParameters.containsKey('wait')) {
+          return http.Response('[]', 200);
+        }
+        final copy = http.Request(request.method, request.url)
+          ..headers.addAll(request.headers)
+          ..bodyBytes = request.bodyBytes;
+        return http.Response.fromStream(await server.client.send(copy));
+      });
+      final (a, syncA) = await synced('a', httpClient: tampering);
+      await until(() => syncA.isWaiting);
+      syncA.didChangeAppLifecycleState(AppLifecycleState.hidden);
+      await until(() => server.waiting == 0);
+      malformed = true;
+
+      final errors = <Object>[];
+      runZonedGuarded(
+        () => syncA.didChangeAppLifecycleState(AppLifecycleState.resumed),
+        (e, _) => errors.add(e),
+      );
+      // Resuming also syncs, and that sync starts waiting again; both loops
+      // meet the error and end.
+      await until(() => syncA.phase == SyncPhase.idle && !syncA.isWaiting);
+      expect(errors, isNotEmpty);
+      expect(errors, everyElement(isA<TypeError>()));
+
+      malformed = false;
+      syncA.didChangeAppLifecycleState(AppLifecycleState.hidden);
+      syncA.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      expect(syncA.isWaiting, isTrue);
+
+      await until(() => syncA.phase != SyncPhase.syncing);
+      syncA.dispose();
+      await a.store.close();
+    });
   });
   group('push after a save (NFR 05)', () {
     Future<void> saveAccount(AppState s, String id) => s.saveAccount(
@@ -418,6 +502,9 @@ void main() {
 
 int _waits(FakeSyncServer server) =>
     server.requests.where((r) => r.contains('wait=')).length;
+
+int _snapshots(FakeSyncServer server) =>
+    server.requests.where((r) => r.contains('/v1/sync/snapshot')).length;
 
 String get _commandsUrl =>
     FakeSyncServer.base.resolve('/v1/sync/commands').toString();
