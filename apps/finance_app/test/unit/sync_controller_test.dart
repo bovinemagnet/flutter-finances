@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:finance_app/data/app_state.dart';
 import 'package:finance_app/data/oidc.dart';
 import 'package:finance_app/data/sync_controller.dart';
+import 'package:finance_app/features/accounts/account_editor.dart';
 import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
 import 'package:flutter/widgets.dart' show AppLifecycleState;
@@ -51,6 +53,7 @@ void main() {
       platform: 'test',
       longPollWait: const Duration(seconds: 1),
       waitRetryDelay: const Duration(milliseconds: 20),
+      pushDelay: const Duration(milliseconds: 50),
       retry: retry,
     );
     await controller.saveSettings(
@@ -266,7 +269,142 @@ void main() {
       await a.store.close();
     });
   });
+  group('push after a save (NFR 05)', () {
+    Future<void> saveAccount(AppState s, String id) => s.saveAccount(
+      AccountEdit(
+        Account(id: id, name: id, type: AccountType.transaction),
+        null,
+        today,
+      ),
+    );
+
+    int commandPosts() =>
+        server.requests.where((r) => r == 'POST $_commandsUrl').length;
+
+    test('a save is sent about a moment later', () async {
+      final (a, syncA) = await synced('a');
+      final before = server.commandCount;
+      await saveAccount(a, 'bank');
+      await until(() => server.commandCount > before, ms: 2000);
+      await until(() => a.unsyncedCount == 0, ms: 2000);
+
+      syncA.dispose();
+      await a.store.close();
+    });
+
+    test('a burst of saves is one sync', () async {
+      final (a, syncA) = await synced('a');
+      await until(() => syncA.phase == SyncPhase.idle);
+      final before = commandPosts();
+      for (var i = 0; i < 3; i++) {
+        await saveAccount(a, 'acc$i');
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      await until(() => a.unsyncedCount == 0, ms: 2000);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(commandPosts() - before, 1);
+
+      syncA.dispose();
+      await a.store.close();
+    });
+
+    test('a save during a running sync is sent when it ends', () async {
+      final (a, syncA) = await synced('a');
+      await until(() => syncA.phase == SyncPhase.idle);
+      final assetId = await _saveReceipt(a, 'r1', notify: false);
+      server.putDelay = const Duration(milliseconds: 400);
+      final running = syncA.syncNow();
+      // The commands are already pushed; the file upload is still running.
+      await until(
+        () => server.requests.any((r) => r.startsWith('PUT https://objects')),
+      );
+      await saveAccount(a, 'bank');
+      // Past the push delay, still inside the running sync.
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(syncA.phase, SyncPhase.syncing);
+      await running;
+      await until(() => a.unsyncedCount == 0, ms: 2000);
+      await until(() => syncA.phase == SyncPhase.idle);
+      // The follow-up also checks for files to upload; let it finish.
+      await until(
+        () => a.store.vault.asset(assetId)!.cloudConfirmedAt != null,
+        ms: 4000,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      syncA.dispose();
+      await a.store.close();
+    });
+
+    test('a failed sync does not retrigger itself', () async {
+      final (a, syncA) = await synced('a');
+      await until(() => syncA.phase == SyncPhase.idle);
+      server.offline = true;
+      final before = server.requests.length;
+      await saveAccount(a, 'bank');
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      final attempts = server.requests
+          .skip(before)
+          .where((r) => r.contains('/v1/sync/commands'))
+          .length;
+      expect(attempts, lessThanOrEqualTo(const RetryPolicy().maxAttempts));
+      server.offline = false;
+      await until(() => syncA.phase != SyncPhase.syncing);
+
+      syncA.dispose();
+      await a.store.close();
+    });
+
+    test(
+      'the post-save sync leaves receipt files for a separate upload',
+      () async {
+        final (a, syncA) = await synced('a');
+        await until(() => syncA.phase == SyncPhase.idle);
+        final before = server.requests.length;
+        await _saveReceipt(a, 'r1');
+        await until(
+          () => server.requests
+              .skip(before)
+              .any((r) => r.contains('objects.test')),
+          ms: 2000,
+        );
+        final sent = server.requests.skip(before).toList();
+        final firstCommand = sent.indexWhere((r) => r == 'POST $_commandsUrl');
+        final firstObject = sent.indexWhere((r) => r.contains('objects.test'));
+        expect(firstCommand, greaterThanOrEqualTo(0));
+        expect(firstCommand, lessThan(firstObject));
+
+        syncA.dispose();
+        await a.store.close();
+      },
+    );
+  });
 }
 
 int _waits(FakeSyncServer server) =>
     server.requests.where((r) => r.contains('wait=')).length;
+
+String get _commandsUrl =>
+    FakeSyncServer.base.resolve('/v1/sync/commands').toString();
+
+/// Saves a receipt with a file; [notify] false keeps it from scheduling a push.
+Future<String> _saveReceipt(AppState s, String id, {bool notify = true}) async {
+  await s.store.upsertEntity('receipt', id, {
+    'id': id,
+    'merchant': 'Corner Grocer',
+  });
+  final asset = await s.store.vault.saveAsset(
+    ownerType: 'receipt',
+    ownerId: id,
+    kind: VaultAssetKind.source,
+    contentType: 'image/jpeg',
+    bytes: Uint8List.fromList([
+      0xff,
+      0xd8,
+      0xff,
+      for (var i = 0; i < 3997; i++) (i + 7) & 0xff,
+    ]),
+  );
+  if (notify) s.refresh();
+  return asset.id;
+}

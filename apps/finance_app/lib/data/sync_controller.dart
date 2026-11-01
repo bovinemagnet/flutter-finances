@@ -95,6 +95,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     this.longPollWait = const Duration(seconds: 25),
     this.waitRetryDelay = const Duration(seconds: 5),
     this.maxWaitRetryDelay = const Duration(minutes: 2),
+    this.pushDelay = const Duration(seconds: 1),
     this.retry = const RetryPolicy(),
     this.accessToken,
   }) : _http = httpClient ?? http.Client();
@@ -116,6 +117,9 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   final Duration waitRetryDelay;
   final Duration maxWaitRetryDelay;
 
+  /// How long after a save the change is sent, so a burst is one sync.
+  final Duration pushDelay;
+
   /// Transport retry policy; tests shorten it.
   final RetryPolicy retry;
 
@@ -136,6 +140,12 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   bool _waiting = false;
   bool _waitingAllowed = false;
   bool _longPollUnsupported = false;
+
+  // Push-after-save state.
+  bool _listening = false;
+  int _lastUnsynced = 0;
+  Timer? _pushTimer;
+  bool _syncQueued = false;
 
   /// Whether a waiting request loop is running (NFR 05).
   bool get isWaiting => _waiting;
@@ -179,6 +189,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
       phase = SyncPhase.idle;
       _timer = Timer.periodic(interval, (_) => syncNow());
       _waitingAllowed = true;
+      _listenForSaves();
       unawaited(syncNow());
     }
     notifyListeners();
@@ -189,6 +200,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _stopWaiting();
+    _stopListeningForSaves();
     super.dispose();
   }
 
@@ -204,6 +216,51 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     } else if (state == AppLifecycleState.hidden ||
         state == AppLifecycleState.paused) {
       _stopWaiting();
+    }
+  }
+
+  void _listenForSaves() {
+    if (_listening) return;
+    _listening = true;
+    _lastUnsynced = state.unsyncedCount;
+    state.addListener(_onStateChanged);
+  }
+
+  void _stopListeningForSaves() {
+    if (_listening) state.removeListener(_onStateChanged);
+    _listening = false;
+    _pushTimer?.cancel();
+    _pushTimer = null;
+    _syncQueued = false;
+  }
+
+  /// Only a rise in unsent commands is a save; a sync that empties the
+  /// outbox also notifies and must not start another push.
+  void _onStateChanged() {
+    final unsynced = state.unsyncedCount;
+    final saved = unsynced > _lastUnsynced;
+    _lastUnsynced = unsynced;
+    if (saved) {
+      _pushTimer?.cancel();
+      _pushTimer = Timer(pushDelay, _syncAfterSave);
+    }
+  }
+
+  /// Sends the outbox first and receipt files afterwards, so the change
+  /// reaches the other device before any large upload. Failures stay in the
+  /// outbox for the next sync.
+  Future<void> _syncAfterSave() async {
+    if (!_listening || !isSynced) return;
+    if (phase == SyncPhase.syncing) {
+      _syncQueued = true;
+      return;
+    }
+    await syncNow(uploadAssets: false);
+    if (phase == SyncPhase.failed || !_listening) return;
+    try {
+      await client.uploadAssets();
+    } on Exception {
+      // Left for the next sync.
     }
   }
 
@@ -321,15 +378,22 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     phase = SyncPhase.idle;
     _timer ??= Timer.periodic(interval, (_) => syncNow());
     _waitingAllowed = true;
+    _listenForSaves();
     await syncNow();
   }
 
-  Future<void> syncNow({bool meteredConnection = false}) async {
+  Future<void> syncNow({
+    bool meteredConnection = false,
+    bool uploadAssets = true,
+  }) async {
     if (!isSynced || phase == SyncPhase.syncing) return;
     phase = SyncPhase.syncing;
     notifyListeners();
     try {
-      lastReport = await client.sync(meteredConnection: meteredConnection);
+      lastReport = await client.sync(
+        meteredConnection: meteredConnection,
+        uploadAssets: uploadAssets,
+      );
       lastSyncedAt = DateTime.now();
       lastError = null;
       phase = SyncPhase.idle;
@@ -349,12 +413,17 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     }
     state.refresh();
     notifyListeners();
+    if (_syncQueued) {
+      _syncQueued = false;
+      unawaited(_syncAfterSave());
+    }
   }
 
   Future<void> signOut() async {
     _timer?.cancel();
     _timer = null;
     _stopWaiting();
+    _stopListeningForSaves();
     await session.signOut();
     phase = SyncPhase.off;
     notifyListeners();
