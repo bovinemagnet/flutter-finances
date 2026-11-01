@@ -336,6 +336,33 @@ void main() {
       await a.store.close();
     });
 
+    test('a save after the push of a sync that began with more pending is '
+        'still sent', () async {
+      final (a, syncA) = await synced(
+        'a',
+        retry: const RetryPolicy(maxAttempts: 1),
+      );
+      await until(() => syncA.phase == SyncPhase.idle);
+      server.offline = true;
+      await saveAccount(a, 'first');
+      await until(() => syncA.phase == SyncPhase.failed);
+      expect(a.unsyncedCount, 1);
+      server.offline = false;
+      await _saveReceipt(a, 'r1', notify: false);
+      server.putDelay = const Duration(milliseconds: 400);
+      final running = syncA.syncNow();
+      await until(
+        () => server.requests.any((r) => r.startsWith('PUT https://objects')),
+      );
+      await saveAccount(a, 'second');
+      await running;
+      await until(() => a.unsyncedCount == 0, ms: 2000);
+      await until(() => syncA.phase != SyncPhase.syncing);
+
+      syncA.dispose();
+      await a.store.close();
+    });
+
     test('a failed sync does not retrigger itself', () async {
       final (a, syncA) = await synced(
         'a',

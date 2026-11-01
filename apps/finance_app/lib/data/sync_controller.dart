@@ -143,7 +143,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
 
   // Push-after-save state.
   bool _listening = false;
-  int _lastUnsynced = 0;
+  int _lastSavedMark = 0;
   Timer? _pushTimer;
   bool _syncQueued = false;
 
@@ -222,7 +222,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   void _listenForSaves() {
     if (_listening) return;
     _listening = true;
-    _lastUnsynced = state.unsyncedCount;
+    _lastSavedMark = state.savedCommandMark;
     state.addListener(_onStateChanged);
   }
 
@@ -234,12 +234,13 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     _syncQueued = false;
   }
 
-  /// Only a rise in unsent commands is a save; a sync that empties the
-  /// outbox also notifies and must not start another push.
+  /// Only a newly queued command is a save. The mark never falls, so a sync
+  /// that empties the outbox neither hides a save made during it nor starts
+  /// another push.
   void _onStateChanged() {
-    final unsynced = state.unsyncedCount;
-    final saved = unsynced > _lastUnsynced;
-    _lastUnsynced = unsynced;
+    final mark = state.savedCommandMark;
+    final saved = mark > _lastSavedMark;
+    _lastSavedMark = mark;
     if (saved) {
       _pushTimer?.cancel();
       _pushTimer = Timer(pushDelay, _syncAfterSave);
@@ -322,6 +323,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
       } on Error {
         // A stopped loop may return after the store has been closed.
         if (!current()) return;
+        finish();
         rethrow;
       }
       if (backOff) {

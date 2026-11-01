@@ -41,6 +41,9 @@ class AppState extends ChangeNotifier {
   LedgerProjection get ledger => _ledger ??= store.projection();
 
   int get unsyncedCount => store.pendingCommandCount;
+
+  /// Rises with every saved command and never falls.
+  int get savedCommandMark => store.outboxHighWaterMark;
   bool isUnsynced(String type, String id) => store.isUnsynced(type, id);
 
   /// Call after anything outside this class changed the store, such as a
