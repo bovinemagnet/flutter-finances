@@ -30,7 +30,10 @@ void main() {
 
   tearDown(() => root.delete(recursive: true));
 
-  Future<(AppState, SyncController)> device(String name) async {
+  Future<(AppState, SyncController)> device(
+    String name, {
+    RetryPolicy retry = const RetryPolicy(),
+  }) async {
     final store = await FinanceStore.create(
       Directory('${root.path}/$name'),
       keyProtection: KeyProtection.password('secret', kdf: _fastKdf),
@@ -48,6 +51,7 @@ void main() {
       platform: 'test',
       longPollWait: const Duration(seconds: 1),
       waitRetryDelay: const Duration(milliseconds: 20),
+      retry: retry,
     );
     await controller.saveSettings(
       SyncSettings(
@@ -70,8 +74,9 @@ void main() {
   Future<(AppState, SyncController)> synced(
     String name, {
     RemoteWorkspace? to,
+    RetryPolicy retry = const RetryPolicy(),
   }) async {
-    final (s, c) = await device(name);
+    final (s, c) = await device(name, retry: retry);
     final remote = to ?? (await c.remoteWorkspaces()).single;
     await c.enable(await c.prepare(existing: remote));
     return (s, c);
@@ -231,14 +236,21 @@ void main() {
     });
 
     test('waiting backs off while offline', () async {
-      final (a, syncA) = await synced('a');
-      await until(() => syncA.isWaiting && server.waiting == 1);
-      final before = _waits(server);
+      server.maxHold = const Duration(milliseconds: 20);
+      final (a, syncA) = await synced(
+        'a',
+        retry: const RetryPolicy(maxAttempts: 1),
+      );
+      await until(() => syncA.isWaiting);
       server.offline = true;
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      // Let the request already being held finish before counting.
+      await until(() => server.waiting == 0);
+      final before = _waits(server);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
       final during = _waits(server) - before;
       server.offline = false;
-      expect(during, lessThanOrEqualTo(5));
+      // Retries happen (20, 40, 80, 160 ms) but not in a tight loop.
+      expect(during, inInclusiveRange(2, 5));
 
       syncA.dispose();
       await a.store.close();

@@ -95,6 +95,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     this.longPollWait = const Duration(seconds: 25),
     this.waitRetryDelay = const Duration(seconds: 5),
     this.maxWaitRetryDelay = const Duration(minutes: 2),
+    this.retry = const RetryPolicy(),
     this.accessToken,
   }) : _http = httpClient ?? http.Client();
 
@@ -114,6 +115,9 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   /// First pause after a failed wait; doubles up to [maxWaitRetryDelay].
   final Duration waitRetryDelay;
   final Duration maxWaitRetryDelay;
+
+  /// Transport retry policy; tests shorten it.
+  final RetryPolicy retry;
 
   /// Replaces the browser session, for tests and service accounts.
   final AccessTokenProvider? accessToken;
@@ -160,6 +164,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   SyncClient get client => _client ??= SyncClient(
     state.store,
     httpClient: _http,
+    retry: retry,
     baseUri: Uri.parse(settings.serverUrl),
     accessToken: accessToken ?? session.accessToken,
   );
