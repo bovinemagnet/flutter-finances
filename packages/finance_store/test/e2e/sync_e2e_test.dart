@@ -580,7 +580,9 @@ void main() {
         await s.a.client.push();
         final result = await waiting;
         expect(result.supported, isTrue);
-        if (result.needsPull) await s.b.client.pull();
+        // The wait itself delivered the change; no pull was needed.
+        expect(result.needsPull, isFalse);
+        expect(result.changes, greaterThanOrEqualTo(1));
         expect(s.b.store.account(account.id), isNotNull);
         elapsed.add(clock.elapsed);
       }

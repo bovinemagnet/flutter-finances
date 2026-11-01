@@ -79,6 +79,37 @@ void main() {
     expect((await b.client.pull()).changes, 0);
   });
 
+  test('a rebuild started during the wait asks for a pull', () async {
+    server.maxHold = const Duration(seconds: 5);
+    final waited = b.client.waitForChanges();
+    await untilWaiting();
+    final gate = server.waitedResponseGate = Completer<void>();
+    await saveAccount(a, 'savings');
+    await a.client.push();
+    // A concurrent pull begins a rebuild without moving the cursor.
+    b.client.engine.startRebuild();
+    gate.complete();
+    final result = await waited.timeout(const Duration(seconds: 2));
+    expect(result.supported, isTrue);
+    expect(result.needsPull, isTrue);
+    expect(result.changes, 0);
+    expect(b.store.accounts().map((x) => x.id), isNot(contains('savings')));
+  });
+
+  test('a page with more behind it asks for a pull', () async {
+    final c = await Device.create(temp, 'c', server, pageSize: 1);
+    addTearDown(c.close);
+    await c.enableSync(server);
+    await c.sync();
+    await saveAccount(a, 'one');
+    await saveAccount(a, 'two');
+    await a.client.push();
+    final result = await c.client.waitForChanges();
+    expect(result.supported, isTrue);
+    expect(result.changes, 1);
+    expect(result.needsPull, isTrue);
+  });
+
   test('an older server is reported as not supporting wait', () async {
     server.supportsWait = false;
     await saveAccount(a, 'savings');

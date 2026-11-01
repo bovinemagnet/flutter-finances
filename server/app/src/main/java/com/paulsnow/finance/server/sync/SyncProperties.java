@@ -23,7 +23,8 @@ public record SyncProperties(Duration tombstoneHorizon, int maxCommandsPerBatch,
         tombstoneHorizon = tombstoneHorizon == null ? Duration.ofDays(90) : tombstoneHorizon;
         maxCommandsPerBatch = maxCommandsPerBatch <= 0 ? 500 : maxCommandsPerBatch;
         maxPageSize = maxPageSize <= 0 ? 500 : maxPageSize;
-        maxWait = maxWait == null ? Duration.ofSeconds(25) : maxWait;
-        waitRecheck = waitRecheck == null ? Duration.ofSeconds(2) : waitRecheck;
+        maxWait = maxWait == null || maxWait.isZero() || maxWait.isNegative() ? Duration.ofSeconds(25) : maxWait;
+        waitRecheck = waitRecheck == null || waitRecheck.isZero() || waitRecheck.isNegative() ? Duration.ofSeconds(2)
+                : waitRecheck;
     }
 }

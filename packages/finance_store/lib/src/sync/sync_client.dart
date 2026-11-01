@@ -294,6 +294,11 @@ class SyncClient {
     final json = (jsonDecode(response.body) as Map).cast<String, Object?>();
     if (json['waited'] != true) return const WaitResult(supported: false);
     return _serial(() async {
+      // A pull that ran meanwhile may have started a rebuild without moving
+      // the cursor.
+      if (engine.rebuild != null) {
+        return const WaitResult(supported: true, needsPull: true);
+      }
       if ((_ctx.syncValue(SyncKeys.cursor) ?? '') != cursor) {
         return const WaitResult(supported: true);
       }
