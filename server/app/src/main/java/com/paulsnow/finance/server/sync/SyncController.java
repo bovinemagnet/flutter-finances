@@ -1,5 +1,6 @@
 package com.paulsnow.finance.server.sync;
 
+import java.time.Duration;
 import java.util.List;
 
 import org.springframework.web.bind.annotation.GetMapping;
@@ -37,10 +38,15 @@ class SyncController {
 
     private final SyncCommandService commands;
     private final ChangeFeedService feed;
+    private final ChangeWaiter waiter;
+    private final SyncProperties properties;
 
-    SyncController(SyncCommandService commands, ChangeFeedService feed) {
+    SyncController(SyncCommandService commands, ChangeFeedService feed, ChangeWaiter waiter,
+            SyncProperties properties) {
         this.commands = commands;
         this.feed = feed;
+        this.waiter = waiter;
+        this.properties = properties;
     }
 
     @PostMapping("/commands")
@@ -53,11 +59,20 @@ class SyncController {
     }
 
     @GetMapping("/changes")
-    @Operation(summary = "Pull changes after an opaque cursor; 410 CURSOR_EXPIRED means rebuild from a snapshot")
+    @Operation(summary = "Pull changes after an opaque cursor; 410 CURSOR_EXPIRED means rebuild from a snapshot. "
+            + "With wait=<seconds> (capped by the server) the request is held until a change arrives or the wait ends")
     ChangeFeedService.ChangePage changes(CurrentDevice device,
             @RequestParam(required = false, defaultValue = "") String cursor,
-            @RequestParam(required = false) Integer limit) {
-        return feed.changes(device, cursor, limit);
+            @RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) Integer wait) {
+        Duration held = ChangeWaiter.effectiveWait(wait, properties.maxWait());
+        if (held.isZero()) {
+            return feed.changes(device, cursor, limit);
+        }
+        long after = feed.validatedSequence(device, cursor);
+        waiter.awaitChangeAfter(device.workspaceId(), after, held);
+        ChangeFeedService.ChangePage page = feed.changes(device, cursor, limit);
+        return new ChangeFeedService.ChangePage(page.changes(), page.cursor(), page.hasMore(), Boolean.TRUE);
     }
 
     @GetMapping("/snapshot")

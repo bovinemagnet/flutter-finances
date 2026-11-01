@@ -70,7 +70,7 @@ The cash-flow report distinguishes transfers within the included account set fro
 | `spendingSpike:<category>:<month start>`
 |===
 
-The detection rules are fed by `detectSubscriptions`, `detectUnusualTransactions` and `detectSpendingSpikes`, which `AppState.insights` runs for the current budget period (the spike check uses the current calendar month). Candidate duplicates are supplied by the matching code; see xref:domain:matching-and-deduplication.adoc[Matching and deduplication].
+The detection rules are fed by `detectSubscriptions`, `detectUnusualTransactions` and `detectSpendingSpikes`, which `AppState.insights` runs for the current budget period (the spike check uses the current calendar month). Candidate duplicates are supplied by the matching code; see xref:domain:matching-and-deduplication.adoc[Matching and deduplication]. The result is cached, per day and set of receipt-linked entries, until the next `AppState.refresh()`, which every save and every sync pull calls, so returning to the Overview does not recompute it.
 
 === Subscription detection
 
@@ -91,6 +91,8 @@ Both anomaly rules use the same robust test. A value is unusual when its modifie
 
 * `detectUnusualTransactions` compares each posted purchase in the period with earlier purchases from the same merchant in the last 365 days when there are at least five, otherwise with earlier purchases in the same main expense category (the one with the largest expense posting) when there are at least five. With less history the purchase is not judged. The insight shows the amount, the usual median and how many earlier purchases were compared.
 * `detectSpendingSpikes` compares each expense category's net spending in a calendar month (refunds reduce it) with its monthly spending over the previous six months, limited to months since the first posted entry. With fewer than three history months nothing is reported. A category whose history months were all empty is marked as first spending and described as spending after that many months with none.
+
+`detectUnusualTransactions` stays fast at 100,000 transactions without changing its results. Merchant names and main categories are worked out once, purchases are grouped by merchant and by category, and each group keeps a window of the purchases within the lookback that moves forward in date order with its amounts kept sorted. The median and MAD are then taken from the sorted window in linear time (`medianAndMadOfSorted` in `robust_stats.dart`). The results are the same as comparing every earlier purchase.
 
 Anomalies only explain. They never change a budget, recategorise an entry or move money, and like other insights they can be viewed, dismissed, snoozed or switched off.
 

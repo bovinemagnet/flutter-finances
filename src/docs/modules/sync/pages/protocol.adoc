@@ -109,9 +109,25 @@ Journals change only through `journal.post` and `journal.correct`. An `entity.up
 
 Other validation codes are `INVALID_COMMAND` (malformed envelope or unknown type), `UNSUPPORTED_SCHEMA_VERSION`, `INVALID_JOURNAL`, `ENTITY_ID_MISMATCH`, `ENTITY_TYPE_MISMATCH`, `INVALID_TYPE` (a reversal posted directly), `DUPLICATE_ENTITY`, and for accounts and categories `MISSING_FIELD`, `INVALID_FIELD` and `IMMUTABLE_FIELD`. Every other entity type, such as `receipt`, `documentAsset` and `journalAnnotation`, is opaque JSON with field-level merge. Unknown envelope and entity fields are ignored and preserved (NFR 12). Rejected journals are counted by code in the `finance.ledger.journals.rejected` metric (see xref:operations:metrics.adoc[]).
 
+Rejections are not recorded against the `commandId`. A client that receives `UNSUPPORTED_SCHEMA_VERSION` therefore keeps the command pending instead of holding it for review, stops pushing, and asks the user to update the app or the sync service. The same command is sent again after the update (NFR 12).
+
 == Change feed
 
 `GET /v1/sync/changes?cursor=<opaque>&limit=500` returns `+{"changes": [...], "cursor": "opaque", "hasMore": bool}+`. Each change is `+{"entityType", "entityId", "revision", "op": "upsert | delete", "data": {}}+`, where `data` is the full current entity. A delete change carries `data: {"id"}`. An empty cursor starts from the beginning. `limit` is capped at 500 (`finance.sync.max-page-size`). The client applies changes transactionally and keeps pending commands as overlays (SYNC 04).
+
+=== Waiting for changes (long poll)
+
+To let an active second device see a small accepted change within 10 seconds (p95, stable connection; NFR 05), the feed accepts an optional `wait=<seconds>`: `GET /v1/sync/changes?cursor=<opaque>&limit=500&wait=25`. Images and suspended apps are outside that target.
+
+* `wait` is whole seconds. It defaults to 0, which keeps the behaviour described above, and is clamped to at most 25 (`finance.sync.max-wait`).
+* The cursor is checked first. An expired cursor returns 410 `CURSOR_EXPIRED` at once, and changes that already exist after the cursor are returned at once.
+* Otherwise the server holds the request until a change is recorded in the workspace after the cursor, or the wait ends. It holds it outside any transaction and without holding a database connection.
+* The answer is the normal page `+{"changes": [...], "cursor": "opaque", "hasMore": bool}+` plus `"waited": true`.
+* A waiting request is woken after each command commits. It also re-checks the newest change record every 2 seconds (`finance.sync.wait-recheck`), so changes written by another server instance or the background worker are seen too.
+* A wake can come from a change the member cannot see (for example in a household). The answer is still filtered, so it can be an empty page with an advanced cursor.
+* Older servers ignore `wait` and omit `waited`.
+
+The client keeps one waiting request open while the workspace is synced, the user is signed in and the app is in the foreground. It sends the request outside the sync client's serial lock, so a push is never stuck behind it, and applies a returned page only if the stored cursor has not moved in the meantime. Waiting stops when the app is hidden or paused and on sign-out, and resumes on return to the foreground. If an answer lacks `"waited": true`, the client stops long-polling and relies on the periodic sync. After a failed wait it backs off for 5 seconds, doubling each time, up to 2 minutes.
 
 === Cursor expiry and snapshot rebase
 

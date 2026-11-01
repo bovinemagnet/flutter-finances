@@ -56,6 +56,9 @@ finance:
     tombstone-horizon: 90d
     max-commands-per-batch: 500
     max-page-size: 500
+    # NFR 05: longest a pull with wait= is held open, and how often it re-reads the database.
+    max-wait: 25s
+    wait-recheck: 2s
   storage:
     # Leave the endpoint empty to use AWS S3 in the configured region.
     endpoint: ${FINANCE_S3_ENDPOINT:}

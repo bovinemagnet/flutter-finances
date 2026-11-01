@@ -538,6 +538,26 @@ void main() {
       expect(b.store.openReviewItems(), isEmpty);
     });
 
+    test('NFR 12: an unsupported schema keeps changes and asks for an '
+        'update', () async {
+      await bothSynced();
+      server.supportedSchemaVersion = 0;
+      await b.store.upsertEntity('goal', 'g7', {'id': 'g7', 'name': 'Bike'});
+      await expectLater(
+        b.client.push(),
+        throwsA(isA<SyncUpdateRequiredException>()),
+      );
+      expect(b.store.openReviewItems(), isEmpty);
+      expect(b.store.entity('goal', 'g7')!.json['name'], 'Bike');
+      expect(b.store.pendingCommandCount, 1);
+      expect(server.entity('goal', 'g7'), isNull);
+
+      server.supportedSchemaVersion = 1;
+      await b.sync();
+      expect(b.store.pendingCommandCount, 0);
+      expect(server.entity('goal', 'g7')!.data['name'], 'Bike');
+    });
+
     test('later edits of a conflicting entity are held with it', () async {
       await bothSynced();
       await a.store.updateAccount(a.store.account('card')!.copyWith(name: 'A'));

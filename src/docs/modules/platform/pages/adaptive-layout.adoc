@@ -40,7 +40,7 @@ Each destination appears once. A hint (Ctrl 1 to Ctrl 5) is shown beside the fiv
 
 == Overview dashboard
 
-The Overview page adapts to the width of its content rather than the window. Below 960 logical pixels (`overviewDashboardWidth` in `apps/finance_app/lib/screens/pages/overview_page.dart`) it is a single column: the "Available until payday" card, figure tiles, Your money, Coming up and Needs attention. Wider content shows more figure tiles (spent this period, and owed on cards and loans) and a two-column dashboard that adds a spending pace chart and recent transactions. The chart compares cumulative posted spending through the budget period with an even daily pace of the period's category budget. It is presentation only: the budget is still evaluated by the budget rules.
+The Overview page adapts to the width of its content rather than the window. Below 960 logical pixels (`overviewDashboardWidth` in `apps/finance_app/lib/screens/pages/overview_page.dart`) it is a single column: the "Available until payday" card, figure tiles, Your money, Coming up and Needs attention. Wider content shows more figure tiles (spent this period, and owed on cards and loans) and a two-column dashboard that adds a spending pace chart and recent transactions. The chart compares cumulative posted spending through the budget period with an even daily pace of the period's category budget. It is presentation only: the budget is still evaluated by the budget rules. Needs attention shows at most five insights; when there are more, a "Show all N" action opens a "Needs attention" screen that builds the full list lazily (`ListView.builder`), so a long list never slows the Overview.
 
 == Keyboard shortcuts
 

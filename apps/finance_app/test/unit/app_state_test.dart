@@ -172,6 +172,23 @@ void main() {
   });
 
   test(
+    'insights are worked out once until the state changes (NFR 02)',
+    () async {
+      await onboard();
+      final first = state.insights();
+      expect(state.insights(), same(first));
+      expect(state.insights(receiptJournalIds: {'j1'}), isNot(same(first)));
+      final withReceipt = state.insights(receiptJournalIds: {'j1'});
+      expect(state.insights(receiptJournalIds: {'j1'}), same(withReceipt));
+      state.refresh();
+      expect(
+        state.insights(receiptJournalIds: {'j1'}),
+        isNot(same(withReceipt)),
+      );
+    },
+  );
+
+  test(
     'rules recategorise only entries the user did not choose, with undo',
     () async {
       await onboard();

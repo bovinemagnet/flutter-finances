@@ -30,6 +30,16 @@ class WorkspaceMergeRefusedException implements Exception {
       'merged automatically. Restore or start a new workspace instead';
 }
 
+/// The server does not support this client's command schema (NFR 12).
+/// Unsent changes stay on the device and are sent again once the app or the
+/// sync service is updated.
+class SyncUpdateRequiredException implements Exception {
+  @override
+  String toString() =>
+      'Syncing needs a newer version of the app or the sync service; '
+      'unsent changes are kept on this device';
+}
+
 class StalePreviewException implements Exception {
   @override
   String toString() => 'The workspace changed since the preview; preview again';
@@ -99,6 +109,26 @@ class PushResult {
   final int accepted;
   final int conflicts;
   final int rejected;
+}
+
+/// What a [SyncClient.waitForChanges] call found (NFR 05).
+@immutable
+class WaitResult {
+  const WaitResult({
+    required this.supported,
+    this.changes = 0,
+    this.needsPull = false,
+  });
+
+  /// False when the server ignored `wait` (an older release), so the caller
+  /// should fall back to periodic polling.
+  final bool supported;
+
+  /// Change records applied from the waited page.
+  final int changes;
+
+  /// More changes are waiting, or the cursor expired: run a full pull.
+  final bool needsPull;
 }
 
 @immutable
@@ -235,6 +265,53 @@ class SyncClient {
     return _pull();
   });
 
+  /// Holds a change-feed request open until something changes or [wait]
+  /// ends (NFR 05). The request runs outside the sync lock so pushes and
+  /// pulls are not blocked; only applying the page takes the lock, and the
+  /// page is dropped if the cursor moved meanwhile.
+  Future<WaitResult> waitForChanges({
+    Duration wait = const Duration(seconds: 25),
+  }) async {
+    _requireSynced();
+    if (engine.rebuild != null) {
+      return const WaitResult(supported: true, needsPull: true);
+    }
+    final cursor = _ctx.syncValue(SyncKeys.cursor) ?? '';
+    final response = await transport.send(
+      () async => http.Request(
+        'GET',
+        transport.resolve('/v1/sync/changes', {
+          'cursor': cursor,
+          'limit': '$pageSize',
+          'wait': '${wait.inSeconds}',
+        }),
+      )..headers.addAll(await transport.headers()),
+      acceptStatus: (s) => s == 410,
+    );
+    if (response.statusCode == 410) {
+      return const WaitResult(supported: true, needsPull: true);
+    }
+    final json = (jsonDecode(response.body) as Map).cast<String, Object?>();
+    if (json['waited'] != true) return const WaitResult(supported: false);
+    return _serial(() async {
+      // A pull that ran meanwhile may have started a rebuild without moving
+      // the cursor.
+      if (engine.rebuild != null) {
+        return const WaitResult(supported: true, needsPull: true);
+      }
+      if ((_ctx.syncValue(SyncKeys.cursor) ?? '') != cursor) {
+        return const WaitResult(supported: true);
+      }
+      final changes = _records(json['changes']);
+      engine.applyChanges(changes, json['cursor'] as String);
+      return WaitResult(
+        supported: true,
+        changes: changes.length,
+        needsPull: json['hasMore'] == true,
+      );
+    });
+  }
+
   Future<UploadSummary> uploadAssets({
     bool meteredConnection = false,
     void Function(UploadProgress progress)? onProgress,
@@ -278,6 +355,7 @@ class SyncClient {
         ..accepted += t.accepted
         ..conflicts += t.conflicts
         ..rejected += t.rejected;
+      if (t.updateRequired > 0) throw SyncUpdateRequiredException();
     }
     return PushResult(
       sent: sent,

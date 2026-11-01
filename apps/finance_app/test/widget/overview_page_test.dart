@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:finance_app/app/app_scope.dart';
 import 'package:finance_app/app/theme.dart';
 import 'package:finance_app/data/app_state.dart';
+import 'package:finance_app/features/overview/insight_list.dart';
 import 'package:finance_app/screens/pages/overview_page.dart';
 import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
@@ -153,5 +154,41 @@ void main() {
     expect(find.text('RECENT TRANSACTIONS'), findsOneWidget);
     expect(find.text('Fresh Grocer'), findsOneWidget);
     expect(find.text('AVAILABLE UNTIL PAYDAY'), findsOneWidget);
+  });
+
+  testWidgets('a long list of insights shows five and opens the rest lazily '
+      '(NFR 02, NFR 09)', (tester) async {
+    await seed(tester);
+    await tester.runAsync(() async {
+      for (var i = 0; i < 30; i++) {
+        await state.post(
+          TransactionDraft(
+            type: TransactionType.expense,
+            accountId: 'bank',
+            amount: Money(10000, Currency.aud),
+            effectiveDate: LocalDate(2026, 10, 2),
+            payee: 'Hardware $i',
+            splits: [Split('groceries', Money(10000, Currency.aud))],
+          ),
+        );
+      }
+    });
+    final count = state.insights().length;
+    expect(count, greaterThan(30));
+    await pumpAt(tester, const Size(390, 2400));
+    expect(find.byType(InsightCard), findsNWidgets(5));
+
+    await tester.ensureVisible(find.text('Show all $count'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show all $count'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, 'Needs attention'), findsOneWidget);
+    final shown = find.byType(InsightCard).evaluate().length;
+    expect(shown, greaterThan(5));
+    expect(shown, lessThan(count));
+
+    await tester.tap(find.text('Dismiss').first);
+    await tester.pumpAndSettle();
+    expect(state.insights(), hasLength(count - 1));
   });
 }

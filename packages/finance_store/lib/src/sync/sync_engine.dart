@@ -86,6 +86,13 @@ class SyncEngine {
               fields: result.conflict?.fields ?? const [],
             );
             tally.conflicts++;
+          case CommandStatus.validationFailed
+              when result.errors.contains(unsupportedSchemaVersion):
+            // The command is valid but this client and the server disagree
+            // on its schema (NFR 12). Rejections are not recorded by the
+            // server, so the change stays pending and is sent again after
+            // the app or the server is updated.
+            tally.updateRequired++;
           case CommandStatus.validationFailed:
           case CommandStatus.permissionDenied:
             _hold(
@@ -373,10 +380,16 @@ class SyncEngine {
   });
 }
 
+/// The server's validation code for a command schema it does not support.
+const unsupportedSchemaVersion = 'UNSUPPORTED_SCHEMA_VERSION';
+
 class PushTally {
   int accepted = 0;
   int conflicts = 0;
   int rejected = 0;
+
+  /// Commands left pending because the server does not support their schema.
+  int updateRequired = 0;
 }
 
 /// Progress of a snapshot rebuild, persisted in `sync_state`.

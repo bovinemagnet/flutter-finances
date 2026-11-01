@@ -46,6 +46,8 @@ Each package under `com.paulsnow.finance.server` is a Spring Modulith applicatio
 
 Cursors are opaque (`CursorCodec`, version 1). Tombstones are kept for the configured horizon; a cursor older than that gets HTTP 410 and the client rebuilds from the paged snapshot.
 
+The change feed can also hold a request open (`wait`, up to `finance.sync.max-wait`) until a change is recorded after the cursor, without a transaction or database connection; see xref:sync:protocol.adoc[].
+
 == Job worker
 
 Background work uses the `job` table in PostgreSQL. `JobRunner` claims due jobs with `FOR UPDATE SKIP LOCKED`, so several workers never run the same job, marks them `running` with a lease, and records `succeeded` or `failed`. A job whose lease has expired (the worker died) is claimed again. A failure retries with exponential backoff, `base-backoff` multiplied by two to the power of the attempt, up to `max-attempts`; a `PermanentJobFailure` (or a missing handler) fails at once. Error text is redacted and truncated to 500 characters.
@@ -99,6 +101,8 @@ Configuration is in `server/app/src/main/resources/application.yml` (production-
 | `finance.sync.tombstone-horizon` | `90d` | Tombstones are retained this long; older cursors get 410
 | `finance.sync.max-commands-per-batch` | `500` | Command batch limit
 | `finance.sync.max-page-size` | `500` | Change feed and snapshot page limit
+| `finance.sync.max-wait` | `25s` | Longest a change feed request may wait for new changes (`wait` parameter)
+| `finance.sync.wait-recheck` | `2s` | How often a waiting request re-checks for changes written by another instance or the worker
 | `finance.storage.create-bucket` | `false` (`true` in `local`) | Create the bucket on start-up
 | `finance.storage.upload-url-ttl` | `15m` | Presigned upload URL lifetime
 | `finance.storage.download-url-ttl` | `5m` | Presigned download URL lifetime
