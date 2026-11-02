@@ -124,6 +124,59 @@ void main() {
       db.close();
     });
 
+    // NFR 11: every version an installed app may still be on upgrades to
+    // the latest, offering a backup first and keeping its data.
+    for (var from = 1; from < latestSchemaVersion; from++) {
+      test('upgrades a version $from database to the latest', () {
+        var db = openEncryptedDatabase(path, key.databaseKeyHex);
+        migrate(db, financeMigrations.take(from).toList());
+        expect(userVersion(db), from);
+        db.execute('''
+          INSERT INTO accounts (id, name, type, include_in_budget,
+            include_in_forecast, include_in_net_worth, archived, data_source,
+            updated_at)
+          VALUES ('bank', 'Everyday', 'transaction', 1, 1, 1, 0, 'manual',
+            '2026-07-01T00:00:00.000Z');
+          INSERT INTO journals (id, type, status, effective_date, entered_at,
+            currency, account_id, amount_minor, payee, notes, tags_json,
+            updated_at)
+          VALUES ('j1', 'expense', 'posted', '2026-07-01',
+            '2026-07-01T00:00:00.000Z', 'AUD', 'bank', 1000, 'Corner Grocer',
+            NULL, '[]', '2026-07-01T00:00:00.000Z');
+          INSERT INTO postings VALUES ('j1', 0, 'groceries', 1000, 'posted',
+            '2026-07-01');
+          INSERT INTO postings VALUES ('j1', 1, 'bank', -1000, 'posted',
+            '2026-07-01');
+          INSERT INTO entities (entity_type, id, json, updated_at)
+          VALUES ('budgetPlan', 'b1', '{"name":"Household"}',
+            '2026-07-01T00:00:00.000Z');
+          INSERT INTO sync_state (key, value) VALUES ('cursor', 'c-7');
+        ''');
+        db.close();
+
+        db = openEncryptedDatabase(path, key.databaseKeyHex);
+        final backups = <int>[];
+        migrate(db, financeMigrations, beforeUpgrade: backups.add);
+        expect(backups, [from]);
+        expect(userVersion(db), latestSchemaVersion);
+        expect(db.select('SELECT id FROM accounts').single['id'], 'bank');
+        expect(db.select('SELECT id FROM journals').single['id'], 'j1');
+        expect(
+          db.select('SELECT SUM(amount_minor) s FROM postings').first['s'],
+          0,
+        );
+        expect(db.select('SELECT id FROM entities').single['id'], 'b1');
+        expect(
+          db
+              .select("SELECT value FROM sync_state WHERE key = 'cursor'")
+              .first
+              .columnAt(0),
+          'c-7',
+        );
+        db.close();
+      });
+    }
+
     test('version 4 adds account sharing with private as the default', () {
       var db = openEncryptedDatabase(path, key.databaseKeyHex);
       migrate(db, financeMigrations.take(3).toList());
