@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:finance_app/app/app_scope.dart';
 import 'package:finance_app/app/appearance.dart';
 import 'package:finance_app/data/app_state.dart';
+import 'package:finance_app/platform/capabilities.dart';
+import 'package:finance_app/platform/text_recognition.dart';
 import 'package:finance_app/screens/pages/settings_page.dart';
 import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
@@ -19,15 +21,19 @@ const _fastKdf = Argon2idParameters(
 );
 
 /// Test services whose workspace is [dir], which the page reads.
-AppServices _servicesFor(Directory dir) {
+AppServices _servicesFor(
+  Directory dir, {
+  PlatformCapabilities? capabilities,
+  TextRecogniser? textRecogniser,
+}) {
   final base = testServices();
   return AppServices(
-    capabilities: base.capabilities,
+    capabilities: capabilities ?? base.capabilities,
     scanner: base.scanner,
     fileImporter: base.fileImporter,
     shareInbox: base.shareInbox,
     notifications: base.notifications,
-    textRecogniser: base.textRecogniser,
+    textRecogniser: textRecogniser ?? base.textRecogniser,
     workspaceDirectory: dir,
     authenticator: base.authenticator,
   );
@@ -44,7 +50,11 @@ void main() {
     await dir.delete(recursive: true);
   });
 
-  Future<void> pump(WidgetTester tester, Appearance? appearance) async {
+  Future<void> pump(
+    WidgetTester tester,
+    Appearance? appearance, {
+    AppServices Function(Directory dir)? services,
+  }) async {
     await tester.runAsync(() async {
       final store = await FinanceStore.create(
         dir,
@@ -58,7 +68,7 @@ void main() {
     await tester.pumpWidget(
       AppScope(
         state: state,
-        services: _servicesFor(dir),
+        services: (services ?? _servicesFor)(dir),
         appearance: appearance,
         child: const MaterialApp(home: Scaffold(body: SettingsPage())),
       ),
@@ -80,5 +90,26 @@ void main() {
   ) async {
     await pump(tester, null);
     expect(find.text('Appearance'), findsNothing);
+  });
+
+  testWidgets('without Tesseract the desktop says what to install', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      null,
+      services: (dir) => _servicesFor(
+        dir,
+        capabilities: PlatformCapabilities.forPlatform(TargetPlatform.linux),
+        textRecogniser: TesseractTextRecogniser(),
+      ),
+    );
+    expect(
+      find.text(
+        'Reading text needs Tesseract with English language data installed; '
+        'receipts are kept and details entered by hand',
+      ),
+      findsOneWidget,
+    );
   });
 }

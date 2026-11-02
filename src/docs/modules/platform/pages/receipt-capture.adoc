@@ -77,11 +77,11 @@ After saving, `saveCapturedReceipt` asks the configured `TextRecogniser` whether
 | Engine | Used when | Notes
 
 | `MlKitTextRecogniser` | Android and iOS | ML Kit Text Recognition v2, Latin script; reported as engine `mlkit-text-v2`
-| `TesseractTextRecogniser` | Desktop, when Tesseract is installed with English data | Runs the `tesseract` command line with `-l eng --psm 4`; reported as engine `tesseract` with its version string
-| `UnavailableTextRecogniser` | No engine on the device | Receipts are kept and the fields are entered by hand
+| `TesseractTextRecogniser` | Always on desktop | Checks for itself whether `tesseract` is installed with English data; runs the `tesseract` command line with `-l eng --psm 4`; reported as engine `tesseract` with its version string
+| `UnavailableTextRecogniser` | Mobile, when on-device OCR is not available | Receipts are kept and the fields are entered by hand
 |===
 
-On desktop, `PlatformCapabilities.detect` runs `tesseract --list-langs` at start-up. The on-device OCR capability is true only if the output includes `eng`. If Tesseract is not installed, or has no English data, the receipt is saved without reading and the person enters the details.
+On desktop, `PlatformCapabilities.detect` runs `tesseract --list-langs` at start-up. The on-device OCR capability is true only if the output includes `eng`. If Tesseract is not installed, or has no English data, the receipt is saved without reading and the person enters the details. The app says so rather than failing silently: at capture it shows "Receipt saved on this device" followed by the recogniser's `unavailableMessage`, the review screen shows a card with the message and "Enter the details by hand.", and Settings, under "Reading receipt text", shows the message too. On desktop the message names what to install: "Reading text needs Tesseract with English language data installed".
 
 Both engines produce an `OcrResult`, which the shared parser in `finance_core` turns into suggested fields. Extraction behaves as follows:
 

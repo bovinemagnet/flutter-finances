@@ -21,6 +21,9 @@ const _fastKdf = Argon2idParameters(
 );
 
 class _FakeRecogniser implements TextRecogniser {
+  @override
+  String get unavailableMessage => 'unavailable';
+
   _FakeRecogniser(this.text);
   final String? text;
   @override
@@ -392,6 +395,9 @@ void main() {
 }
 
 class _PerPageRecogniser implements TextRecogniser {
+  @override
+  String get unavailableMessage => 'unavailable';
+
   _PerPageRecogniser(this.next);
   final String Function() next;
   @override

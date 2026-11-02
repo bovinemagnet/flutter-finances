@@ -50,7 +50,7 @@ Inter, Space Grotesk and JetBrains Mono are bundled under `assets/fonts` and nev
 
 . Detects `PlatformCapabilities`.
 . Resolves the workspace directory as `<application support directory>/workspace`.
-. Builds `AppServices`: a `FallbackReceiptScanner` (native document scanner, falling back to a basic camera or library picker), `PlatformFileImporter`, a `PluginShareInbox` when the platform has a share target (otherwise an empty one), `LocalNotifications`, and a text recogniser (ML Kit on mobile, Tesseract on desktop, or an unavailable stub when no on-device OCR exists).
+. Builds `AppServices`: a `FallbackReceiptScanner` (native document scanner, falling back to a basic camera or library picker), `PlatformFileImporter`, a `PluginShareInbox` when the platform has a share target (otherwise an empty one), `LocalNotifications`, and a text recogniser (Tesseract always on desktop, which reports for itself whether it is installed; ML Kit on mobile when on-device OCR is available; otherwise an unavailable stub).
 . Creates a `WorkspaceGate` over the directory and `PlatformSecureKeyStore`.
 . When the workspace is ready, creates a `SyncController`, starts it, and on Android and iOS registers the hourly Workmanager job for a synced workspace (see <<sync-in-the-client>>).
 
