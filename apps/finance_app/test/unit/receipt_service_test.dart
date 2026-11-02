@@ -110,6 +110,29 @@ void main() {
     },
   );
 
+  // NFR 04 allows 5 s for a clean single page, recognition included. The
+  // engine runs on the device and cannot be timed here; everything after
+  // it (parsing, items, saving the proposal, indexing) must leave most of
+  // that time to the engine.
+  test('NFR 04: p95 proposal after recognition is under 1 s', () async {
+    final recogniser = _FakeRecogniser(_receiptText);
+    final times = <Duration>[];
+    for (var i = 0; i < 20; i++) {
+      final receipt = await receipts.capture([
+        CapturedFile(photo(), source: CaptureSource.camera),
+      ]);
+      final sw = Stopwatch()..start();
+      final read = await receipts.extract(receipt.id, recogniser);
+      times.add(sw.elapsed);
+      expect(read.extractionState, ExtractionState.needsReview);
+    }
+    times.sort();
+    final p95 = times[(times.length * 95 / 100).ceil() - 1];
+    // ignore: avoid_print
+    print('NFR 04 p95 proposal after recognition: ${p95.inMilliseconds} ms');
+    expect(p95, lessThan(const Duration(seconds: 1)));
+  });
+
   test('unsupported files are rejected with an actionable message', () async {
     await expectLater(
       receipts.capture([CapturedFile(Uint8List.fromList('hello'.codeUnits))]),
