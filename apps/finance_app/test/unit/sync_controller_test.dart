@@ -493,6 +493,8 @@ void main() {
         expect(firstCommand, greaterThanOrEqualTo(0));
         expect(firstCommand, lessThan(firstObject));
 
+        // Let the upload finish writing its state before the store closes.
+        await until(() => a.store.vault.pendingUploads().isEmpty);
         syncA.dispose();
         await a.store.close();
       },

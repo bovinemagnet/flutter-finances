@@ -20,6 +20,11 @@ class TextRecognitionException implements Exception {
 /// parser that turns lines into fields is shared domain code.
 abstract interface class TextRecogniser {
   Future<bool> isAvailable();
+
+  /// What the user is told when [isAvailable] is false (NFR 06), without a
+  /// full stop so it can lead into what to do instead.
+  String get unavailableMessage;
+
   Future<OcrResult> recognise(List<Uint8List> images);
 }
 
@@ -36,6 +41,9 @@ Future<File> _tempImage(Uint8List bytes, int index) async {
 class MlKitTextRecogniser implements TextRecogniser {
   @override
   Future<bool> isAvailable() async => true;
+
+  @override
+  String get unavailableMessage => _notOnThisDevice;
 
   @override
   Future<OcrResult> recognise(List<Uint8List> images) async {
@@ -91,6 +99,10 @@ class TesseractTextRecogniser implements TextRecogniser {
       (await tesseractLanguages()).contains('eng');
 
   @override
+  String get unavailableMessage =>
+      'Reading text needs Tesseract with English language data installed';
+
+  @override
   Future<OcrResult> recognise(List<Uint8List> images) async {
     final version = await Process.run('tesseract', ['--version']);
     final buffer = StringBuffer();
@@ -127,8 +139,13 @@ class UnavailableTextRecogniser implements TextRecogniser {
   Future<bool> isAvailable() async => false;
 
   @override
+  String get unavailableMessage => _notOnThisDevice;
+
+  @override
   Future<OcrResult> recognise(List<Uint8List> images) async =>
       throw const TextRecognitionException(
-        'Text recognition is not available on this device; enter the details',
+        '$_notOnThisDevice; enter the details',
       );
 }
+
+const _notOnThisDevice = 'Reading text is not available on this device';

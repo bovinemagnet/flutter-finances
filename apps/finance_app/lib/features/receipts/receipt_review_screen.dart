@@ -54,6 +54,7 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
   var _cashConfirmed = false;
   var _initialised = false;
   String? _error;
+  Future<bool>? _recognitionAvailable;
 
   @override
   void dispose() {
@@ -148,10 +149,27 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
     final pages = service.pagesFor(receipt.id);
     final links = service.linksFor(receipt.id);
 
+    final recogniser = AppScope.servicesOf(context).textRecogniser;
+    _recognitionAvailable ??= recogniser.isAvailable();
+
     final preview = _PagePreview(pages: pages, read: service.readPage);
     final form = ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // NFR 06: an unread receipt says why when no engine is installed.
+        if (receipt.extractionState == ExtractionState.captured)
+          FutureBuilder(
+            future: _recognitionAvailable,
+            builder: (context, available) => available.data == false
+                ? Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.info_outline),
+                      title: Text(recogniser.unavailableMessage),
+                      subtitle: const Text('Enter the details by hand.'),
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
         if (receipt.extractionState == ExtractionState.extractionFailed)
           Card(
             child: ListTile(

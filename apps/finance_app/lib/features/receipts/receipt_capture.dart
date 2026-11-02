@@ -63,24 +63,32 @@ Future<void> saveCapturedReceipt(
   final messenger = ScaffoldMessenger.of(context);
   try {
     final receipt = await state.receipts.capture(files);
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Receipt saved on this device')),
-    );
-    if (await services.textRecogniser.isAvailable()) {
-      final read = await state.receipts.extract(
-        receipt.id,
-        services.textRecogniser,
-      );
+    final recogniser = services.textRecogniser;
+    if (!await recogniser.isAvailable()) {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            read.latestExtractionId == null
-                ? 'The receipt could not be read; enter the details when reviewing'
-                : 'Receipt read; ready to review',
+            'Receipt saved on this device. '
+            '${recogniser.unavailableMessage}; '
+            'enter the details when reviewing',
           ),
         ),
       );
+      return;
     }
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Receipt saved on this device')),
+    );
+    final read = await state.receipts.extract(receipt.id, recogniser);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          read.latestExtractionId == null
+              ? 'The receipt could not be read; enter the details when reviewing'
+              : 'Receipt read; ready to review',
+        ),
+      ),
+    );
   } on StorageWriteException catch (e) {
     messenger.showSnackBar(
       SnackBar(

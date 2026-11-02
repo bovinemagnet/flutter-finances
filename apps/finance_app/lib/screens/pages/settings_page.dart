@@ -254,7 +254,8 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
-    final capabilities = AppScope.servicesOf(context).capabilities;
+    final services = AppScope.servicesOf(context);
+    final capabilities = services.capabilities;
     final settings = state.settings;
     final buffer =
         state.store
@@ -420,7 +421,10 @@ class SettingsPage extends StatelessWidget {
         ListTile(
           title: const Text('Reading receipt text'),
           subtitle: Text(
-            capabilities.onDeviceOcr ? 'Available on this device' : 'Not available on this device; receipts are kept and details entered by hand',
+            capabilities.onDeviceOcr
+                ? 'Available on this device'
+                : '${services.textRecogniser.unavailableMessage}; '
+                      'receipts are kept and details entered by hand',
           ),
         ),
       ],

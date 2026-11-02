@@ -53,11 +53,13 @@ Future<void> main() async {
         ? PluginShareInbox()
         : EmptyShareInbox(),
     notifications: LocalNotifications(),
-    textRecogniser: !capabilities.onDeviceOcr
-        ? UnavailableTextRecogniser()
-        : capabilities.isDesktop
+    // On desktop Tesseract reports for itself whether it is installed, and
+    // says what to install when it is not (NFR 06).
+    textRecogniser: capabilities.isDesktop
         ? TesseractTextRecogniser()
-        : MlKitTextRecogniser(),
+        : capabilities.onDeviceOcr
+        ? MlKitTextRecogniser()
+        : UnavailableTextRecogniser(),
     workspaceDirectory: workspace,
     authenticator: LocalDeviceAuthenticator(),
   );
