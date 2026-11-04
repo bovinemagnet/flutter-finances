@@ -75,4 +75,10 @@ void main() {
     expect(plan.mode, BudgetMode.zeroBased);
     expect(plan.versions.single.allocations, isNotEmpty);
   });
+
+  test('choosing sync still starts local, so sync can be turned on later', () {
+    final model = OnboardingModel(today: LocalDate(2026, 10, 19))
+      ..syncMode = SyncMode.synced;
+    expect(model.build().syncMode, SyncMode.local);
+  });
 }

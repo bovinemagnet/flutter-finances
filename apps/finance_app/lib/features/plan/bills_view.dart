@@ -1,6 +1,7 @@
 import 'package:finance_core/finance_core.dart';
 import 'package:flutter/material.dart';
 
+import '../../app/page_insets.dart';
 import '../../format/formatters.dart';
 
 const occurrenceStatusLabels = {
@@ -42,7 +43,12 @@ class BillsView extends StatelessWidget {
       ..sort((a, b) => a.occurrence.dueDate.compareTo(b.occurrence.dueDate));
     final theme = Theme.of(context);
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        listEndPadding(context, hasPageAction: true),
+      ),
       children: [
         for (final state in sorted)
           Card(

@@ -1,6 +1,7 @@
 import 'package:finance_core/finance_core.dart';
 import 'package:flutter/material.dart';
 
+import '../../app/page_insets.dart';
 import '../../format/formatters.dart';
 
 const certaintyLabels = {
@@ -32,7 +33,12 @@ class _ForecastViewState extends State<ForecastView> {
     final theme = Theme.of(context);
     final days = forecast.days.where((d) => d.lines.isNotEmpty).toList();
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        listEndPadding(context, hasPageAction: true),
+      ),
       children: [
         Text(
           'Cash forecast ${formatDate(forecast.start)} to ${formatDate(forecast.end)}',

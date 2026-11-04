@@ -2,13 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'breakpoints.dart';
+import 'page_insets.dart';
 import 'section_label.dart';
 import 'theme.dart';
 
 /// Primary destinations shown on every surface.
 enum Destination {
   overview('Overview', Icons.dashboard_outlined, Icons.dashboard),
-  transactions('Transactions', Icons.receipt_long_outlined, Icons.receipt_long),
+  transactions(
+    'Transactions',
+    Icons.receipt_long_outlined,
+    Icons.receipt_long,
+    shortLabel: 'Entries',
+  ),
   budget('Budget', Icons.pie_chart_outline, Icons.pie_chart),
   receipts('Receipts', Icons.document_scanner_outlined, Icons.document_scanner),
   plan('Plan', Icons.event_note_outlined, Icons.event_note),
@@ -26,6 +32,7 @@ enum Destination {
     this.icon,
     this.selectedIcon, {
     this.primary = true,
+    this.shortLabel,
   });
 
   final String label;
@@ -35,6 +42,10 @@ enum Destination {
   /// Secondary destinations are reached from Overview on small screens and
   /// from the sidebar on desktop.
   final bool primary;
+
+  /// Replaces [label] in the bottom navigation bar, where a longer word would
+  /// wrap on a phone.
+  final String? shortLabel;
 
   static List<Destination> get primaries =>
       values.where((d) => d.primary).toList();
@@ -125,15 +136,21 @@ class AdaptiveShell extends StatelessWidget {
     );
   }
 
-  PreferredSizeWidget _appBar(BuildContext context) =>
-      AppBar(title: Text(selected.label), actions: [?syncStatus]);
+  PreferredSizeWidget _appBar(BuildContext context, {bool canGoBack = false}) =>
+      AppBar(
+        leading: canGoBack
+            ? BackButton(onPressed: () => onSelect(Destination.overview))
+            : null,
+        title: Text(selected.label),
+        actions: [?syncStatus],
+      );
 
   Widget _compact(BuildContext context) {
     final primaries = Destination.primaries;
     final index = primaries.indexOf(selected);
     return Scaffold(
-      appBar: _appBar(context),
-      body: SafeArea(child: body),
+      appBar: _appBar(context, canGoBack: !selected.primary),
+      body: SafeArea(child: CompactActionsInset(child: body)),
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -156,7 +173,7 @@ class AdaptiveShell extends StatelessWidget {
             NavigationDestination(
               icon: Icon(d.icon),
               selectedIcon: Icon(d.selectedIcon),
-              label: d.label,
+              label: d.shortLabel ?? d.label,
             ),
         ],
       ),
@@ -168,7 +185,7 @@ class AdaptiveShell extends StatelessWidget {
     final items = Destination.primaries;
     final index = items.indexOf(selected);
     return Scaffold(
-      appBar: _appBar(context),
+      appBar: _appBar(context, canGoBack: !selected.primary),
       body: SafeArea(
         child: Row(
           children: [

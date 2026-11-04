@@ -21,6 +21,12 @@ The breakpoints are design starting points rather than device classifications. C
 
 Primary destinations are Overview, Transactions, Budget, Receipts and Plan. Reports, Accounts and Settings are secondary: reached from Overview on compact widths and from the sidebar on expanded widths. Medium widths show only the primary destinations in the rail.
 
+On the compact bottom navigation bar the Transactions destination is labelled "Entries", because the longer word wraps on a phone. Its page title is still "Transactions".
+
+System back returns to Overview from any other destination, and only leaves the app from Overview. On compact and medium widths, secondary destinations also show a back arrow in the app bar that returns to Overview.
+
+On compact widths the add and scan buttons float over every page. A page's own floating button, such as "Add account", "Add bill or income" or "New goal", sits above them, and scrolling views end clear of them.
+
 A single global add action offers expense, income, transfer and receipt capture.
 
 == Sidebar

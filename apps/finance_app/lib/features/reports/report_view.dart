@@ -2,6 +2,7 @@ import 'package:finance_core/finance_core.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/breakpoints.dart';
+import '../../app/page_insets.dart';
 import '../../format/formatters.dart';
 
 /// A report as a bar chart with an accessible table beside it (REP 01).
@@ -59,7 +60,7 @@ class ReportView extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(report.title, style: Theme.of(context).textTheme.titleLarge),
-        if (report.range != null) Text(report.range!.label),
+        if (report.range != null) Text(formatDateRange(report.range!)),
         if (report.asOf != null) Text('As at ${formatDate(report.asOf!)}'),
         if (report.includesUnsyncedChanges)
           const Chip(
@@ -69,11 +70,13 @@ class ReportView extends StatelessWidget {
       ],
     );
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, listEndPadding(context)),
       children: [
         header,
         const SizedBox(height: 16),
-        if (wide)
+        if (report.rows.isEmpty)
+          const Text('Nothing to report yet')
+        else if (wide)
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

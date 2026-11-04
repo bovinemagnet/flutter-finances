@@ -1,6 +1,7 @@
 import 'package:finance_core/finance_core.dart';
 import 'package:flutter/material.dart';
 
+import '../../app/page_insets.dart';
 import '../../format/formatters.dart';
 
 /// Budget and actual amounts together for one period (BUD 01, BUD 03).
@@ -28,7 +29,7 @@ class BudgetView extends StatelessWidget {
       grouped.putIfAbsent(line.groupId, () => []).add(line);
     }
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, listEndPadding(context)),
       children: [
         Text(
           '${formatDate(period.start)} to ${formatDate(period.end)}',

@@ -10,6 +10,7 @@ import '../db/database.dart';
 import '../db/migrations.dart';
 import '../db/schema.dart';
 import '../db/search_index.dart';
+import '../sync/sync_engine.dart' show SyncKeys;
 import '../vault/receipt_vault.dart';
 import 'command_effects.dart';
 import 'entity_ref.dart';
@@ -837,6 +838,27 @@ class FinanceStore {
   Set<EntityRef> unsyncedEntities() => _ctx.outbox.pendingKeys();
 
   int get pendingCommandCount => _ctx.outbox.pendingCount;
+
+  /// Returns a workspace marked as synced to local mode if it has never
+  /// exchanged anything with a server, and reports whether it did. Turning
+  /// sync on is refused for a synced workspace, so one that was marked before
+  /// connecting could otherwise never connect. Only the mode changes: pending
+  /// commands are kept, and turning sync on addresses them to the server.
+  Future<bool> revertNeverConnectedSync() async {
+    if (settings.syncMode != SyncMode.synced) return false;
+    for (final key in const [
+      SyncKeys.cursor,
+      SyncKeys.lastPullAt,
+      SyncKeys.lastPushAt,
+    ]) {
+      if (_ctx.syncValue(key) != null) return false;
+    }
+    _ctx.write(() {
+      _ctx.db.execute("UPDATE workspace SET sync_mode = 'local'");
+    });
+    _ctx.reloadSettings();
+    return true;
+  }
 
   /// The newest outbox sequence number. A sync never lowers it (undo can),
   /// so a rise shows that something was saved even when a sync emptied the

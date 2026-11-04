@@ -1,6 +1,7 @@
 import 'package:finance_core/finance_core.dart';
 import 'package:flutter/material.dart';
 
+import '../../app/breakpoints.dart';
 import '../../format/formatters.dart';
 import '../../widgets/amount_field.dart';
 import 'transaction_form_model.dart';
@@ -100,6 +101,8 @@ class _TransactionFormState extends State<TransactionForm>
     final accounts = model.availableAccounts;
     final categories = model.availableCategories;
     final editingTypeLocked = model.editing != null;
+    final compact =
+        windowClassFor(MediaQuery.sizeOf(context).width) == WindowClass.compact;
 
     return Align(
       alignment: Alignment.topCenter,
@@ -108,13 +111,22 @@ class _TransactionFormState extends State<TransactionForm>
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // Four segments only fit on a phone without their icons.
             SegmentedButton<TransactionType>(
+              showSelectedIcon: !compact,
+              style: compact
+                  ? const ButtonStyle(
+                      padding: WidgetStatePropertyAll(
+                        EdgeInsets.symmetric(horizontal: 4),
+                      ),
+                    )
+                  : null,
               segments: [
                 for (final (type, label, icon) in _types)
                   ButtonSegment(
                     value: type,
                     label: Text(label),
-                    icon: Icon(icon),
+                    icon: compact ? null : Icon(icon),
                   ),
               ],
               selected: {model.type},
@@ -140,6 +152,9 @@ class _TransactionFormState extends State<TransactionForm>
               initialValue: model.accountId,
               decoration: InputDecoration(
                 labelText: model.isTransfer ? 'From account' : 'Account',
+                helperText: accounts.isEmpty
+                    ? 'Add an account first, in Accounts'
+                    : null,
                 errorText: errors[EntryField.account],
               ),
               items: [

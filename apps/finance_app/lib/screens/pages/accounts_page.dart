@@ -2,6 +2,7 @@ import 'package:finance_core/finance_core.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
+import '../../app/page_insets.dart';
 import '../../data/app_state.dart';
 import '../../features/accounts/account_editor.dart';
 import '../../features/accounts/holdings_screen.dart';
@@ -44,7 +45,18 @@ class AccountsPage extends StatelessWidget {
       ..sort((a, b) => a.name.compareTo(b.name));
     return Scaffold(
       body: ListView(
+        padding: EdgeInsets.only(
+          bottom: listEndPadding(context, base: 0, hasPageAction: true),
+        ),
         children: [
+          if (accounts.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'No accounts yet. Add your bank, cash and card accounts to '
+                'start recording entries.',
+              ),
+            ),
           if (accounts.any((a) => a.type.isLiability && !a.archived))
             ListTile(
               leading: const Icon(Icons.trending_down),
@@ -125,11 +137,14 @@ class AccountsPage extends StatelessWidget {
             ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'account',
-        onPressed: () => _edit(context, state),
-        icon: const Icon(Icons.add),
-        label: const Text('Add account'),
+      floatingActionButton: aboveCompactActions(
+        context,
+        FloatingActionButton.extended(
+          heroTag: 'account',
+          onPressed: () => _edit(context, state),
+          icon: const Icon(Icons.add),
+          label: const Text('Add account'),
+        ),
       ),
     );
   }
