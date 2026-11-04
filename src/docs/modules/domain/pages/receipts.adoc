@@ -200,7 +200,7 @@ A start scoring 4 or more is high confidence, 3 medium and 2 low. A continuation
 
 Consecutive pages form a `ReceiptPageGroup` with the weakest decision's confidence (at most medium when no page prints a total, `NO_TOTAL_FOUND`) and a merchant and date hint. A page that holds a total, a new merchant heading, items and another total is flagged `MULTIPLE_RECEIPTS_ON_PAGE`: separation stops at page level, so the group is marked `needsManualSplit`, its confidence is low and the user splits that page by hand. `isSingleReceipt` is true when the whole document looks like one receipt.
 
-In the application, "Suggest how to split" appears on a receipt with more than one page. It recognises each image page on the device (PDF pages are not read, and the button explains when text recognition is unavailable), then either says it looks like a single receipt or asks "Split into n receipts?" with each group's pages and a warning where a page holds more than one receipt. Only on confirmation does `applySeparation` split the pages into new receipts.
+In the application, "Suggest how to split" appears on a receipt with more than one page. It reads each page on the device (PDF pages by their own text where they have it, otherwise through text recognition, and the button explains when text recognition is unavailable), then either says it looks like a single receipt or asks "Split into n receipts?" with each group's pages and a warning where a page holds more than one receipt. Only on confirmation does `applySeparation` split the pages into new receipts.
 
 == Optional cloud text
 
