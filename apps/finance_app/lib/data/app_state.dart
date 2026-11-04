@@ -422,6 +422,40 @@ class AppState extends ChangeNotifier {
     refresh();
   }
 
+  /// The newest balance a statement reported for an account. It is an
+  /// observation kept beside the ledger: it never changes a balance, which is
+  /// always calculated from entries.
+  ({LocalDate date, Money balance})? balanceObservation(String accountId) {
+    final record = store.entity(
+      AppEntityTypes.balanceObservation,
+      ownedEntityId(AppEntityTypes.balanceObservation, accountId),
+    );
+    if (record == null || record.deleted) return null;
+    return (
+      date: LocalDate.parse(record.json['date'] as String),
+      balance: Money(record.json['balanceMinor'] as int, currency),
+    );
+  }
+
+  /// Records what a statement reported. An older statement does not replace a
+  /// newer one.
+  Future<void> saveBalanceObservation(
+    String accountId, {
+    required LocalDate date,
+    required Money balance,
+  }) async {
+    final existing = balanceObservation(accountId);
+    if (existing != null && existing.date > date) return;
+    final id = ownedEntityId(AppEntityTypes.balanceObservation, accountId);
+    await _put(AppEntityTypes.balanceObservation, id, {
+      'id': id,
+      'accountId': accountId,
+      'date': date.toString(),
+      'balanceMinor': balance.minor,
+    });
+    refresh();
+  }
+
   bool get appLockEnabled => _preferences['appLock'] == true;
 
   /// How receipt dates such as 03/04/2026 are read (OCR 04).

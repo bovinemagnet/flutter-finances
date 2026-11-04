@@ -20,6 +20,7 @@ abstract final class AppEntityTypes {
   static const holdingEvent = 'holdingEvent';
   static const securityPrice = 'securityPrice';
   static const inboundNoticeDismissal = 'inboundNoticeDismissal';
+  static const balanceObservation = 'balanceObservation';
 
   /// The workspace's single `appPreferences` entity. Synchronised entity
   /// ids must be UUIDs.

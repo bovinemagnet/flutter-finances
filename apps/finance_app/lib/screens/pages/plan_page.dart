@@ -19,6 +19,8 @@ class PlanPage extends StatefulWidget {
 }
 
 class _PlanPageState extends State<PlanPage> {
+  static const _forecastTabIndex = 2;
+
   LocalDate? _month;
 
   /// Hypothetical changes; they alter only the projection (PLAN 03).
@@ -381,21 +383,37 @@ class _PlanPageState extends State<PlanPage> {
                 Tab(text: 'Forecast'),
               ],
             ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  tooltip: 'Previous month',
-                  icon: const Icon(Icons.chevron_left),
-                  onPressed: () => setState(() => _month = month.addMonths(-1)),
-                ),
-                Text('${month.month.toString().padLeft(2, '0')}/${month.year}'),
-                IconButton(
-                  tooltip: 'Next month',
-                  icon: const Icon(Icons.chevron_right),
-                  onPressed: () => setState(() => _month = month.addMonths(1)),
-                ),
-              ],
+            // Months apply to bills and the calendar; the forecast has its own
+            // horizon.
+            Builder(
+              builder: (context) {
+                final tabs = DefaultTabController.of(context);
+                return AnimatedBuilder(
+                  animation: tabs,
+                  builder: (context, _) => tabs.index == _forecastTabIndex
+                      ? const SizedBox.shrink()
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            IconButton(
+                              tooltip: 'Previous month',
+                              icon: const Icon(Icons.chevron_left),
+                              onPressed: () =>
+                                  setState(() => _month = month.addMonths(-1)),
+                            ),
+                            Text(
+                              '${month.month.toString().padLeft(2, '0')}/${month.year}',
+                            ),
+                            IconButton(
+                              tooltip: 'Next month',
+                              icon: const Icon(Icons.chevron_right),
+                              onPressed: () =>
+                                  setState(() => _month = month.addMonths(1)),
+                            ),
+                          ],
+                        ),
+                );
+              },
             ),
             Expanded(
               child: TabBarView(

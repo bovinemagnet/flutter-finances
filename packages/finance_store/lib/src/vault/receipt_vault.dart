@@ -78,9 +78,10 @@ class ReceiptVault {
     required String contentType,
     required List<int> bytes,
     String? assetId,
+    DateTime? createdAt,
   }) async {
     final id = assetId ?? newId();
-    final now = _ctx.now().toUtc();
+    final now = (createdAt ?? _ctx.now()).toUtc();
     final record = AssetRecord(
       id: id,
       ownerType: ownerType,

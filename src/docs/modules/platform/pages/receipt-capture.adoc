@@ -88,6 +88,7 @@ Both engines produce an `OcrResult`, which the shared parser in `finance_core` t
 
 * PDF receipts are not read on the device. If a receipt has only PDF pages, extraction fails with "Text is not read from PDF receipts on this device; enter the details".
 * Any exception during extraction moves the receipt to the "Could not be read" state. The document is kept, and retry and manual entry remain available (REC 04).
+* A review or a deletion made while a receipt is being read stands. The result of that reading is dropped when it finishes, rather than overwriting the person's decision or bringing a deleted receipt back.
 * Extraction never creates an expense by itself. The person reviews the suggested fields and chooses to create an expense or attach the receipt to an existing transaction (REC 06, OCR 04, A07).
 
 The Receipts page lists receipts with their state ("Saved, waiting to be read", "Reading", "Needs review", "Reviewed" or "Could not be read"), whether they are matched, and whether they are saved on this device only. It can be filtered to unmatched receipts and to receipts that could not be read.
@@ -127,7 +128,9 @@ Images go through text recognition as described in <<Reading the text>>. Recogni
 
 A download has up to five minutes, because an attachment can be 20 MB on a slow connection.
 
-If saving a document keeps failing on a device, that device stops trying after three attempts until the application next starts. The document stays waiting and is not rejected.
+If saving a document keeps failing on a device, or its download keeps arriving damaged, that device stops trying after three attempts until the application next starts. The document stays waiting and is not rejected. A dropped connection does not count as an attempt.
+
+A device that already holds the receipt for a waiting document acknowledges it without downloading it again. If the application stopped after saving a document and before reading it, the next collection reads it, on the device that holds the original.
 
 === Problems that are reported
 
@@ -163,7 +166,7 @@ When a receipt is reviewed, the application checks it and shows warnings. A warn
 * "This exact file is already saved as another receipt": another receipt has an asset with the same SHA-256.
 * "This looks like a photo of a receipt already saved": the difference hash of the image is close to that of another receipt's image (MATCH 02).
 
-The duplicate warnings name the other receipt so the user can open it. PDFs are not assessed for blur or size.
+The duplicate warnings name the other receipt so the user can open it. PDFs are not assessed for blur or size. A damaged image cannot be assessed for blur or size either, but still gets the duplicate warnings, and the review screen says it cannot be shown rather than leaving the preview blank.
 
 == Separating pages
 

@@ -30,9 +30,10 @@ class InboundMailService {
     @visibleForTesting ReceiptCapture? capture,
   }) : _capture = capture ?? state.receipts.capture;
 
-  /// Failed saves of one document before this run of the app stops trying it,
-  /// so a save that cannot succeed does not download it at every sync. It stays
-  /// waiting on the server, and is tried again the next time the app starts.
+  /// Failed saves or damaged downloads of one document before this run of the
+  /// app stops trying it, so a document that cannot arrive is not downloaded at
+  /// every sync. It stays waiting on the server, and is tried again the next
+  /// time the app starts. A dropped connection does not count.
   static const maxCaptureAttempts = 3;
 
   /// How long a document can fail to arrive before the user is told. Documents
@@ -100,9 +101,20 @@ class InboundMailService {
       return _Result.failed;
     }
     try {
-      final bytes = await client.download(workspaceId, document);
       final receiptId = nameBasedId(document.id, 'inbound-receipt');
-      final isNew = state.receipts.receipt(receiptId) == null;
+      final saved = state.receipts.receipt(receiptId);
+      if (saved != null) {
+        // Already saved, so there is nothing to fetch. The app may have stopped
+        // before acknowledging it or reading it. A copy that came from another
+        // device is read there, where its document is.
+        await _acknowledge(workspaceId, document);
+        if (saved.extractionState == ExtractionState.captured &&
+            _heldHere(receiptId)) {
+          unawaited(_read(saved));
+        }
+        return _Result.arrived;
+      }
+      final bytes = await client.download(workspaceId, document);
       final Receipt receipt;
       try {
         receipt = await _capture(
@@ -125,22 +137,34 @@ class InboundMailService {
         );
         return _Result.refused;
       } catch (_) {
-        _failedCaptures.update(document.id, (n) => n + 1, ifAbsent: () => 1);
+        _countFailure(document);
         return _Result.failed;
       }
-      await client.acknowledge(workspaceId, document.id).catchError((Object _) {
-        // Saved but not acknowledged: the next collection acknowledges it.
-      });
+      await _acknowledge(workspaceId, document);
       // Runs alongside, so slow recognition never holds up other documents.
-      if (isNew) unawaited(_read(receipt));
+      unawaited(_read(receipt));
       return _Result.arrived;
     } on InboundDocumentGoneException {
       return _Result.gone;
+    } on InboundDocumentCorruptException {
+      _countFailure(document);
+      return _Result.failed;
     } catch (_) {
-      // Corrupt or unreachable: the others can still arrive.
+      // Unreachable for now: the others can still arrive.
       return _Result.failed;
     }
   }
+
+  bool _heldHere(String receiptId) => state.store.vault
+      .assetsFor(ReceiptEntityTypes.receipt, receiptId)
+      .any((asset) => asset.localState == AssetLocalState.present);
+
+  void _countFailure(InboundDocument document) =>
+      _failedCaptures.update(document.id, (n) => n + 1, ifAbsent: () => 1);
+
+  /// Saved but not acknowledged is safe: the next collection acknowledges it.
+  Future<void> _acknowledge(String workspaceId, InboundDocument document) =>
+      client.acknowledge(workspaceId, document.id).catchError((Object _) {});
 
   Future<void> _read(Receipt receipt) async {
     try {

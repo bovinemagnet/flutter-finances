@@ -70,7 +70,8 @@ void main() {
     return (state, controller);
   }
 
-  Future<void> until(bool Function() condition, {int ms = 3000}) async {
+  // Only an upper limit: a busy machine waits longer, and a quick one no longer.
+  Future<void> until(bool Function() condition, {int ms = 20000}) async {
     final end = DateTime.now().add(Duration(milliseconds: ms));
     while (!condition()) {
       if (DateTime.now().isAfter(end)) fail('condition not met in ${ms}ms');
@@ -301,19 +302,23 @@ void main() {
 
       // Every wait now asks for a pull, and every pull fails.
       syncA.didChangeAppLifecycleState(AppLifecycleState.resumed);
-      await until(() => _snapshots(server) >= 1, ms: 15000);
-      final before = _snapshots(server);
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-      final during = _snapshots(server) - before;
-      // Retries happen (20, 40, 80, 160 ms) but not in a tight loop.
-      expect(during, inInclusiveRange(1, 6));
+      await until(() => _snapshots(server) >= 7);
+      // Retries happen, each waiting at least twice as long as the last. Load
+      // can only lengthen these waits, so a floor holds on any machine. The
+      // first attempts are skipped, since returning to the app also syncs.
+      final at = server.snapshotRequestTimes;
+      expect(
+        at[6].difference(at[2]),
+        greaterThanOrEqualTo(const Duration(milliseconds: 150)),
+        reason: 'retries are not in a tight loop',
+      );
 
       syncA.didChangeAppLifecycleState(AppLifecycleState.hidden);
       server.failRequests = 0;
       syncA.dispose();
       await until(() => syncA.phase != SyncPhase.syncing);
       await a.store.close();
-    }, retry: 2);
+    });
 
     test('an unexpected error ends waiting so it can start again', () async {
       var malformed = false;

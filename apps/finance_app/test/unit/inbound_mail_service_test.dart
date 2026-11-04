@@ -7,7 +7,9 @@ import 'package:finance_app/data/app_state.dart';
 import 'package:finance_app/data/entity_types.dart';
 import 'package:finance_app/data/inbound_mail_service.dart';
 import 'package:finance_app/data/oidc.dart';
+import 'package:finance_app/data/receipt_service.dart';
 import 'package:finance_app/data/sync_controller.dart';
+import 'package:finance_app/platform/services.dart';
 import 'package:finance_app/platform/text_recognition.dart';
 import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
@@ -164,6 +166,14 @@ void main() {
         contentType: contentType,
       );
 
+  Future<void> eventually(bool Function() done) async {
+    final end = DateTime.now().add(const Duration(seconds: 3));
+    while (!done()) {
+      if (DateTime.now().isAfter(end)) fail('not met in time');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+  }
+
   test('collecting saves a receipt, then acknowledges', () async {
     await start();
     final id = deliver();
@@ -224,6 +234,101 @@ void main() {
     expect(server.inboundDownloads, [id, id]);
   });
 
+  test('a corrupt download stops being repeated on this run', () async {
+    await start();
+    final id = deliver();
+    server.corruptInbound(id);
+    for (var i = 0; i < 6; i++) {
+      await service.collect();
+    }
+    expect(server.inboundDownloads, [
+      for (var i = 0; i < InboundMailService.maxCaptureAttempts; i++) id,
+    ]);
+  });
+
+  test('a dropped connection does not use up the attempts', () async {
+    await start();
+    final id = deliver();
+    server
+      ..failRequests = InboundMailService.maxCaptureAttempts + 1
+      ..failPath = 'download';
+    for (var i = 0; i < InboundMailService.maxCaptureAttempts + 1; i++) {
+      await service.collect();
+    }
+    await service.collect();
+    expect(server.inboundAcknowledged, [id]);
+  });
+
+  test('a document already saved is acknowledged, not downloaded again', () async {
+    await start();
+    final id = deliver();
+    server
+      ..failRequests = 1
+      ..failPath = 'acknowledge';
+    await service.collect();
+    expect(server.inboundDownloads, [id]);
+
+    await service.collect();
+    expect(server.inboundDownloads, [id]);
+    expect(server.inboundAcknowledged, [id]);
+  });
+
+  test('a receipt saved before the app stopped is still read', () async {
+    await start();
+    final id = deliver(bytes: _photo(), contentType: 'image/png');
+    // The app stopped after saving, before acknowledging or reading.
+    await state.receipts.capture(
+      [CapturedFile(_photo(), source: CaptureSource.email)],
+      receiptId: nameBasedId(id, 'inbound-receipt'),
+    );
+    await service.collect();
+    await eventually(() => recogniser.calls == 1);
+    expect(server.inboundAcknowledged, [id]);
+  });
+
+  test('a receipt that came from another device is not read here', () async {
+    await start();
+    final id = deliver(bytes: _photo(), contentType: 'image/png');
+    final receiptId = nameBasedId(id, 'inbound-receipt');
+    // The other device saved it but its acknowledge failed; only the record
+    // reached this one, without the document.
+    await state.store.upsertEntity(
+      ReceiptEntityTypes.receipt,
+      receiptId,
+      receiptToJson(
+        Receipt(
+          id: receiptId,
+          capturedAt: DateTime.utc(2026, 11, 4),
+          source: CaptureSource.email,
+        ),
+      ),
+    );
+    await service.collect();
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    expect(recogniser.calls, 0);
+    expect(server.inboundDownloads, isEmpty);
+    expect(server.inboundAcknowledged, [id]);
+    expect(
+      state.receipts.receipt(receiptId)!.extractionState,
+      ExtractionState.captured,
+    );
+  });
+
+  test('a forwarded image syncs without needing a decision', () async {
+    await start();
+    deliver(bytes: _photo(), contentType: 'image/png');
+    await service.collect();
+    await eventually(() => recogniser.calls == 1);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    await controller.syncNow();
+    await controller.syncNow();
+    expect(
+      [for (final r in state.store.openReviewItems()) r.entity.type],
+      isEmpty,
+    );
+    expect(state.unsyncedCount, 0);
+  });
+
   test('one bad document does not stop the others', () async {
     await start();
     final bad = deliver();
@@ -268,14 +373,6 @@ void main() {
 
   Future<void> eventuallyHost(bool Function() done) async {
     for (var i = 0; i < 100 && !done(); i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-    }
-  }
-
-  Future<void> eventually(bool Function() done) async {
-    final end = DateTime.now().add(const Duration(seconds: 3));
-    while (!done()) {
-      if (DateTime.now().isAfter(end)) fail('not met in time');
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
   }

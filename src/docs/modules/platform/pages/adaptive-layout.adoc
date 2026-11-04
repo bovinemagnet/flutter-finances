@@ -48,6 +48,8 @@ Each destination appears once. A hint (Ctrl 1 to Ctrl 5) is shown beside the fiv
 
 The Overview page adapts to the width of its content rather than the window. Below 960 logical pixels (`overviewDashboardWidth` in `apps/finance_app/lib/screens/pages/overview_page.dart`) it is a single column: the "Available until payday" card, figure tiles, Your money, Coming up and Needs attention. Wider content shows more figure tiles (spent this period, and owed on cards and loans) and a two-column dashboard that adds a spending pace chart and recent transactions. The chart compares cumulative posted spending through the budget period with an even daily pace of the period's category budget. It is presentation only: the budget is still evaluated by the budget rules. Needs attention shows at most five insights; when there are more, a "Show all N" action opens a "Needs attention" screen that builds the full list lazily (`ListView.builder`), so a long list never slows the Overview.
 
+Each account in Your money says how far its calculated balance can be trusted: the date of the last entry, the date it was last reconciled and, when a reconciliation has been finished, what the statement said, such as "Bank balance $1,000.00 on 5 Nov 2026". On a card or loan this reads "Bank says $50.00 owed on 1 Nov 2026", or "Bank says $50.00 in credit on 1 Nov 2026". The statement figure is shown beside the calculated balance and never changes it.
+
 == Keyboard shortcuts
 
 `AdaptiveShell.shortcuts` defines these shortcuts (Ctrl key):

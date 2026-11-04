@@ -246,6 +246,9 @@ class FakeSyncServer {
 
   // Fault injection --------------------------------------------------------
 
+  /// When each snapshot request arrived.
+  final List<DateTime> snapshotRequestTimes = [];
+
   /// When true every request fails as if the device were offline.
   bool offline = false;
 
@@ -329,6 +332,9 @@ class FakeSyncServer {
 
   Future<http.Response> _handle(http.Request request) async {
     requests.add('${request.method} ${request.url}');
+    if (request.url.path == '/v1/sync/snapshot') {
+      snapshotRequestTimes.add(DateTime.now());
+    }
     received.add(request);
     if (offline) throw http.ClientException('Network is unreachable');
     final path = request.url.path;

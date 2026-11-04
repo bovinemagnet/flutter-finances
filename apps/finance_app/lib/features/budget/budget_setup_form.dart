@@ -1,6 +1,7 @@
 import 'package:finance_core/finance_core.dart';
 import 'package:flutter/material.dart';
 
+import '../../app/breakpoints.dart';
 import '../../format/formatters.dart';
 import '../onboarding/onboarding_model.dart';
 
@@ -43,6 +44,8 @@ class _BudgetSetupFormState extends State<BudgetSetupForm> {
 
   @override
   Widget build(BuildContext context) {
+    final compact =
+        windowClassFor(MediaQuery.sizeOf(context).width) == WindowClass.compact;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -111,7 +114,17 @@ class _BudgetSetupFormState extends State<BudgetSetupForm> {
             onChanged: (id) => _change(() => model.payAccountId = id),
           ),
         const SizedBox(height: 8),
+        // Three long labels only keep their words whole on a phone without
+        // the selected icon.
         SegmentedButton<BudgetMode>(
+          showSelectedIcon: !compact,
+          style: compact
+              ? const ButtonStyle(
+                  padding: WidgetStatePropertyAll(
+                    EdgeInsets.symmetric(horizontal: 4),
+                  ),
+                )
+              : null,
           segments: const [
             ButtonSegment(
               value: BudgetMode.groups,

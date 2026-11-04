@@ -696,6 +696,10 @@ count towards the limit of 10 per message. Rejection codes are `UNSUPPORTED_TYPE
 A device that refuses every remaining document of a message leaves it `rejected`.
 A device tells the member itself, as `not_collected`, about a document it has
 failed to collect for a week; this outcome is never sent by the server.
+A device that already holds the receipt for a waiting document acknowledges it
+without downloading it again. A device gives up on a document for the rest of
+its run after three failed saves or downloads whose bytes do not match the hash.
+A dropped connection does not count towards this.
 Dismissing a notice saves an `inboundNoticeDismissal` entity, so members and
 devices never overwrite one another's dismissals.
 
@@ -725,3 +729,14 @@ Account: `{"id", "name", "type", "includeInBudget", "includeInForecast",
 Category: `{"id", "name", "kind", "parentId", "archived"}`. Other entity
 types are opaque JSON objects to the server and are defined by
 `finance_core` codecs.
+
+An entity derived from another entity needs an id of its own, because an id is
+unique across entity types: an `imageFingerprint` takes
+`ownedEntityId('imageFingerprint', assetId)`, not the id of its `documentAsset`.
+
+Balance observation: `{"id", "accountId", "date", "balanceMinor"}`, saved at
+`ownedEntityId('balanceObservation', accountId)`. It records what a statement
+said at the end of a reconciliation, a positive `balanceMinor` on a card or loan
+meaning an amount owed. It is shown beside the calculated balance and nothing in
+the ledger reads it. `accountId` makes it hidden from members who cannot see a
+private account.

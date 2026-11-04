@@ -353,6 +353,13 @@ class _YourMoney extends StatelessWidget {
                         : 'Last entry ${formatDate(lastEntry)}',
                     if (account.lastReconciledOn != null)
                       'Reconciled ${formatDate(account.lastReconciledOn!)}',
+                    if (state.balanceObservation(account.id)
+                        case final observed?)
+                      formatObservedBalance(
+                        observed.balance,
+                        observed.date,
+                        owed: account.type.isLiability,
+                      ),
                     if (!pending.isZero)
                       'Not counting ${formatMoney(pending.abs())} pending',
                   ].join(' · '),

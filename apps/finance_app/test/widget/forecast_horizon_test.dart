@@ -213,4 +213,19 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('the month selector shows only where it does something', (
+    tester,
+  ) async {
+    await pump(tester);
+    expect(find.byTooltip('Previous month'), findsNothing);
+
+    await tester.tap(find.text('Calendar'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Previous month'), findsOneWidget);
+
+    await tester.tap(find.text('Bills'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Previous month'), findsOneWidget);
+  });
 }
