@@ -157,7 +157,10 @@ void main() {
 
     test('finishes a read the app stopped part-way through', () async {
       await leaveAs(ExtractionState.extracting);
-      expect(state.receipts.canReadAgain(state.receipts.receipt(receipt.id)!), isTrue);
+      expect(
+        state.receipts.canReadAgain(state.receipts.receipt(receipt.id)!),
+        isTrue,
+      );
       final read = await state.receipts.extract(
         receipt.id,
         _FakeRecogniser(_receiptText),
@@ -187,6 +190,36 @@ void main() {
         source: CaptureSource.email,
       );
       expect(state.receipts.canReadAgain(other), isFalse);
+    });
+
+    test('cloud text is not offered while a read is running', () async {
+      expect(state.receipts.canUseCloudText(receipt), isTrue);
+      final recogniser = _HeldRecogniser();
+      final reading = state.receipts.extract(receipt.id, recogniser);
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        state.receipts.canUseCloudText(state.receipts.receipt(receipt.id)!),
+        isFalse,
+      );
+      recogniser.hold.complete();
+      await reading;
+      expect(
+        state.receipts.canUseCloudText(state.receipts.receipt(receipt.id)!),
+        isTrue,
+      );
+    });
+
+    test('cloud text is not offered on a reviewed receipt', () async {
+      final reviewed = await state.receipts.review(
+        receipt.id,
+        ReceiptFields(
+          merchant: 'Fresh Grocer',
+          date: today,
+          total: Money(1350, aud),
+        ),
+        const KeepDocumentOnly(),
+      );
+      expect(state.receipts.canUseCloudText(reviewed), isFalse);
     });
 
     test('cloud text can replace a reading that needs review', () async {

@@ -22,7 +22,9 @@ void main() {
   });
 
   int lines(WidgetTester tester, String text) {
-    final paragraph = tester.renderObject<RenderParagraph>(find.text(text).last);
+    final paragraph = tester.renderObject<RenderParagraph>(
+      find.text(text).last,
+    );
     final boxes = paragraph.getBoxesForSelection(
       TextSelection(baseOffset: 0, extentOffset: text.length),
     );
@@ -42,9 +44,8 @@ void main() {
       MaterialApp(
         theme: buildTheme(Brightness.dark),
         builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(
-            context,
-          ).copyWith(textScaler: TextScaler.linear(scale)),
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: TextScaler.linear(scale)),
           child: child!,
         ),
         home: home,
@@ -56,14 +57,91 @@ void main() {
   /// How many lines each word of [text] takes. A label may wrap between words
   /// but must not break inside one.
   void expectWordsWhole(WidgetTester tester, String text) {
-    final paragraph = tester.renderObject<RenderParagraph>(find.text(text).last);
+    final paragraph = tester.renderObject<RenderParagraph>(
+      find.text(text).last,
+    );
     for (final match in RegExp(r'\S+').allMatches(text)) {
       final boxes = paragraph.getBoxesForSelection(
         TextSelection(baseOffset: match.start, extentOffset: match.end),
       );
-      expect({for (final box in boxes) box.top}, hasLength(1), reason: match[0]);
+      expect(
+        {for (final box in boxes) box.top},
+        hasLength(1),
+        reason: match[0],
+      );
+    }
+    // Nothing is cut off: every word sits inside the space the label was given.
+    final all = paragraph.getBoxesForSelection(
+      TextSelection(baseOffset: 0, extentOffset: text.length),
+    );
+    for (final box in all) {
+      expect(
+        box.right,
+        lessThanOrEqualTo(paragraph.size.width + 0.5),
+        reason: text,
+      );
+      expect(
+        box.bottom,
+        lessThanOrEqualTo(paragraph.size.height + 0.5),
+        reason: text,
+      );
     }
   }
+
+  testWidgets(
+    'stacked budget templates fill the form with square-ish corners',
+    (tester) async {
+      await pump(
+        tester,
+        const Size(402, 800),
+        Scaffold(
+          body: SingleChildScrollView(
+            child: BudgetSetupForm(
+              model: OnboardingModel(today: LocalDate(2026, 11, 4)),
+              payAccounts: const [],
+              onChanged: () {},
+            ),
+          ),
+        ),
+      );
+      final control = find.byType(SegmentedButton<BudgetMode>);
+      expect(tester.getSize(control).width, 402);
+      // A pill's corners would cut into a stack of labels, and its tick.
+      final shape = tester
+          .widget<SegmentedButton<BudgetMode>>(control)
+          .style
+          ?.shape
+          ?.resolve({});
+      expect(shape, isA<RoundedRectangleBorder>());
+      final radius =
+          (shape! as RoundedRectangleBorder).borderRadius as BorderRadius;
+      expect(radius.topLeft.x, lessThanOrEqualTo(16));
+    },
+  );
+
+  testWidgets('tapping a stacked budget template chooses it', (tester) async {
+    final model = OnboardingModel(today: LocalDate(2026, 11, 4));
+    await pump(
+      tester,
+      const Size(402, 800),
+      Scaffold(
+        body: SingleChildScrollView(
+          child: BudgetSetupForm(
+            model: model,
+            payAccounts: const [],
+            onChanged: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Categories only'));
+    await tester.pumpAndSettle();
+    expect(model.budgetMode, BudgetMode.categoryOnly);
+    await tester.tap(find.text('Every dollar assigned'));
+    await tester.pumpAndSettle();
+    expect(model.budgetMode, BudgetMode.zeroBased);
+    expect(tester.takeException(), isNull);
+  });
 
   // Narrow phones, and larger text set in the system settings.
   for (final (width, scale) in [
@@ -76,6 +154,10 @@ void main() {
     (402.0, 1.1),
     (411.0, 1.1),
     (411.0, 1.5),
+    (320.0, 1.5),
+    (360.0, 1.5),
+    (320.0, 2.0),
+    (390.0, 2.0),
   ]) {
     testWidgets('budget templates keep their words whole at $width, $scale', (
       tester,

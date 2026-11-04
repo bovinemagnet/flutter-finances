@@ -195,7 +195,8 @@ void main() {
       () async {
         final (a, syncA) = await synced('a');
         final (b, syncB) = await synced('b');
-        await until(() => syncB.isWaiting && server.waiting == 1);
+        // At least one: device a may be waiting as well.
+        await until(() => syncB.isWaiting && server.waiting >= 1);
 
         await a.store.createAccount(
           const Account(
@@ -282,9 +283,14 @@ void main() {
       );
       final (b, syncB) = await synced('b');
       await until(() => syncA.isWaiting);
-      // Device a misses b's change, then its cursor expires.
+      // Device a misses b's change, then its cursor expires. Device b stops
+      // waiting too: the count covers every device, so while b waits it is
+      // zero only for an instant between requests.
       syncA.didChangeAppLifecycleState(AppLifecycleState.hidden);
+      syncB.didChangeAppLifecycleState(AppLifecycleState.hidden);
       await until(() => server.waiting == 0);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(server.waiting, 0, reason: 'nothing is waiting any more');
       await b.store.createAccount(
         const Account(
           id: 'bank',

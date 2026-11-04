@@ -161,40 +161,31 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
         if (receipt.extractionState == ExtractionState.captured)
           FutureBuilder(
             future: _recognitionAvailable,
-            builder: (context, available) => available.data == false
-                ? Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.info_outline),
-                      title: Text(recogniser.unavailableMessage),
-                      subtitle: const Text('Enter the details by hand.'),
-                    ),
-                  )
-                : const SizedBox.shrink(),
+            builder: (context, available) => switch (available.data) {
+              false => Card(
+                child: ListTile(
+                  leading: const Icon(Icons.info_outline),
+                  title: Text(recogniser.unavailableMessage),
+                  subtitle: const Text('Enter the details by hand.'),
+                ),
+              ),
+              true when service.canReadAgain(receipt) => _ReadAgainCard(
+                title: 'This receipt was not finished being read',
+                receiptId: receipt.id,
+                onRead: () => setState(() => _initialised = false),
+              ),
+              _ => const SizedBox.shrink(),
+            },
           ),
         if (receipt.extractionState == ExtractionState.extractionFailed ||
-            service.canReadAgain(receipt))
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.error_outline),
-              title: Text(
-                receipt.extractionState == ExtractionState.extractionFailed
-                    ? 'This receipt could not be read'
-                    : 'This receipt was not finished being read',
-              ),
-              subtitle: const Text(
-                'The image is kept. Enter the details or try again.',
-              ),
-              trailing: TextButton(
-                onPressed: () async {
-                  await service.extract(
-                    receipt.id,
-                    AppScope.servicesOf(context).textRecogniser,
-                  );
-                  setState(() => _initialised = false);
-                },
-                child: const Text('Try again'),
-              ),
-            ),
+            (receipt.extractionState == ExtractionState.extracting &&
+                service.canReadAgain(receipt)))
+          _ReadAgainCard(
+            title: receipt.extractionState == ExtractionState.extractionFailed
+                ? 'This receipt could not be read'
+                : 'This receipt was not finished being read',
+            receiptId: receipt.id,
+            onRead: () => setState(() => _initialised = false),
           ),
         FutureBuilder(
           future: service.warningsFor(receipt.id),
@@ -214,7 +205,7 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
           spacing: 8,
           children: [
             if ((AppScope.syncOf(context)?.isSynced ?? false) &&
-                receipt.extractionState != ExtractionState.reviewed)
+                service.canUseCloudText(receipt))
               OutlinedButton.icon(
                 icon: const Icon(Icons.cloud_download_outlined),
                 label: const Text('Use cloud text'),
@@ -661,6 +652,38 @@ class _ReviewedField<T> extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Says a receipt has not been read, and offers reading it again.
+class _ReadAgainCard extends StatelessWidget {
+  const _ReadAgainCard({
+    required this.title,
+    required this.receiptId,
+    required this.onRead,
+  });
+
+  final String title;
+  final String receiptId;
+  final VoidCallback onRead;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: ListTile(
+      leading: const Icon(Icons.error_outline),
+      title: Text(title),
+      subtitle: const Text(
+        'The image is kept. Enter the details or try again.',
+      ),
+      trailing: TextButton(
+        onPressed: () async {
+          await AppScope.of(context).receipts
+              .extract(receiptId, AppScope.servicesOf(context).textRecogniser);
+          onRead();
+        },
+        child: const Text('Try again'),
+      ),
+    ),
+  );
 }
 
 class _PagePreview extends StatelessWidget {

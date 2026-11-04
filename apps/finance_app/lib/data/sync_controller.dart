@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 
 import '../platform/text_recognition.dart';
 import 'app_state.dart';
+import 'app_sync_client.dart';
 import 'inbound_mail_service.dart';
 import 'oidc.dart';
 
@@ -178,7 +179,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     httpClient: _http,
   );
 
-  SyncClient get client => _client ??= SyncClient(
+  SyncClient get client => _client ??= appSyncClient(
     state.store,
     httpClient: _http,
     retry: retry,

@@ -134,6 +134,8 @@ If saving a document keeps failing on a device, or its download keeps arriving d
 
 A device that already holds the receipt for a waiting document acknowledges it without downloading it again. If the application stopped after saving a document and before acknowledging it, the next collection also reads it, on the device that holds the original. A device that only knows of the receipt from another device leaves the reading to that device.
 
+If two devices both save and read the same document, for example because one lost its connection before acknowledging it, the first reading to reach the sync service is kept. The other device quietly drops its own reading and takes that one, so nobody is asked to choose between two results they never entered. A failed or unfinished read is not a reading, so a real one replaces it. Anything a person changed on the receipt on that device, such as confirmed details or a deletion, is not dropped and goes to the usual conflict review.
+
 === Problems that are reported
 
 The Receipts page reports, rather than captures:

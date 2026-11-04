@@ -59,6 +59,9 @@ class _GatedClient extends http.BaseClient {
   var inboxRequests = 0;
   String? lastInboxHost;
 
+  /// Runs while an acknowledge is on its way.
+  Future<void> Function()? onAcknowledge;
+
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     if (request.url.path.endsWith('/inbound-documents')) {
@@ -66,6 +69,7 @@ class _GatedClient extends http.BaseClient {
       lastInboxHost = request.url.host;
       await gate?.future;
     }
+    if (request.url.path.endsWith('/acknowledge')) await onAcknowledge?.call();
     return inner.send(request);
   }
 }
@@ -259,28 +263,30 @@ void main() {
     expect(server.inboundAcknowledged, [id]);
   });
 
-  test('a document already saved is acknowledged, not downloaded again', () async {
-    await start();
-    final id = deliver();
-    server
-      ..failRequests = 1
-      ..failPath = 'acknowledge';
-    await service.collect();
-    expect(server.inboundDownloads, [id]);
+  test(
+    'a document already saved is acknowledged, not downloaded again',
+    () async {
+      await start();
+      final id = deliver();
+      server
+        ..failRequests = 1
+        ..failPath = 'acknowledge';
+      await service.collect();
+      expect(server.inboundDownloads, [id]);
 
-    await service.collect();
-    expect(server.inboundDownloads, [id]);
-    expect(server.inboundAcknowledged, [id]);
-  });
+      await service.collect();
+      expect(server.inboundDownloads, [id]);
+      expect(server.inboundAcknowledged, [id]);
+    },
+  );
 
   test('a receipt saved before the app stopped is still read', () async {
     await start();
     final id = deliver(bytes: _photo(), contentType: 'image/png');
     // The app stopped after saving, before acknowledging or reading.
-    await state.receipts.capture(
-      [CapturedFile(_photo(), source: CaptureSource.email)],
-      receiptId: nameBasedId(id, 'inbound-receipt'),
-    );
+    await state.receipts.capture([
+      CapturedFile(_photo(), source: CaptureSource.email),
+    ], receiptId: nameBasedId(id, 'inbound-receipt'));
     await service.collect();
     await eventually(() => recogniser.calls == 1);
     expect(server.inboundAcknowledged, [id]);
@@ -314,36 +320,69 @@ void main() {
     );
   });
 
-  test('a receipt arriving from elsewhere during a download is left alone', () async {
-    await start();
-    final id = deliver(bytes: _photo(), contentType: 'image/png');
-    final receiptId = nameBasedId(id, 'inbound-receipt');
-    final service = InboundMailService(
-      state: state,
-      client: controller.inboundMail,
-      recogniser: recogniser,
-      capture: (files, {receiptId, capturedAt}) async {
-        // Only the record has arrived; the document is on the other device.
-        final arrived = Receipt(
-          id: receiptId!,
-          capturedAt: DateTime.utc(2026, 11, 4),
-          source: CaptureSource.email,
-        );
-        await state.store.upsertEntity(
-          ReceiptEntityTypes.receipt,
-          arrived.id,
-          receiptToJson(arrived),
-        );
-        return arrived;
-      },
-    );
-    await service.collect();
-    await Future<void>.delayed(const Duration(milliseconds: 30));
-    expect(
-      state.receipts.receipt(receiptId)!.extractionState,
-      ExtractionState.captured,
-    );
-  });
+  test(
+    'a receipt arriving from elsewhere during a download is left alone',
+    () async {
+      await start();
+      final id = deliver(bytes: _photo(), contentType: 'image/png');
+      final receiptId = nameBasedId(id, 'inbound-receipt');
+      final service = InboundMailService(
+        state: state,
+        client: controller.inboundMail,
+        recogniser: recogniser,
+        capture: (files, {receiptId, capturedAt}) async {
+          // Only the record has arrived; the document is on the other device.
+          final arrived = Receipt(
+            id: receiptId!,
+            capturedAt: DateTime.utc(2026, 11, 4),
+            source: CaptureSource.email,
+          );
+          await state.store.upsertEntity(
+            ReceiptEntityTypes.receipt,
+            arrived.id,
+            receiptToJson(arrived),
+          );
+          return arrived;
+        },
+      );
+      await service.collect();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(
+        state.receipts.receipt(receiptId)!.extractionState,
+        ExtractionState.captured,
+      );
+    },
+  );
+
+  test(
+    'a reading that arrives during the acknowledge is not repeated',
+    () async {
+      await start();
+      final id = deliver(bytes: _photo(), contentType: 'image/png');
+      final receiptId = nameBasedId(id, 'inbound-receipt');
+      final inbox = await controller.inboundMail.inbox(
+        state.settings.workspaceId,
+      );
+      final saved = await state.receipts.capture(
+        [CapturedFile(_photo(), source: CaptureSource.email)],
+        receiptId: receiptId,
+        capturedAt: inbox.documents.single.receivedAt,
+      );
+      http_.onAcknowledge = () => state.store.upsertEntity(
+        ReceiptEntityTypes.receipt,
+        receiptId,
+        receiptToJson(
+          saved.copyWith(
+            extractionState: ExtractionState.needsReview,
+            latestExtractionId: 'from-elsewhere',
+          ),
+        ),
+      );
+      await service.collect();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(recogniser.calls, 0);
+    },
+  );
 
   test('a forwarded image syncs without needing a decision', () async {
     await start();
@@ -353,10 +392,9 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 50));
     await controller.syncNow();
     await controller.syncNow();
-    expect(
-      [for (final r in state.store.openReviewItems()) r.entity.type],
-      isEmpty,
-    );
+    expect([
+      for (final r in state.store.openReviewItems()) r.entity.type,
+    ], isEmpty);
     expect(state.unsyncedCount, 0);
   });
 
@@ -638,6 +676,135 @@ void main() {
       expect(state.inboundNotices, isEmpty);
       await service.collect();
       expect(state.inboundNotices, isEmpty);
+    });
+  });
+
+  group('two devices that both save and read one document', () {
+    late AppState otherState;
+    late SyncController other;
+    late Directory otherRoot;
+
+    Future<void> startOther({_Recogniser? using}) async {
+      otherRoot = await Directory.systemTemp.createTemp('inbound-other');
+      final store = await FinanceStore.create(
+        otherRoot,
+        keyProtection: KeyProtection.password('secret', kdf: _fastKdf),
+      );
+      otherState = AppState(store, today: () => LocalDate(2026, 11, 4));
+      other = SyncController(
+        otherState,
+        tokens: MemoryTokenStore(),
+        settingsStore: MemorySyncSettingsStore(),
+        redirectUri: 'test:/oauth',
+        browserSignIn: (_) async {},
+        httpClient: server.client,
+        accessToken: () async => _user,
+        platform: 'test',
+        retry: const RetryPolicy(maxAttempts: 1),
+        recogniser: using ?? _Recogniser(),
+      );
+      await other.saveSettings(
+        SyncSettings(
+          serverUrl: FakeSyncServer.base.toString(),
+          issuer: 'https://id.test',
+          clientId: 'app',
+        ),
+      );
+      final remote = (await other.remoteWorkspaces()).single;
+      await other.enable(await other.prepare(existing: remote));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+
+    tearDown(() async {
+      other.dispose();
+      await otherState.store.close();
+      await otherRoot.delete(recursive: true);
+    });
+
+    /// This device saved and read the document, but lost its connection before
+    /// acknowledging it or sending anything. [other] then collected it too.
+    Future<String> bothRead({
+      ExtractionState otherEnds = ExtractionState.needsReview,
+      _Recogniser? otherRecogniser,
+    }) async {
+      await start();
+      await startOther(using: otherRecogniser);
+      final id = deliver(bytes: _photo(), contentType: 'image/png');
+      final receiptId = nameBasedId(id, 'inbound-receipt');
+      final inbox = await controller.inboundMail.inbox(
+        state.settings.workspaceId,
+      );
+      await state.receipts.capture(
+        [
+          CapturedFile(
+            _photo(),
+            fileName: 'receipt.png',
+            source: CaptureSource.email,
+          ),
+        ],
+        receiptId: receiptId,
+        capturedAt: inbox.documents.single.receivedAt,
+      );
+      await state.receipts.extract(receiptId, recogniser);
+      await other.syncNow();
+      await eventually(
+        () =>
+            otherState.receipts.receipt(receiptId)?.extractionState ==
+            otherEnds,
+      );
+      await other.syncNow();
+      return receiptId;
+    }
+
+    test('neither asks anyone to decide', () async {
+      final receiptId = await bothRead();
+      final otherReading = otherState.receipts
+          .receipt(receiptId)!
+          .latestExtractionId;
+      await controller.syncNow();
+      await controller.syncNow();
+      expect([
+        for (final r in state.store.openReviewItems()) r.entity.type,
+      ], isEmpty);
+      expect(state.unsyncedCount, 0);
+      final receipt = state.receipts.receipt(receiptId)!;
+      expect(receipt.extractionState, ExtractionState.needsReview);
+      expect(receipt.latestExtractionId, otherReading);
+    });
+
+    test('a failed read elsewhere does not replace a reading here', () async {
+      final receiptId = await bothRead(
+        otherEnds: ExtractionState.extractionFailed,
+        otherRecogniser: _Recogniser(fails: true),
+      );
+      final mine = state.receipts.receipt(receiptId)!.latestExtractionId;
+      expect(mine, isNotNull);
+      await controller.syncNow();
+      await controller.syncNow();
+      expect(state.store.openReviewItems(), isEmpty);
+      expect(state.unsyncedCount, 0);
+      final receipt = state.receipts.receipt(receiptId)!;
+      expect(receipt.extractionState, ExtractionState.needsReview);
+      expect(receipt.latestExtractionId, mine);
+      await other.syncNow();
+      expect(otherState.receipts.receipt(receiptId)!.latestExtractionId, mine);
+    });
+
+    test('a review on this device still goes to a person', () async {
+      final receiptId = await bothRead();
+      await state.receipts.review(
+        receiptId,
+        ReceiptFields(
+          merchant: 'Fresh Grocer',
+          total: Money(1350, Currency.aud),
+          date: LocalDate(2026, 11, 4),
+        ),
+        const KeepDocumentOnly(),
+      );
+      await controller.syncNow();
+      expect([
+        for (final r in state.store.openReviewItems()) r.entity.type,
+      ], contains(ReceiptEntityTypes.receipt));
     });
   });
 

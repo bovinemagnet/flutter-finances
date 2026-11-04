@@ -257,6 +257,55 @@ void main() {
     });
   });
 
+  testWidgets('a rename during a reconciliation is not undone', (tester) async {
+    await start(tester);
+    await pumpPage(tester, ReconcileScreen(state: state, account: bank));
+    await tester.runAsync(
+      () => state.store.updateAccount(bank.copyWith(name: 'Bills')),
+    );
+    await tester.enterText(find.byType(TextField).first, '1000');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(CheckboxListTile).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Finish reconciliation'));
+    await settle(tester);
+    final saved = state.store.account('bank')!;
+    expect(saved.name, 'Bills');
+    expect(saved.lastReconciledOn, LocalDate(2026, 11, 4));
+  });
+
+  group('the reconciled date', () {
+    Future<void> reconcile(LocalDate date) => state.completeReconciliation(
+      state.store.account('bank')!,
+      date: date,
+      statement: Money(100000, _aud),
+    );
+
+    testWidgets('does not move back for an older statement', (tester) async {
+      await start(tester);
+      await tester.runAsync(() async {
+        await reconcile(LocalDate(2026, 11, 2));
+        await reconcile(LocalDate(2026, 10, 2));
+      });
+      expect(
+        state.store.account('bank')!.lastReconciledOn,
+        LocalDate(2026, 11, 2),
+      );
+    });
+
+    testWidgets('can be corrected from one in the future', (tester) async {
+      await start(tester);
+      await tester.runAsync(() async {
+        await reconcile(LocalDate(2027, 11, 2));
+        await reconcile(LocalDate(2026, 11, 2));
+      });
+      expect(
+        state.store.account('bank')!.lastReconciledOn,
+        LocalDate(2026, 11, 2),
+      );
+    });
+  });
+
   testWidgets('a statement dated in the future can be corrected', (
     tester,
   ) async {

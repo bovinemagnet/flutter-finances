@@ -173,6 +173,7 @@ class SyncClient {
     this.batchSize = 500,
     this.pageSize = 500,
     int uploadConcurrency = 2,
+    Map<String, DerivedFields> derivedFields = const {},
   }) : _store = store,
        _ctx = store.context,
        transport = SyncTransport(
@@ -184,7 +185,7 @@ class SyncClient {
          timeout: timeout,
          sleep: sleep,
        ) {
-    engine = SyncEngine(_ctx, store.vault);
+    engine = SyncEngine(_ctx, store.vault, derivedFields: derivedFields);
     assets = AssetSync(
       ctx: _ctx,
       vault: store.vault,

@@ -58,6 +58,7 @@ export 'src/sync/extraction_client.dart';
 export 'src/sync/household_client.dart';
 export 'src/sync/inbound_mail_client.dart';
 export 'src/sync/sync_client.dart';
+export 'src/sync/sync_engine.dart' show DerivedFields;
 export 'src/sync/transport.dart'
     show
         AccessTokenProvider,

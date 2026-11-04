@@ -29,6 +29,27 @@ abstract final class ReceiptEntityTypes {
   static const warranty = 'warranty';
 }
 
+/// What a device works out for itself by reading a receipt. If two devices read
+/// the same document, the first reading to reach the server is kept. Everything
+/// a person confirms is in other fields, so it still goes to review.
+const receiptDerivedFields = {
+  ReceiptEntityTypes.receipt: store.DerivedFields({
+    'extractionState',
+    'latestExtractionId',
+  }, result: 'latestExtractionId'),
+  ReceiptEntityTypes.items: store.DerivedFields({
+    'extractionId',
+    'createdAt',
+    'extractionVersion',
+    'items',
+    'subtotalMinor',
+    'totalMinor',
+    'differenceMinor',
+    'reconciliation',
+    'reasons',
+  }),
+};
+
 /// Something worth checking about a captured receipt; never blocks saving.
 class CaptureWarning {
   const CaptureWarning(this.message, {this.otherReceiptId});
@@ -196,12 +217,16 @@ class ReceiptService {
             ReceiptEntityTypes.fingerprint,
             asset.id,
           );
-          await _store.upsertEntity(ReceiptEntityTypes.fingerprint, fingerprintId, {
-            'id': fingerprintId,
-            'receiptId': id,
-            'assetId': asset.id,
-            'dHash': hash,
-          });
+          await _store.upsertEntity(
+            ReceiptEntityTypes.fingerprint,
+            fingerprintId,
+            {
+              'id': fingerprintId,
+              'receiptId': id,
+              'assetId': asset.id,
+              'dHash': hash,
+            },
+          );
         } catch (_) {
           // Images the decoder cannot read are still kept. The decoder throws
           // several kinds of error on a damaged file.
@@ -361,6 +386,12 @@ class ReceiptService {
           receipt.extractionState == ExtractionState.extracting) &&
       !_reading.contains(receipt.id) &&
       isHeldHere(receipt.id);
+
+  /// Whether text from the optional cloud extraction can be applied now: not
+  /// to a reviewed receipt, and not while a read here is running.
+  bool canUseCloudText(Receipt receipt) =>
+      receipt.extractionState != ExtractionState.reviewed &&
+      !_reading.contains(receipt.id);
 
   /// Whether a review or a deletion happened while the receipt was being read.
   /// That decision stands: reading never undoes it (REC 06).

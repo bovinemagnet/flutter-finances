@@ -142,6 +142,20 @@ void main() {
     expect(sawNoOther, isTrue);
   });
 
+  testWidgets('with no engine, an unread receipt is not offered a retry', (
+    tester,
+  ) async {
+    await openStore(tester);
+    late String receiptId;
+    await tester.runAsync(() async {
+      receiptId = (await state.receipts.capture([_photo()])).id;
+    });
+    await pump(tester, ReceiptReviewScreen(receiptId: receiptId));
+    expect(find.text('Enter the details by hand.'), findsOneWidget);
+    expect(find.text('Try again'), findsNothing);
+    expect(find.text('This receipt was not finished being read'), findsNothing);
+  });
+
   testWidgets('a read that did not finish offers trying again', (tester) async {
     await openStore(tester);
     late String receiptId;
@@ -158,7 +172,10 @@ void main() {
       state.refresh();
     });
     await pump(tester, ReceiptReviewScreen(receiptId: receiptId));
-    expect(find.text('This receipt was not finished being read'), findsOneWidget);
+    expect(
+      find.text('This receipt was not finished being read'),
+      findsOneWidget,
+    );
     expect(find.text('Try again'), findsOneWidget);
   });
 
@@ -180,9 +197,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('capturing says the receipt cannot be read here', (
-    tester,
-  ) async {
+  testWidgets('capturing says the receipt cannot be read here', (tester) async {
     await openStore(tester);
     await pump(
       tester,
@@ -210,9 +225,7 @@ void main() {
     );
   });
 
-  testWidgets('an unread receipt explains why it was not read', (
-    tester,
-  ) async {
+  testWidgets('an unread receipt explains why it was not read', (tester) async {
     await openStore(tester);
     late String receiptId;
     await tester.runAsync(() async {

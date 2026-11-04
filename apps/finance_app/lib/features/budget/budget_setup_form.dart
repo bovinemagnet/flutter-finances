@@ -120,24 +120,19 @@ class _BudgetSetupFormState extends State<BudgetSetupForm> {
             onChanged: (id) => _change(() => model.payAccountId = id),
           ),
         const SizedBox(height: 8),
-        // Three long labels cannot share a phone's width without breaking
-        // words, so there they wrap as separate choices.
-        if (compact)
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final MapEntry(key: mode, value: label)
-                  in _budgetModeLabels.entries)
-                ChoiceChip(
-                  label: Text(label),
-                  selected: model.budgetMode == mode,
-                  onSelected: (_) => _change(() => model.budgetMode = mode),
-                ),
-            ],
-          )
-        else
-          SegmentedButton<BudgetMode>(
+        // Three long labels cannot share a phone's width, so there they stack.
+        // A stack needs small corners: a pill's would cut into its labels.
+        SizedBox(
+          width: compact ? double.infinity : null,
+          child: SegmentedButton<BudgetMode>(
+            direction: compact ? Axis.vertical : Axis.horizontal,
+            style: compact
+                ? SegmentedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  )
+                : null,
             segments: [
               for (final MapEntry(key: mode, value: label)
                   in _budgetModeLabels.entries)
@@ -147,6 +142,7 @@ class _BudgetSetupFormState extends State<BudgetSetupForm> {
             onSelectionChanged: (s) =>
                 _change(() => model.budgetMode = s.single),
           ),
+        ),
         if (model.budgetMode == BudgetMode.groups) ...[
           for (final group in defaultGroups)
             Row(
@@ -160,9 +156,8 @@ class _BudgetSetupFormState extends State<BudgetSetupForm> {
                     label: '${model.shares[group.id]! ~/ 100}%',
                     semanticFormatterCallback: (v) =>
                         '${group.name} ${v.round()} percent',
-                    onChanged: (v) => _change(
-                      () => model.shares[group.id] = v.round() * 100,
-                    ),
+                    onChanged: (v) =>
+                        _change(() => model.shares[group.id] = v.round() * 100),
                   ),
                 ),
                 SizedBox(
