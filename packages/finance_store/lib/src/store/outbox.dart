@@ -27,7 +27,9 @@ enum OutboxStatus {
   /// Targets an entity deleted remotely; held for review, never resent.
   review,
 
-  /// Dropped by the user while resolving a review item.
+  /// Dropped by the user while resolving a review item, or because it only
+  /// held values a device works out for itself and another device got there
+  /// first.
   discarded,
 }
 

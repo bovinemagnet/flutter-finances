@@ -10,6 +10,7 @@ import '../platform/text_recognition.dart';
 import 'app_state.dart';
 import 'inbound_mail_service.dart';
 import 'oidc.dart';
+import 'receipt_service.dart';
 
 /// Server and identity provider addresses for synced mode.
 class SyncSettings {
@@ -184,6 +185,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     retry: retry,
     baseUri: Uri.parse(settings.serverUrl),
     accessToken: accessToken ?? session.accessToken,
+    derivedFields: receiptDerivedFields,
   );
 
   Future<bool> get isSignedIn async =>

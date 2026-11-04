@@ -29,6 +29,24 @@ abstract final class ReceiptEntityTypes {
   static const warranty = 'warranty';
 }
 
+/// What a device works out for itself by reading a receipt. If two devices read
+/// the same document, the first reading to reach the server is kept. Everything
+/// a person confirms is in other fields, so it still goes to review.
+const receiptDerivedFields = {
+  ReceiptEntityTypes.receipt: {'extractionState', 'latestExtractionId'},
+  ReceiptEntityTypes.items: {
+    'extractionId',
+    'createdAt',
+    'extractionVersion',
+    'items',
+    'subtotalMinor',
+    'totalMinor',
+    'differenceMinor',
+    'reconciliation',
+    'reasons',
+  },
+};
+
 /// Something worth checking about a captured receipt; never blocks saving.
 class CaptureWarning {
   const CaptureWarning(this.message, {this.otherReceiptId});

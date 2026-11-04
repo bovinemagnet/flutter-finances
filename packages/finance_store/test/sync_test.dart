@@ -205,6 +205,155 @@ void main() {
     });
   });
 
+  group('values a device works out for itself', () {
+    const derived = {
+      'reading': {'state', 'readingId'},
+    };
+    late Device c;
+    late Device d;
+
+    setUp(() async {
+      c = await Device.create(temp, 'c', server, derivedFields: derived);
+      d = await Device.create(temp, 'd', server, derivedFields: derived);
+      await c.enableSync(server);
+      await d.enableSync(server);
+    });
+
+    tearDown(() async {
+      await c.close();
+      await d.close();
+    });
+
+    Map<String, Object?> reading(
+      String readingId, {
+      String? note,
+      Map<String, Object?> confirmed = const {'total': null, 'refund': false},
+    }) => {
+      'id': 'shared',
+      'state': 'read',
+      'readingId': readingId,
+      'note': note,
+      'confirmed': confirmed,
+    };
+
+    test('the first to arrive is kept, without asking anyone', () async {
+      await c.store.upsertEntity('reading', 'shared', reading('from-c'));
+      await d.store.upsertEntity('reading', 'shared', reading('from-d'));
+      await c.sync();
+      final report = await d.sync();
+      expect(report.push.conflicts, 0);
+      expect(d.store.openReviewItems(), isEmpty);
+      expect(d.store.pendingCommandCount, 0);
+      expect(d.store.entity('reading', 'shared')!.json['readingId'], 'from-c');
+    });
+
+    test('later changes built on the dropped value go with it', () async {
+      await c.store.upsertEntity('reading', 'shared', reading('from-c'));
+      await d.store.upsertEntity('reading', 'shared', reading('from-d'));
+      await d.store.upsertEntity('reading', 'shared', {
+        ...reading('from-d'),
+        'state': 'read again',
+      });
+      await c.sync();
+      await d.sync();
+      expect(d.store.openReviewItems(), isEmpty);
+      expect(d.store.pendingCommandCount, 0);
+      expect(d.store.entity('reading', 'shared')!.json['state'], 'read');
+    });
+
+    test('what a person entered on the other device is taken', () async {
+      await c.store.upsertEntity(
+        'reading',
+        'shared',
+        reading('from-c', note: 'For the tax return'),
+      );
+      await d.store.upsertEntity('reading', 'shared', reading('from-d'));
+      await c.sync();
+      await d.sync();
+      expect(d.store.openReviewItems(), isEmpty);
+      expect(
+        d.store.entity('reading', 'shared')!.json['note'],
+        'For the tax return',
+      );
+    });
+
+    for (final (name, entered) in [
+      ('a note', {'note': 'For the tax return'}),
+      (
+        'a confirmed value',
+        {
+          'confirmed': {'total': 1350, 'refund': false},
+        },
+      ),
+    ]) {
+      test('$name entered on this device is reviewed as usual', () async {
+        await c.store.upsertEntity('reading', 'shared', reading('from-c'));
+        await d.store.upsertEntity('reading', 'shared', {
+          ...reading('from-d'),
+          ...entered,
+        });
+        await c.sync();
+        expect((await d.sync()).push.conflicts, 1);
+        expect(d.store.openReviewItems().single.kind, ReviewKind.conflict);
+      });
+    }
+
+    test('a later edit by a person is reviewed as usual', () async {
+      await c.store.upsertEntity('reading', 'shared', reading('from-c'));
+      await d.store.upsertEntity('reading', 'shared', reading('from-d'));
+      await d.store.upsertEntity(
+        'reading',
+        'shared',
+        reading('from-d', note: 'For the tax return'),
+      );
+      await c.sync();
+      await d.sync();
+      expect(d.store.openReviewItems(), hasLength(1));
+    });
+
+    test('a deletion on this device is reviewed as usual', () async {
+      await c.store.upsertEntity('reading', 'shared', reading('from-c'));
+      await d.store.upsertEntity('reading', 'shared', reading('from-d'));
+      await d.store.deleteEntity('reading', 'shared');
+      await c.sync();
+      await d.sync();
+      expect(d.store.openReviewItems(), hasLength(1));
+    });
+
+    test('other entity types are reviewed as usual', () async {
+      await c.store.upsertEntity('plan', 'p1', {'id': 'p1', 'state': 'one'});
+      await d.store.upsertEntity('plan', 'p1', {'id': 'p1', 'state': 'two'});
+      await c.sync();
+      expect((await d.sync()).push.conflicts, 1);
+      expect(d.store.openReviewItems(), hasLength(1));
+    });
+
+    test('journals are never dropped, whatever is declared', () async {
+      final e = await Device.create(
+        temp,
+        'e',
+        server,
+        derivedFields: const {
+          'journal': {'amountMinor', 'status', 'postings', 'replaces'},
+        },
+      );
+      addTearDown(e.close);
+      await seedChart(a.store);
+      await a.enableSync(server);
+      await a.sync();
+      await e.enableSync(server);
+      await e.sync();
+      final original = await a.store.postTransaction(expense('100.00'));
+      await a.sync();
+      await e.sync();
+      await a.store.correctTransaction(original.id, expense('120.00'));
+      await e.store.correctTransaction(original.id, expense('130.00'));
+      await a.sync();
+      expect((await e.sync()).push.conflicts, 1);
+      expect(e.store.openReviewItems(), hasLength(1));
+    });
+  });
+
   group('A10: the same amount changed on two offline devices', () {
     test(
       'both proposals survive and resolution makes one correction',

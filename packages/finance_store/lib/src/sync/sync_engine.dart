@@ -23,10 +23,14 @@ abstract final class SyncKeys {
 /// results, and applying the change feed and snapshots. It never performs
 /// network I/O, and every method runs in one local transaction.
 class SyncEngine {
-  SyncEngine(this.ctx, this.vault);
+  SyncEngine(this.ctx, this.vault, {this.derivedFields = const {}});
 
   final StoreContext ctx;
   final ReceiptVault vault;
+
+  /// For each entity type holding values a device works out for itself rather
+  /// than a person entering them, those fields. See [_onlyDerived].
+  final Map<String, Set<String>> derivedFields;
 
   LocalState get _state => ctx.state;
   Outbox get _outbox => ctx.outbox;
@@ -76,6 +80,8 @@ class SyncEngine {
           case CommandStatus.previouslyApplied:
             _accepted(entry, result);
             tally.accepted++;
+          case CommandStatus.conflict when _onlyDerived(entry, result):
+            _takeServerState(entry, result);
           case CommandStatus.conflict:
             final deleted = result.conflict?.serverState == null;
             _hold(
@@ -165,6 +171,58 @@ class SyncEngine {
     schemaVersion: c.schemaVersion,
     payload: c.payload,
   );
+
+  /// Whether this conflict is only over values each device works out for
+  /// itself, such as the result of reading the same document. Nobody could
+  /// usefully choose between those, so the first to reach the server is kept.
+  ///
+  /// It never applies to anything a person changed here: the local entity may
+  /// differ from the server's only in [derivedFields], or where it holds no
+  /// value of its own. Journals, accounts and deletions always go to review.
+  bool _onlyDerived(OutboxEntry entry, CommandResult result) {
+    final primary = entry.primary;
+    final derived = derivedFields[primary.type];
+    final server = result.conflict?.serverState;
+    if (derived == null || server == null) return false;
+    final commandsOnlyEditThis = _outbox
+        .closure(entry)
+        .every(
+          (e) =>
+              e.command.type == CommandType.entityUpsert &&
+              e.keys.every((key) => key == primary),
+        );
+    if (!commandsOnlyEditThis) return false;
+    final local = _state.json(primary) ?? const <String, Object?>{};
+    return local.keys
+        .where((field) => !derived.contains(field))
+        .every(
+          (field) =>
+              _holdsNoValue(local[field]) ||
+              jsonEncode(local[field]) == jsonEncode(server[field]),
+        );
+  }
+
+  bool _holdsNoValue(Object? value) => switch (value) {
+    null || false || '' => true,
+    final List<Object?> list => list.every(_holdsNoValue),
+    final Map<Object?, Object?> map => map.values.every(_holdsNoValue),
+    _ => false,
+  };
+
+  /// Drops [entry] and every later command built on it for the server's
+  /// version. There is nothing to review, because [_onlyDerived] held.
+  void _takeServerState(OutboxEntry entry, CommandResult result) {
+    final closure = _outbox.closure(entry);
+    _revert(closure);
+    _state.put(
+      entry.primary,
+      result.conflict!.serverState!,
+      revision: result.conflict!.serverRevision,
+    );
+    for (final dropped in closure) {
+      _outbox.setStatus(dropped.seq, OutboxStatus.discarded);
+    }
+  }
 
   /// Holds [entry] and every later command built on it for review, puts
   /// the local state back, and preserves the proposal beside the server

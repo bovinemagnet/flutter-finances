@@ -114,6 +114,7 @@ class E2eDevice {
     TempDir temp,
     String name, {
     required String user,
+    Map<String, Set<String>> derivedFields = const {},
   }) async {
     final store = await newStore(temp.sub(name), keys: MemoryKeyStore());
     final httpClient = http.Client();
@@ -128,6 +129,7 @@ class E2eDevice {
         jitter: false,
       ),
       timeout: const Duration(seconds: 20),
+      derivedFields: derivedFields,
     );
     return E2eDevice._(name, user, store, client, httpClient);
   }

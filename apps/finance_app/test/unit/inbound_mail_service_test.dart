@@ -641,6 +641,116 @@ void main() {
     });
   });
 
+  group('two devices that both save and read one document', () {
+    late AppState otherState;
+    late SyncController other;
+    late Directory otherRoot;
+
+    Future<void> startOther() async {
+      otherRoot = await Directory.systemTemp.createTemp('inbound-other');
+      final store = await FinanceStore.create(
+        otherRoot,
+        keyProtection: KeyProtection.password('secret', kdf: _fastKdf),
+      );
+      otherState = AppState(store, today: () => LocalDate(2026, 11, 4));
+      other = SyncController(
+        otherState,
+        tokens: MemoryTokenStore(),
+        settingsStore: MemorySyncSettingsStore(),
+        redirectUri: 'test:/oauth',
+        browserSignIn: (_) async {},
+        httpClient: server.client,
+        accessToken: () async => _user,
+        platform: 'test',
+        retry: const RetryPolicy(maxAttempts: 1),
+        recogniser: _Recogniser(),
+      );
+      await other.saveSettings(
+        SyncSettings(
+          serverUrl: FakeSyncServer.base.toString(),
+          issuer: 'https://id.test',
+          clientId: 'app',
+        ),
+      );
+      final remote = (await other.remoteWorkspaces()).single;
+      await other.enable(await other.prepare(existing: remote));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+
+    tearDown(() async {
+      other.dispose();
+      await otherState.store.close();
+      await otherRoot.delete(recursive: true);
+    });
+
+    /// This device saved and read the document, but lost its connection before
+    /// acknowledging it or sending anything. [other] then collected it too.
+    Future<String> bothRead() async {
+      await start();
+      await startOther();
+      final id = deliver(bytes: _photo(), contentType: 'image/png');
+      final receiptId = nameBasedId(id, 'inbound-receipt');
+      final inbox = await controller.inboundMail.inbox(
+        state.settings.workspaceId,
+      );
+      await state.receipts.capture(
+        [
+          CapturedFile(
+            _photo(),
+            fileName: 'receipt.png',
+            source: CaptureSource.email,
+          ),
+        ],
+        receiptId: receiptId,
+        capturedAt: inbox.documents.single.receivedAt,
+      );
+      await state.receipts.extract(receiptId, recogniser);
+      await other.syncNow();
+      await eventually(
+        () =>
+            otherState.receipts.receipt(receiptId)?.extractionState ==
+            ExtractionState.needsReview,
+      );
+      await other.syncNow();
+      return receiptId;
+    }
+
+    test('neither asks anyone to decide', () async {
+      final receiptId = await bothRead();
+      final otherReading = otherState.receipts
+          .receipt(receiptId)!
+          .latestExtractionId;
+      await controller.syncNow();
+      await controller.syncNow();
+      expect(
+        [for (final r in state.store.openReviewItems()) r.entity.type],
+        isEmpty,
+      );
+      expect(state.unsyncedCount, 0);
+      final receipt = state.receipts.receipt(receiptId)!;
+      expect(receipt.extractionState, ExtractionState.needsReview);
+      expect(receipt.latestExtractionId, otherReading);
+    });
+
+    test('a review on this device still goes to a person', () async {
+      final receiptId = await bothRead();
+      await state.receipts.review(
+        receiptId,
+        ReceiptFields(
+          merchant: 'Fresh Grocer',
+          total: Money(1350, Currency.aud),
+          date: LocalDate(2026, 11, 4),
+        ),
+        const KeepDocumentOnly(),
+      );
+      await controller.syncNow();
+      expect(
+        [for (final r in state.store.openReviewItems()) r.entity.type],
+        contains(ReceiptEntityTypes.receipt),
+      );
+    });
+  });
+
   group('after a sync', () {
     Future<void> until(bool Function() done) async {
       final end = DateTime.now().add(const Duration(seconds: 3));
