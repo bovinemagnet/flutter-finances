@@ -279,10 +279,15 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
                 icon: const Icon(Icons.auto_awesome_outlined),
                 label: const Text('Suggest how to split'),
                 onPressed: () async {
-                  final recogniser = AppScope.servicesOf(context)
-                      .textRecogniser;
+                  final services = AppScope.servicesOf(context);
+                  final recogniser = services.textRecogniser;
+                  final pdfReader = services.pdfReader;
                   final messenger = ScaffoldMessenger.of(context);
-                  if (!await recogniser.isAvailable()) {
+                  if (!await service.canRead(
+                    receipt.id,
+                    recogniser,
+                    pdfReader: pdfReader,
+                  )) {
                     messenger.showSnackBar(
                       const SnackBar(
                         content: Text(
@@ -296,6 +301,7 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
                   final proposal = await service.suggestSeparation(
                     receipt.id,
                     recogniser,
+                    pdfReader: pdfReader,
                   );
                   if (!context.mounted) return;
                   if (proposal.isSingleReceipt) {
@@ -676,8 +682,12 @@ class _ReadAgainCard extends StatelessWidget {
       ),
       trailing: TextButton(
         onPressed: () async {
-          await AppScope.of(context).receipts
-              .extract(receiptId, AppScope.servicesOf(context).textRecogniser);
+          final services = AppScope.servicesOf(context);
+          await AppScope.of(context).receipts.extract(
+            receiptId,
+            services.textRecogniser,
+            pdfReader: services.pdfReader,
+          );
           onRead();
         },
         child: const Text('Try again'),
