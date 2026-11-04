@@ -185,6 +185,13 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   /// Starts foreground sync for an already synced workspace.
   Future<void> start() async {
     WidgetsBinding.instance.addObserver(this);
+    // First-run setup used to mark a workspace as synced before it connected,
+    // which stopped sync from ever being turned on.
+    if (isSynced &&
+        !settings.isComplete &&
+        await state.store.revertNeverConnectedSync()) {
+      state.refresh();
+    }
     if (isSynced && settings.isComplete && await isSignedIn) {
       phase = SyncPhase.idle;
       _timer = Timer.periodic(interval, (_) => syncNow());
@@ -207,7 +214,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Foreground launch reliably resumes queued work.
-    if (state == AppLifecycleState.resumed && isSynced) {
+    if (state == AppLifecycleState.resumed && isSynced && settings.isComplete) {
       if (phase != SyncPhase.off) {
         _waitingAllowed = true;
         _startWaiting();
@@ -389,7 +396,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     bool meteredConnection = false,
     bool uploadAssets = true,
   }) async {
-    if (!isSynced || phase == SyncPhase.syncing) return;
+    if (!isSynced || !settings.isComplete || phase == SyncPhase.syncing) return;
     phase = SyncPhase.syncing;
     notifyListeners();
     try {
@@ -409,8 +416,10 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
           'Update the app or the sync service to keep syncing. '
           'Your changes are kept on this device.';
       phase = SyncPhase.failed;
-    } on Exception catch (e) {
-      // Changes stay safely in the outbox and are retried later.
+    } catch (e) {
+      // Changes stay safely in the outbox and are retried later. This includes
+      // errors, such as an unusable service address: anything left uncaught
+      // would leave the phase on syncing, and block every later attempt.
       lastError = 'Sync paused: $e';
       phase = SyncPhase.failed;
     }

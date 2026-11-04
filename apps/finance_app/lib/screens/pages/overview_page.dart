@@ -2,6 +2,7 @@ import 'package:finance_core/finance_core.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
+import '../../app/page_insets.dart';
 import '../../app/section_label.dart';
 import '../../app/shell.dart';
 import '../../app/theme.dart';
@@ -65,7 +66,7 @@ class OverviewPage extends StatelessWidget {
             builder: (context, _) {
               final list = _insightList(state);
               return ListView.builder(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.fromLTRB(16, 16, 16, listEndPadding(context)),
                 itemCount: list.insights.length,
                 itemBuilder: (context, i) => list.card(list.insights[i]),
               );
@@ -168,7 +169,7 @@ class OverviewPage extends StatelessWidget {
       builder: (context, constraints) {
         if (constraints.maxWidth < overviewDashboardWidth) {
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+            padding: EdgeInsets.fromLTRB(16, 8, 16, listEndPadding(context)),
             children: [
               if (backup != null) ...[backup, gap],
               hero,

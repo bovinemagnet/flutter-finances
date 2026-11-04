@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../format/formatters.dart';
 import '../accounts/account_editor.dart';
+import '../budget/budget_setup_form.dart';
 import 'onboarding_model.dart';
 
 const australianTimezones = [
@@ -16,22 +17,20 @@ const australianTimezones = [
   'Australia/Perth',
 ];
 
-const _frequencies = {
-  Frequency.weekly: 'Weekly',
-  Frequency.fortnightly: 'Fortnightly',
-  Frequency.monthly: 'Monthly',
-};
-
 /// First-run setup (Journey A). Nothing here needs an online account.
 class OnboardingFlow extends StatefulWidget {
   const OnboardingFlow({
     super.key,
     required this.model,
     required this.onFinish,
+    this.headerActions,
   });
 
   final OnboardingModel model;
   final Future<void> Function(OnboardingResult result) onFinish;
+
+  /// Other ways to start, shown above the steps.
+  final Widget? headerActions;
 
   @override
   State<OnboardingFlow> createState() => _OnboardingFlowState();
@@ -41,7 +40,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   OnboardingModel get model => widget.model;
   var _step = 0;
   var _finishing = false;
-  String? _payError;
 
   static const _stepCount = 5;
 
@@ -85,56 +83,70 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Set up your finances')),
-      body: Stepper(
-        currentStep: _step,
-        onStepTapped: (i) => setState(() => _step = i),
-        onStepContinue: _finishing ? null : _next,
-        onStepCancel: _step == 0 ? null : () => setState(() => _step--),
-        controlsBuilder: (context, details) => Padding(
-          padding: const EdgeInsets.only(top: 16),
-          child: Row(
-            children: [
-              FilledButton(
-                onPressed: _canContinue ? details.onStepContinue : null,
-                child: Text(_step == _stepCount - 1 ? 'Finish' : 'Continue'),
-              ),
-              const SizedBox(width: 8),
-              if (details.onStepCancel != null)
-                TextButton(
-                  onPressed: details.onStepCancel,
-                  child: const Text('Back'),
-                ),
-            ],
-          ),
-        ),
-        steps: [
-          Step(
-            title: const Text('Region'),
-            content: _region(),
-            isActive: _step >= 0,
-          ),
-          Step(
-            title: const Text('Where your data lives'),
-            content: _storage(),
-            isActive: _step >= 1,
-          ),
-          Step(
-            title: const Text('Accounts'),
-            content: _accounts(),
-            isActive: _step >= 2,
-          ),
-          Step(
-            title: const Text('Budget'),
-            content: _budget(),
-            isActive: _step >= 3,
-          ),
-          Step(
-            title: const Text('Review'),
-            content: _review(),
-            isActive: _step >= 4,
-          ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (widget.headerActions != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: widget.headerActions,
+            ),
+          Expanded(child: _steps()),
         ],
       ),
+    );
+  }
+
+  Widget _steps() {
+    return Stepper(
+      currentStep: _step,
+      onStepTapped: (i) => setState(() => _step = i),
+      onStepContinue: _finishing ? null : _next,
+      onStepCancel: _step == 0 ? null : () => setState(() => _step--),
+      controlsBuilder: (context, details) => Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: Row(
+          children: [
+            FilledButton(
+              onPressed: _canContinue ? details.onStepContinue : null,
+              child: Text(_step == _stepCount - 1 ? 'Finish' : 'Continue'),
+            ),
+            const SizedBox(width: 8),
+            if (details.onStepCancel != null)
+              TextButton(
+                onPressed: details.onStepCancel,
+                child: const Text('Back'),
+              ),
+          ],
+        ),
+      ),
+      steps: [
+        Step(
+          title: const Text('Region'),
+          content: _region(),
+          isActive: _step >= 0,
+        ),
+        Step(
+          title: const Text('Where your data lives'),
+          content: _storage(),
+          isActive: _step >= 1,
+        ),
+        Step(
+          title: const Text('Accounts'),
+          content: _accounts(),
+          isActive: _step >= 2,
+        ),
+        Step(
+          title: const Text('Budget'),
+          content: _budget(),
+          isActive: _step >= 3,
+        ),
+        Step(
+          title: const Text('Review'),
+          content: _review(),
+          isActive: _step >= 4,
+        ),
+      ],
     );
   }
 
@@ -222,138 +234,24 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     ],
   );
 
-  Widget _budget() {
-    final assetAccounts = model.accounts
-        .where((e) => !e.account.type.isLiability)
-        .toList();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Use your take-home pay. The app does not estimate tax or '
-          'superannuation. You can skip this and set a budget later.',
-        ),
-        const SizedBox(height: 8),
-        TextFormField(
-          decoration: InputDecoration(
-            labelText: 'Take-home pay',
-            prefixText: r'$ ',
-            errorText: _payError,
-          ),
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          initialValue: model.takeHomePay?.toDecimalString(),
-          onChanged: (text) => setState(() {
-            if (text.trim().isEmpty) {
-              model.takeHomePay = null;
-              _payError = null;
-              return;
-            }
-            try {
-              model.takeHomePay = Money.parse(text, model.currency);
-              _payError = null;
-            } on FormatException {
-              _payError = 'Enter an amount such as 3123.45';
-            }
-          }),
-        ),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<Frequency>(
-          initialValue: model.payFrequency,
-          decoration: const InputDecoration(labelText: 'Paid'),
-          items: [
-            for (final e in _frequencies.entries)
-              DropdownMenuItem(value: e.key, child: Text(e.value)),
-          ],
-          onChanged: (f) => setState(() => model.payFrequency = f!),
-        ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Next payday'),
-          subtitle: Text(formatDate(model.nextPayday ?? model.today)),
-          trailing: TextButton(
-            child: const Text('Change'),
-            onPressed: () async {
-              final start = model.nextPayday ?? model.today;
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: DateTime(start.year, start.month, start.day),
-                firstDate: DateTime(2000),
-                lastDate: DateTime(2100),
-              );
-              if (picked != null) {
-                setState(
-                  () => model.nextPayday = LocalDate.fromDateTime(picked),
-                );
-              }
-            },
-          ),
-        ),
-        if (assetAccounts.isNotEmpty)
-          DropdownButtonFormField<String>(
-            initialValue: model.payAccountId,
-            decoration: const InputDecoration(labelText: 'Pay goes into'),
-            items: [
-              for (final e in assetAccounts)
-                DropdownMenuItem(
-                  value: e.account.id,
-                  child: Text(e.account.name),
-                ),
-            ],
-            onChanged: (id) => setState(() => model.payAccountId = id),
-          ),
-        const SizedBox(height: 8),
-        SegmentedButton<BudgetMode>(
-          segments: const [
-            ButtonSegment(
-              value: BudgetMode.groups,
-              label: Text('Needs, wants, savings'),
-            ),
-            ButtonSegment(
-              value: BudgetMode.zeroBased,
-              label: Text('Every dollar assigned'),
-            ),
-            ButtonSegment(
-              value: BudgetMode.categoryOnly,
-              label: Text('Categories only'),
-            ),
-          ],
-          selected: {model.budgetMode},
-          onSelectionChanged: (s) =>
-              setState(() => model.budgetMode = s.single),
-        ),
-        if (model.budgetMode == BudgetMode.groups) ...[
-          for (final group in defaultGroups)
-            Row(
-              children: [
-                SizedBox(width: 120, child: Text(group.name)),
-                Expanded(
-                  child: Slider(
-                    value: (model.shares[group.id]! / 100).toDouble(),
-                    max: 100,
-                    divisions: 20,
-                    label: '${model.shares[group.id]! ~/ 100}%',
-                    semanticFormatterCallback: (v) =>
-                        '${group.name} ${v.round()} percent',
-                    onChanged: (v) => setState(
-                      () => model.shares[group.id] = v.round() * 100,
-                    ),
-                  ),
-                ),
-                SizedBox(
-                  width: 48,
-                  child: Text('${model.shares[group.id]! ~/ 100}%'),
-                ),
-              ],
-            ),
-          if (model.shareError != null)
-            Text(
-              model.shareError!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
+  Widget _budget() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text(
+        'Use your take-home pay. The app does not estimate tax or '
+        'superannuation. You can skip this and set a budget later.',
+      ),
+      const SizedBox(height: 8),
+      BudgetSetupForm(
+        model: model,
+        payAccounts: [
+          for (final e in model.accounts)
+            if (!e.account.type.isLiability) e.account,
         ],
-      ],
-    );
-  }
+        onChanged: () => setState(() {}),
+      ),
+    ],
+  );
 
   Widget _review() {
     final pay = model.takeHomePay;
@@ -367,7 +265,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         Text(
           pay == null
               ? 'No budget yet'
-              : '${_frequencies[model.payFrequency]} budget from ${formatMoney(pay)} take-home pay',
+              : '${payFrequencies[model.payFrequency]} budget from ${formatMoney(pay)} take-home pay',
         ),
         Text(
           model.syncMode == SyncMode.local

@@ -145,16 +145,37 @@ class OnboardingModel {
   };
 
   OnboardingResult build() {
-    final categories = <Category>[];
+    final categories = [
+      for (final starter in starterCategories)
+        Category(id: newId(), name: starter.name, kind: starter.kind),
+    ];
+    final budget = buildBudget(categories);
+    return OnboardingResult(
+      currency: currency,
+      timezone: timezone,
+      locale: locale,
+      // Every workspace starts local, whichever was chosen: turning sync on
+      // connects it to the server, and that is refused once it is synced.
+      syncMode: SyncMode.local,
+      accounts: List.unmodifiable(accounts),
+      categories: categories,
+      plan: budget.plan,
+      schedules: budget.schedules,
+    );
+  }
+
+  /// The budget and pay schedule from these choices, allocated to whichever of
+  /// [categories] carry a starter category's name.
+  ({BudgetPlan? plan, List<RecurringSchedule> schedules}) buildBudget(
+    List<Category> categories,
+  ) {
     final weights = <String, Map<String, int>>{};
     for (final starter in starterCategories) {
-      final category = Category(
-        id: newId(),
-        name: starter.name,
-        kind: starter.kind,
-      );
-      categories.add(category);
-      if (starter.groupId != null) {
+      if (starter.groupId == null) continue;
+      final category = categories
+          .where((c) => c.name == starter.name)
+          .firstOrNull;
+      if (category != null) {
         (weights[starter.groupId!] ??= {})[category.id] = starter.weight;
       }
     }
@@ -221,22 +242,14 @@ class OnboardingModel {
             amount: pay,
             accountId: payAccountId!,
             categoryId: categories
-                .firstWhere((c) => c.name == 'Salary and wages')
-                .id,
+                .where((c) => c.name == 'Salary and wages')
+                .firstOrNull
+                ?.id,
           ),
         );
       }
     }
 
-    return OnboardingResult(
-      currency: currency,
-      timezone: timezone,
-      locale: locale,
-      syncMode: syncMode,
-      accounts: List.unmodifiable(accounts),
-      categories: categories,
-      plan: plan,
-      schedules: schedules,
-    );
+    return (plan: plan, schedules: schedules);
   }
 }

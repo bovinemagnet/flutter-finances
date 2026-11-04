@@ -131,13 +131,20 @@ class _HomeScreenState extends State<HomeScreen> {
       Destination.accounts => const AccountsPage(),
       Destination.settings => SettingsPage(syncSection: widget.syncSection),
     };
-    return AdaptiveShell(
-      selected: _selected,
-      onSelect: (d) => setState(() => _selected = d),
-      onAdd: _add,
-      syncStatus:
-          widget.syncStatus ?? _UnsyncedBadge(count: state.unsyncedCount),
-      body: KeyedSubtree(key: ValueKey(_selected), child: body),
+    // Back returns to Overview from anywhere else, and only leaves from there.
+    return PopScope(
+      canPop: _selected == Destination.overview,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) setState(() => _selected = Destination.overview);
+      },
+      child: AdaptiveShell(
+        selected: _selected,
+        onSelect: (d) => setState(() => _selected = d),
+        onAdd: _add,
+        syncStatus:
+            widget.syncStatus ?? _UnsyncedBadge(count: state.unsyncedCount),
+        body: KeyedSubtree(key: ValueKey(_selected), child: body),
+      ),
     );
   }
 }

@@ -2,6 +2,7 @@ import 'package:finance_core/finance_core.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
+import '../../app/page_insets.dart';
 import '../../data/app_state.dart';
 import '../../features/plan/bills_view.dart';
 import '../../features/plan/forecast_view.dart';
@@ -386,6 +387,13 @@ class _PlanPageState extends State<PlanPage> {
                 children: [
                   bills,
                   ListView(
+                    padding: EdgeInsets.only(
+                      bottom: listEndPadding(
+                        context,
+                        base: 0,
+                        hasPageAction: true,
+                      ),
+                    ),
                     children: [
                       BillsCalendar(
                         month: month,
@@ -401,11 +409,14 @@ class _PlanPageState extends State<PlanPage> {
             ),
           ],
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          heroTag: 'schedule',
-          onPressed: _addSchedule,
-          icon: const Icon(Icons.add_alarm_outlined),
-          label: const Text('Add bill or income'),
+        floatingActionButton: aboveCompactActions(
+          context,
+          FloatingActionButton.extended(
+            heroTag: 'schedule',
+            onPressed: _addSchedule,
+            icon: const Icon(Icons.add_alarm_outlined),
+            label: const Text('Add bill or income'),
+          ),
         ),
       ),
     );
@@ -503,7 +514,12 @@ class _ScheduleEditorState extends State<ScheduleEditor> {
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
             initialValue: _accountId,
-            decoration: const InputDecoration(labelText: 'Account'),
+            decoration: InputDecoration(
+              labelText: 'Account',
+              helperText: chart.accounts.isEmpty
+                  ? 'Add an account first, in Accounts'
+                  : null,
+            ),
             items: [
               for (final a in chart.accounts)
                 DropdownMenuItem(value: a.id, child: Text(a.name)),

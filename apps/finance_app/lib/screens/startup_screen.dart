@@ -105,7 +105,45 @@ class _StartupScreenState extends State<StartupScreen> {
           },
         );
       case _Phase.onboarding:
-        final onboarding = OnboardingFlow(
+        return OnboardingFlow(
+          headerActions: Wrap(
+            spacing: 8,
+            children: [
+              TextButton.icon(
+                icon: const Icon(Icons.cloud_download_outlined),
+                label: const Text('Use my synced data'),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ConnectScreen(
+                      gate: widget.gate,
+                      needsPassword: _needsPassword,
+                      createSync: widget.createSync,
+                      onConnected: (state, sync) {
+                        Navigator.of(context).pop();
+                        widget.onReady(state, sync: sync);
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                icon: const Icon(Icons.restore),
+                label: const Text('Restore from a backup'),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => RestoreScreen(
+                      gate: widget.gate,
+                      needsPassword: _needsPassword,
+                      onRestored: (store) {
+                        Navigator.of(context).pop();
+                        widget.onReady(AppState(store, today: _today));
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
           model: OnboardingModel(today: _today()),
           onFinish: (result) async {
             String? password;
@@ -127,53 +165,6 @@ class _StartupScreenState extends State<StartupScreen> {
             }
             await _finishOnboarding(result, password);
           },
-        );
-        return Stack(
-          children: [
-            onboarding,
-            Positioned(
-              right: 16,
-              top: MediaQuery.paddingOf(context).top + 8,
-              child: Wrap(
-                spacing: 8,
-                children: [
-                  TextButton.icon(
-                    icon: const Icon(Icons.cloud_download_outlined),
-                    label: const Text('Use my synced data'),
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => ConnectScreen(
-                          gate: widget.gate,
-                          needsPassword: _needsPassword,
-                          createSync: widget.createSync,
-                          onConnected: (state, sync) {
-                            Navigator.of(context).pop();
-                            widget.onReady(state, sync: sync);
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                  TextButton.icon(
-                    icon: const Icon(Icons.restore),
-                    label: const Text('Restore from a backup'),
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => RestoreScreen(
-                          gate: widget.gate,
-                          needsPassword: _needsPassword,
-                          onRestored: (store) {
-                            Navigator.of(context).pop();
-                            widget.onReady(AppState(store, today: _today));
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
         );
     }
   }

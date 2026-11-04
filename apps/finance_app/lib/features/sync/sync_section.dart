@@ -177,7 +177,9 @@ class SyncSection extends StatelessWidget {
                   '${controller.state.unsyncedCount} changes waiting to upload',
                 ),
                 trailing: TextButton(
-                  onPressed: controller.phase == SyncPhase.syncing
+                  onPressed:
+                      controller.phase == SyncPhase.syncing ||
+                          !controller.settings.isComplete
                       ? null
                       : controller.syncNow,
                   child: const Text('Sync now'),

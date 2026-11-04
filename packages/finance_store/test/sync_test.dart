@@ -6,6 +6,7 @@ import 'package:test/test.dart';
 
 import 'support/devices.dart';
 import 'support/fake_server.dart';
+import 'support/memory_key_store.dart';
 import 'support/store_fixtures.dart';
 
 Uint8List jpeg(int size, {int seed = 1}) => Uint8List.fromList([
@@ -773,6 +774,46 @@ void main() {
       for (final r in previews) {
         expect(r.headers['x-workspace-id'], server.workspaceId);
       }
+    });
+  });
+
+  group('a workspace marked synced that never reached a server', () {
+    Future<Device> unconnected() async {
+      final store = await FinanceStore.create(
+        temp.sub('unconnected'),
+        keyProtection: KeyProtection.platform(MemoryKeyStore()),
+        syncMode: SyncMode.synced,
+      );
+      return Device.wrap('unconnected', store, server);
+    }
+
+    test('returns to local, and can then turn sync on', () async {
+      final device = await unconnected();
+      await seedChart(device.store);
+      final pending = device.store.pendingCommandCount;
+
+      expect(await device.store.revertNeverConnectedSync(), isTrue);
+
+      expect(device.store.settings.syncMode, SyncMode.local);
+      expect(device.store.pendingCommandCount, pending);
+      await device.enableSync(server);
+      expect(device.store.settings.syncMode, SyncMode.synced);
+      await device.sync();
+      expect(device.store.pendingCommandCount, 0);
+      await device.close();
+    });
+
+    test('a workspace already local is left alone', () async {
+      expect(await a.store.revertNeverConnectedSync(), isFalse);
+      expect(a.store.settings.syncMode, SyncMode.local);
+    });
+
+    test('a device that has synced is left alone', () async {
+      await seedChart(a.store);
+      await a.enableSync(server);
+      await a.sync();
+      expect(await a.store.revertNeverConnectedSync(), isFalse);
+      expect(a.store.settings.syncMode, SyncMode.synced);
     });
   });
 }

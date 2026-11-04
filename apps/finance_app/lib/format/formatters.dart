@@ -34,6 +34,15 @@ String formatDate(LocalDate date, {String locale = 'en_AU'}) => DateFormat(
   locale,
 ).format(DateTime(date.year, date.month, date.day));
 
+/// A financial year by its short name, otherwise both dates.
+String formatDateRange(DateRange range, {String locale = 'en_AU'}) {
+  final label = range.label;
+  return label.startsWith('FY')
+      ? label
+      : '${formatDate(range.start, locale: locale)} to '
+            '${formatDate(range.end, locale: locale)}';
+}
+
 String formatShortDate(LocalDate date, {String locale = 'en_AU'}) => DateFormat(
   'dd/MM/yyyy',
   locale,

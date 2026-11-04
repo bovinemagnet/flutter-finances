@@ -2,6 +2,8 @@ import 'package:finance_core/finance_core.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
+import '../../app/page_insets.dart';
+import '../../features/budget/budget_setup_screen.dart';
 import '../../features/budget/budget_view.dart';
 import '../../features/goals/goals_view.dart';
 import '../../format/formatters.dart';
@@ -152,11 +154,26 @@ class _BudgetPageState extends State<BudgetPage> {
             child: TabBarView(
               children: [
                 evaluation == null
-                    ? const Center(
+                    ? Center(
                         child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Text(
-                            'No budget yet. Set one up from your take-home pay in Settings.',
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                'No budget yet. Set one up from your take-home pay.',
+                              ),
+                              const SizedBox(height: 16),
+                              FilledButton(
+                                onPressed: () => Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) =>
+                                        BudgetSetupScreen(state: state),
+                                  ),
+                                ),
+                                child: const Text('Set up budget'),
+                              ),
+                            ],
                           ),
                         ),
                       )
@@ -197,11 +214,14 @@ class _BudgetPageState extends State<BudgetPage> {
                     progress: state.goalProgress(),
                     onOpen: _allocate,
                   ),
-                  floatingActionButton: FloatingActionButton.extended(
-                    heroTag: 'goal',
-                    onPressed: _addGoal,
-                    icon: const Icon(Icons.flag_outlined),
-                    label: const Text('New goal'),
+                  floatingActionButton: aboveCompactActions(
+                    context,
+                    FloatingActionButton.extended(
+                      heroTag: 'goal',
+                      onPressed: _addGoal,
+                      icon: const Icon(Icons.flag_outlined),
+                      label: const Text('New goal'),
+                    ),
                   ),
                 ),
               ],

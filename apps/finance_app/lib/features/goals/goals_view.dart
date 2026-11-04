@@ -1,6 +1,7 @@
 import 'package:finance_core/finance_core.dart';
 import 'package:flutter/material.dart';
 
+import '../../app/page_insets.dart';
 import '../../format/formatters.dart';
 
 /// Savings goals and sinking funds (BUD 04, BUD 05).
@@ -20,7 +21,12 @@ class GoalsView extends StatelessWidget {
     }
     final theme = Theme.of(context);
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        listEndPadding(context, hasPageAction: true),
+      ),
       children: [
         for (final p in progress)
           Card(
