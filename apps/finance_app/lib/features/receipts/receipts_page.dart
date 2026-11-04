@@ -12,6 +12,7 @@ import '../../format/formatters.dart';
 import '../../platform/services.dart';
 import 'receipt_capture.dart';
 import 'receipt_review_screen.dart';
+import 'inbound_notices.dart';
 
 const extractionLabels = {
   ExtractionState.captured: 'Saved, waiting to be read',
@@ -122,6 +123,10 @@ class _ReceiptsPageState extends State<ReceiptsPage> {
                 ),
             ],
           ),
+        ),
+        InboundNotices(
+          notices: state.inboundNotices,
+          onDismiss: state.dismissInboundNotice,
         ),
         Expanded(
           child: receipts.isEmpty

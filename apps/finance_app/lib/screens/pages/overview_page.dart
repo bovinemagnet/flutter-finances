@@ -10,10 +10,12 @@ import '../../data/app_state.dart';
 import '../../features/overview/discretionary_card.dart';
 import '../../features/overview/insight_list.dart';
 import '../../features/overview/overview_widgets.dart';
+import '../../features/overview/setup_checklist.dart';
 import '../../features/overview/spending_pace.dart';
 import '../../features/transactions/transaction_list.dart';
 import '../../format/formatters.dart';
 import '../editors.dart';
+import 'settings_page.dart';
 
 /// Content wider than this gets the two-column dashboard.
 const overviewDashboardWidth = 960.0;
@@ -66,7 +68,12 @@ class OverviewPage extends StatelessWidget {
             builder: (context, _) {
               final list = _insightList(state);
               return ListView.builder(
-                padding: EdgeInsets.fromLTRB(16, 16, 16, listEndPadding(context)),
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  16,
+                  16,
+                  listEndPadding(context),
+                ),
                 itemCount: list.insights.length,
                 itemBuilder: (context, i) => list.card(list.insights[i]),
               );
@@ -102,12 +109,17 @@ class OverviewPage extends StatelessWidget {
     final hero = DiscretionaryCard(
       estimate: estimate,
       pace: paced,
+      latestEntry: state.lastEntryDates.values.fold<LocalDate?>(
+        null,
+        (latest, date) => latest == null || date > latest ? date : latest,
+      ),
       accountName: (id) =>
           state.chart.hasAccount(id) ? state.chart.account(id).name : id,
     );
     final netWorth = FigureTile(
       label: 'Net worth',
       value: formatMoney(ledger.netWorth()),
+      caption: 'Calculated from your entries',
     );
     final bills = FigureTile(
       label: 'Bills before payday',
@@ -118,8 +130,38 @@ class OverviewPage extends StatelessWidget {
         ),
       ),
       caption:
-          '${billsBeforePayday.length} due by ${formatDate(estimate.horizonEnd)}',
+          'Planned · ${billsBeforePayday.length} due by ${formatDate(estimate.horizonEnd)}',
+      planned: true,
     );
+    final setupSteps = [
+      SetupStep(
+        title: 'Add an account',
+        detail: 'Your bank, cash and card accounts',
+        done: state.chart.accounts.any((a) => !a.archived),
+        onOpen: () => onNavigate(Destination.accounts),
+      ),
+      SetupStep(
+        title: 'Set up a budget',
+        detail: 'Start from your take-home pay',
+        done: state.budgetPlan != null,
+        onOpen: () => onNavigate(Destination.budget),
+      ),
+      SetupStep(
+        title: 'Set a minimum cash buffer',
+        detail: 'What to keep aside in every estimate',
+        done: state.minimumBuffer != null,
+        onOpen: () => SettingsPage.editMinimumBuffer(context),
+      ),
+    ];
+    final setupFinished = setupSteps.every((step) => step.done);
+    final setup = state.setupChecklistHidden || setupFinished
+        ? null
+        : SetupChecklist(steps: setupSteps, onHide: state.hideSetupChecklist);
+    // An unfinished workspace has nothing to report yet, which is not the same
+    // as everything being fine, whether or not the checklist is showing.
+    final showAttention =
+        setupFinished ||
+        state.insights(receiptJournalIds: receiptJournalIds).isNotEmpty;
     final attention = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -172,6 +214,7 @@ class OverviewPage extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(16, 8, 16, listEndPadding(context)),
             children: [
               if (backup != null) ...[backup, gap],
+              if (setup != null) ...[setup, gap],
               hero,
               gap,
               FigureRow(children: [netWorth, bills]),
@@ -180,8 +223,7 @@ class OverviewPage extends StatelessWidget {
               gap,
               comingUp,
               gap,
-              attention,
-              gap,
+              if (showAttention) ...[attention, gap],
               Wrap(
                 spacing: 8,
                 children: [
@@ -209,6 +251,7 @@ class OverviewPage extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(28, 12, 28, 40),
           children: [
             if (backup != null) ...[backup, gap],
+            if (setup != null) ...[setup, gap],
             FigureRow(
               minTileWidth: 200,
               children: [
@@ -257,7 +300,14 @@ class OverviewPage extends StatelessWidget {
                   flex: 2,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [hero, gap, attention, gap, money, gap, comingUp],
+                    children: [
+                      hero,
+                      gap,
+                      if (showAttention) ...[attention, gap],
+                      money,
+                      gap,
+                      comingUp,
+                    ],
                   ),
                 ),
               ],
@@ -279,6 +329,7 @@ class _YourMoney extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = FinancePalette.of(context);
     final ledger = state.ledger;
+    final toReview = state.unreviewedJournalIds.length;
     return OverviewSection(
       title: 'Your money',
       action: 'Accounts',
@@ -290,16 +341,37 @@ class _YourMoney extends StatelessWidget {
               builder: (context) {
                 final shown = ledger.displayBalance(account.id);
                 final signed = account.type.isLiability ? -shown : shown;
+                final lastEntry = state.lastEntryDates[account.id];
+                final pending =
+                    ledger.displayBalance(account.id, includePending: true) -
+                    shown;
                 return FigureRowTile(
                   title: account.name,
-                  subtitle: account.lastReconciledOn == null
-                      ? null
-                      : 'Reconciled ${formatDate(account.lastReconciledOn!)}',
+                  subtitle: [
+                    lastEntry == null
+                        ? 'No entries yet'
+                        : 'Last entry ${formatDate(lastEntry)}',
+                    if (account.lastReconciledOn != null)
+                      'Reconciled ${formatDate(account.lastReconciledOn!)}',
+                    if (!pending.isZero)
+                      'Not counting ${formatMoney(pending.abs())} pending',
+                  ].join(' · '),
                   amount: formatMoney(signed),
                   amountColour: signed.isNegative ? palette.negative : null,
                 );
               },
             ),
+        if (toReview > 0)
+          ListTile(
+            leading: const Icon(Icons.rule_outlined),
+            title: Text(
+              toReview == 1
+                  ? '1 entry to review'
+                  : '$toReview entries to review',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => onNavigate(Destination.transactions),
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
           child: Text(
@@ -351,10 +423,11 @@ class _ComingUp extends StatelessWidget {
               return FigureRowTile(
                 leading: DueDate(s.occurrence.dueDate),
                 title: schedule?.name ?? 'Scheduled',
+                subtitle: 'Planned',
                 amount: income
                     ? formatMoney(s.outstanding, signed: true)
                     : formatMoney(-s.outstanding),
-                amountColour: income ? palette.accentText : null,
+                amountColour: income ? palette.accentText : palette.muted,
                 onTap: () => onNavigate(Destination.plan),
               );
             },

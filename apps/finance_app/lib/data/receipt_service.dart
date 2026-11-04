@@ -125,8 +125,20 @@ class ReceiptService {
   );
 
   /// Validates and durably saves captured files as one receipt.
-  Future<Receipt> capture(List<CapturedFile> files) async {
+  ///
+  /// With a [receiptId] the capture can be repeated: an existing receipt is
+  /// returned as it is, and a retry after a partial save writes the same pages
+  /// again rather than adding more.
+  Future<Receipt> capture(
+    List<CapturedFile> files, {
+    String? receiptId,
+    DateTime? capturedAt,
+  }) async {
     if (files.isEmpty) throw ReceiptRejectedException(['Nothing was captured']);
+    if (receiptId != null) {
+      final existing = receipt(receiptId);
+      if (existing != null) return existing;
+    }
     final problems = <String>[];
     final accepted = <(CapturedFile, ContentValidationResult)>[];
     var pageCount = 0;
@@ -146,9 +158,9 @@ class ReceiptService {
     if (pageIssue != null) problems.add(pageIssue.message);
     if (problems.isNotEmpty) throw ReceiptRejectedException(problems);
 
-    final receiptId = newId();
+    final id = receiptId ?? newId();
     final pages = <ReceiptPage>[];
-    for (final (file, result) in accepted) {
+    for (final (index, (file, result)) in accepted.indexed) {
       // New copies from the camera or clipboard lose location metadata;
       // imported files are preserved exactly as received (REC 02).
       final isNewCopy =
@@ -156,32 +168,43 @@ class ReceiptService {
           file.source == CaptureSource.documentScanner ||
           file.source == CaptureSource.paste;
       final bytes = isNewCopy ? stripImageMetadata(file.bytes) : file.bytes;
-      final asset = await _store.vault.saveAsset(
-        ownerType: ReceiptEntityTypes.receipt,
-        ownerId: receiptId,
-        kind: store.VaultAssetKind.source,
-        contentType: result.contentType!.mimeType,
-        bytes: bytes,
-      );
+      // A derived id means a retry reuses what it saved, and every device
+      // that collects the same document names the same asset.
+      final assetId = receiptId == null
+          ? null
+          : nameBasedId(receiptId, 'asset-$index');
+      final asset =
+          (assetId == null ? null : _store.vault.asset(assetId)) ??
+          await _store.vault.saveAsset(
+            ownerType: ReceiptEntityTypes.receipt,
+            ownerId: id,
+            kind: store.VaultAssetKind.source,
+            contentType: result.contentType!.mimeType,
+            bytes: bytes,
+            assetId: assetId,
+          );
       if (result.contentType != DocumentContentType.pdf) {
         try {
           final hash = differenceHash(differenceHashMatrix(bytes));
           await _store.upsertEntity(ReceiptEntityTypes.fingerprint, asset.id, {
             'id': asset.id,
-            'receiptId': receiptId,
+            'receiptId': id,
             'assetId': asset.id,
             'dHash': hash,
           });
-        } on FormatException {
-          // Images the decoder cannot read are still kept.
+        } catch (_) {
+          // Images the decoder cannot read are still kept. The decoder throws
+          // several kinds of error on a damaged file.
         }
       }
       final count = result.pageCount ?? 1;
       for (var index = 0; index < count; index++) {
         pages.add(
           ReceiptPage(
-            id: newId(),
-            receiptId: receiptId,
+            id: receiptId == null
+                ? newId()
+                : nameBasedId(receiptId, 'page-${pages.length + 1}'),
+            receiptId: id,
             pageNumber: pages.length + 1,
             sourceAssetId: asset.id,
             sourcePageIndex: index,
@@ -196,14 +219,14 @@ class ReceiptService {
         receiptPageToJson(page),
       );
     }
-    final receipt = Receipt(
-      id: receiptId,
-      capturedAt: DateTime.now().toUtc(),
+    final saved = Receipt(
+      id: id,
+      capturedAt: capturedAt ?? DateTime.now().toUtc(),
       source: files.first.source,
     );
-    await _putReceipt(receipt);
+    await _putReceipt(saved);
     state.refresh();
-    return receipt;
+    return saved;
   }
 
   /// Runs text recognition and parsing; failure keeps the document and

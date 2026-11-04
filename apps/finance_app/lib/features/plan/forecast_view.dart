@@ -12,12 +12,37 @@ const certaintyLabels = {
 
 enum ForecastPresentation { chart, table }
 
+/// How far ahead a forecast looks. The default is PLAN 03's 90 days; longer
+/// horizons use calendar months and end the day before the same date.
+enum ForecastHorizon {
+  days90('90 days'),
+  months6('6 months'),
+  months12('12 months');
+
+  const ForecastHorizon(this.label);
+  final String label;
+
+  LocalDate endFrom(LocalDate today) => switch (this) {
+    days90 => today.addDays(89),
+    months6 => today.addMonths(6).addDays(-1),
+    months12 => today.addMonths(12).addDays(-1),
+  };
+}
+
 /// Day-by-day cash projection with chart and table alternatives (PLAN 03).
 /// Certainty is written next to each line, never shown by colour alone.
 class ForecastView extends StatefulWidget {
-  const ForecastView({super.key, required this.forecast, this.onOpenSource});
+  const ForecastView({
+    super.key,
+    required this.forecast,
+    this.onOpenSource,
+    this.header,
+  });
 
   final CashForecast forecast;
+
+  /// Controls shown above the forecast, which scroll away with it.
+  final Widget? header;
   final ValueChanged<ForecastLine>? onOpenSource;
 
   @override
@@ -40,6 +65,10 @@ class _ForecastViewState extends State<ForecastView> {
         listEndPadding(context, hasPageAction: true),
       ),
       children: [
+        if (widget.header != null) ...[
+          widget.header!,
+          const SizedBox(height: 16),
+        ],
         Text(
           'Cash forecast ${formatDate(forecast.start)} to ${formatDate(forecast.end)}',
           style: theme.textTheme.titleMedium,

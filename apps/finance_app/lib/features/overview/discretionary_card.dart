@@ -32,6 +32,7 @@ class DiscretionaryCard extends StatelessWidget {
     required this.estimate,
     required this.accountName,
     this.pace,
+    this.latestEntry,
   });
 
   final DiscretionaryEstimate estimate;
@@ -39,6 +40,9 @@ class DiscretionaryCard extends StatelessWidget {
 
   /// Spending against the current budget period, shown as a bar.
   final SpendingPace? pace;
+
+  /// The newest entry behind the estimate, if there are any.
+  final LocalDate? latestEntry;
 
   @override
   Widget build(BuildContext context) {
@@ -93,6 +97,10 @@ class DiscretionaryCard extends StatelessWidget {
                 style: palette.figure(size: 40),
               ),
             ),
+            Text(
+              'Estimate, not a bank balance',
+              style: theme.textTheme.bodySmall,
+            ),
             if (!estimate.complete)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
@@ -140,10 +148,11 @@ class DiscretionaryCard extends StatelessWidget {
                   Text(
                     'Cash limit: ${formatMoney(estimate.cashLimit)} (lowest balance ${formatMoney(estimate.lowestBalance)} on ${formatDate(estimate.lowestBalanceDate)}, after a ${formatMoney(estimate.minimumBuffer)} buffer)',
                   ),
-                  if (estimate.sourceFreshness != null)
-                    Text(
-                      'Account data as at ${formatDate(estimate.sourceFreshness!)}',
-                    ),
+                  Text(
+                    latestEntry == null
+                        ? 'No entries yet'
+                        : 'Latest entry ${formatDate(latestEntry!)}',
+                  ),
                   const Text('The estimate is the smaller of the two.'),
                   Text(
                     'Only confirmed income is counted.',

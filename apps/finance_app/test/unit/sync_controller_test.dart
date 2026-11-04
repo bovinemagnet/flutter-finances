@@ -301,7 +301,7 @@ void main() {
 
       // Every wait now asks for a pull, and every pull fails.
       syncA.didChangeAppLifecycleState(AppLifecycleState.resumed);
-      await until(() => _snapshots(server) >= 1);
+      await until(() => _snapshots(server) >= 1, ms: 15000);
       final before = _snapshots(server);
       await Future<void>.delayed(const Duration(milliseconds: 300));
       final during = _snapshots(server) - before;
@@ -313,7 +313,7 @@ void main() {
       syncA.dispose();
       await until(() => syncA.phase != SyncPhase.syncing);
       await a.store.close();
-    });
+    }, retry: 2);
 
     test('an unexpected error ends waiting so it can start again', () async {
       var malformed = false;

@@ -15,6 +15,7 @@ A receipt enters the application through one of several routes. Whatever the rou
 | Paste | `Ctrl+V` or the *Paste* chip on the Receipts page; an image on the clipboard is saved as `pasted.png`, otherwise copied files are read | All (shown when the paste capability is true)
 | Drag and drop | Dropping images or PDFs on the Receipts page; a "Drop to save as a receipt" overlay is shown | Desktop (the drag and drop capability)
 | Share target | Files shared from another application into the app | Android; iOS only once the share extension target is added
+| Email forwarding | Documents attached to emails sent to a private forwarding address are collected after a sync and saved with the source `CaptureSource.email`; see <<Email forwarding>> | All (needs sync and an available service)
 |===
 
 Importing a file is always available and does not need camera or photo access, so a refused permission never blocks capture (UX 04).
@@ -92,6 +93,62 @@ Both engines produce an `OcrResult`, which the shared parser in `finance_core` t
 The Receipts page lists receipts with their state ("Saved, waiting to be read", "Reading", "Needs review", "Reviewed" or "Could not be read"), whether they are matched, and whether they are saved on this device only. It can be filtered to unmatched receipts and to receipts that could not be read.
 
 If the device runs out of storage while a receipt is written, nothing is left half saved and the application says "Not saved: this device is out of storage. Free some space and try again." Any other write failure shows "Not saved: the receipt could not be written to storage."
+
+== Email forwarding
+
+A member can forward receipts by email to a private address. Forwarding only ever creates a receipt for review; it never posts a transaction.
+
+=== Turning it on
+
+In Settings, under Sync, the "Forward receipts by email" screen lets a member turn on a private forwarding address. The screen appears only when sync is on and the sync service reports that forwarding is available. The member can copy the address, replace it or turn it off. Each member has their own address, and mail sent to a replaced or revoked address is dropped. The screen also lists up to 20 recent emails and what became of each, newest first.
+
+=== What happens to an email
+
+An email passes through an outside inbound email service and then the sync service. The body is discarded and never stored. The sender and subject are kept with the message record.
+
+The server identifies each attachment from its bytes (JPEG, PNG, HEIC or PDF) rather than from its name or declared type, and scans it. Only a byte order mark and whitespace may come before a PDF header, so a file that carries a PDF header further in, such as an executable, is refused. The following limits apply:
+
+[cols="2,1",options="header"]
+|===
+| Limit | Value
+
+| Size of one attachment | 20 MB
+| Attachments per message | 10
+| Messages per address per day | 50
+|===
+
+Inline images under 20 KB are ignored, as they are usually logos or signatures.
+
+=== Collection on the device
+
+After each successful sync, the device collects the documents that are waiting. Each one goes through the ordinary capture path with the source `CaptureSource.email`, so it is validated and saved in the vault like any other receipt. The device acknowledges a document only once the receipt is durably saved locally, and the server then deletes its copy. Collecting the same document again does not create a second receipt. Once collected, the receipt is shared with the workspace like any other receipt.
+
+Images go through text recognition as described in <<Reading the text>>. Recognition runs alongside collection and does not hold it up. A forwarded PDF is marked as unreadable, so it appears under "Could not be read" and offers entering the details by hand, just as a PDF imported directly does.
+
+A download has up to five minutes, because an attachment can be 20 MB on a slow connection.
+
+If saving a document keeps failing on a device, that device stops trying after three attempts until the application next starts. The document stays waiting and is not rejected.
+
+=== Problems that are reported
+
+The Receipts page reports, rather than captures:
+
+* an email with no attachment;
+* an attachment the server refused;
+* the daily limit being reached; and
+* a processing failure.
+
+Up to three emails show on the Receipts page at a time. Each names up to three refused files and counts the rest, and a count of further emails follows. Each can be dismissed.
+
+A document that the device refuses, for example an encrypted PDF or one over 10 pages, is reported back to the server and is not retried.
+
+=== Retention
+
+Documents that are not collected, and message records, are deleted after 30 days. If a document has failed to reach a device for a week, that device says so on the Receipts page, while there is still time to forward the email again.
+
+=== Availability
+
+Only a `sandbox` provider exists today (`finance.inbound-mail.sandbox.enabled`); choosing a real inbound email service is a pending decision. Without a provider, a token key and a domain, the service reports forwarding as unavailable and the app hides the screen.
 
 == Making a photo readable
 

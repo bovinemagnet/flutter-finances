@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
+import com.paulsnow.finance.server.common.TokenCipher;
 import com.paulsnow.finance.core.ids.Ids;
 import com.paulsnow.finance.server.bankfeeds.BankFeedProvider.ConsentRequest;
 import com.paulsnow.finance.server.bankfeeds.BankFeedProvider.ConsentStart;

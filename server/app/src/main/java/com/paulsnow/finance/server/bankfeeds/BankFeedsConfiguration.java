@@ -6,6 +6,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import com.paulsnow.finance.server.common.TokenCipher;
+
 /**
  * Wires the token cipher and, only when configured, the sandbox provider.
  * No real provider is wired: choosing an Australian Consumer Data Right

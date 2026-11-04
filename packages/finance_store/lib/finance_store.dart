@@ -56,6 +56,7 @@ export 'src/sync/asset_sync.dart'
 export 'src/sync/bank_feed_client.dart';
 export 'src/sync/extraction_client.dart';
 export 'src/sync/household_client.dart';
+export 'src/sync/inbound_mail_client.dart';
 export 'src/sync/sync_client.dart';
 export 'src/sync/transport.dart'
     show

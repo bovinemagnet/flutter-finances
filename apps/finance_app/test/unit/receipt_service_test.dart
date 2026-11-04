@@ -10,6 +10,7 @@ import 'package:finance_app/platform/services.dart';
 import 'package:finance_app/platform/text_recognition.dart';
 import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
+import 'package:finance_store/finance_store.dart' as store show VaultAssetKind;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:intl/date_symbol_data_local.dart';
@@ -62,6 +63,98 @@ void main() {
     image.exif.gpsIfd['GPSLatitude'] = img.IfdValueRational(27, 1);
     return img.encodeJpg(image);
   }
+
+  test('an image the decoder cannot read is still kept', () async {
+    final good = Uint8List.fromList(
+      img.encodeJpg(img.Image(width: 400, height: 600)),
+    );
+    var start = 2;
+    while (!(good[start] == 0xFF && good[start + 1] == 0xC0)) {
+      start++;
+    }
+    // A sampling factor of zero passes validation but stops the decoder.
+    final bad = Uint8List.fromList(good)..[start + 11] = 0;
+    final receipt = await state.receipts.capture([
+      CapturedFile(bad, source: CaptureSource.fileImport),
+    ]);
+    expect(state.receipts.receipt(receipt.id), isNotNull);
+    expect(state.receipts.pagesFor(receipt.id), hasLength(1));
+  });
+
+  group('capturing with a known id', () {
+    const id = '11111111-1111-5111-8111-111111111111';
+
+    test('makes one receipt however many times it runs', () async {
+      final receipts = state.receipts;
+      final first = await receipts.capture([
+        CapturedFile(photo(), source: CaptureSource.email),
+      ], receiptId: id);
+      final second = await receipts.capture([
+        CapturedFile(photo(), source: CaptureSource.email),
+      ], receiptId: id);
+      expect(first.id, id);
+      expect(second.id, id);
+      expect(receipts.receipts(), hasLength(1));
+      expect(receipts.pagesFor(id), hasLength(1));
+    });
+
+    test('a retry after a partial capture does not duplicate pages', () async {
+      final receipts = state.receipts;
+      // The app stopped after writing a page, before the receipt itself.
+      await state.store.upsertEntity(
+        ReceiptEntityTypes.page,
+        nameBasedId(id, 'page-1'),
+        receiptPageToJson(
+          ReceiptPage(
+            id: nameBasedId(id, 'page-1'),
+            receiptId: id,
+            pageNumber: 1,
+            sourceAssetId: 'interrupted',
+            sourcePageIndex: 0,
+          ),
+        ),
+      );
+      await receipts.capture([
+        CapturedFile(photo(), source: CaptureSource.email),
+      ], receiptId: id);
+      expect(receipts.pagesFor(id), hasLength(1));
+    });
+
+    test('a retry reuses a document already saved', () async {
+      final receipts = state.receipts;
+      final asset = await state.store.vault.saveAsset(
+        ownerType: ReceiptEntityTypes.receipt,
+        ownerId: id,
+        kind: store.VaultAssetKind.source,
+        contentType: 'image/jpeg',
+        bytes: photo(),
+        assetId: nameBasedId(id, 'asset-0'),
+      );
+      await receipts.capture([
+        CapturedFile(photo(), source: CaptureSource.email),
+      ], receiptId: id);
+      expect(receipts.pagesFor(id).single.sourceAssetId, asset.id);
+    });
+
+    test('two devices derive the same pages and documents', () async {
+      await state.receipts.capture([
+        CapturedFile(photo(), source: CaptureSource.email),
+      ], receiptId: id);
+      final page = state.receipts.pagesFor(id).single;
+      expect(page.id, nameBasedId(id, 'page-1'));
+      expect(page.sourceAssetId, nameBasedId(id, 'asset-0'));
+    });
+
+    test('uses the time it is given', () async {
+      final at = DateTime.utc(2026, 10, 1, 9);
+      final receipt = await state.receipts.capture(
+        [CapturedFile(photo(), source: CaptureSource.email)],
+        receiptId: id,
+        capturedAt: at,
+      );
+      expect(receipt.capturedAt, at);
+    });
+  });
 
   setUp(() async {
     dir = await Directory.systemTemp.createTemp('receipts_test');

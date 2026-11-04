@@ -78,6 +78,172 @@ class FakeSyncServer {
   final Map<String, String> assetStatus = {};
   int completions = 0;
 
+  // Email forwarding ------------------------------------------------
+
+  /// What `GET /v1/inbound-mail/status` reports.
+  bool inboundAvailable = true;
+
+  /// False makes every forwarding endpoint a 404, like an older server.
+  bool inboundSupported = true;
+
+  /// False leaves `recent` out of the inbox, like an older server.
+  bool inboundSendsRecent = true;
+
+  /// Identifiers acknowledged, repeats included.
+  final List<String> inboundAcknowledged = [];
+
+  /// Identifiers of downloads made through a link.
+  final List<String> inboundDownloads = [];
+
+  final Map<String, _InboundAddress> _inboundAddresses = {};
+  final Map<String, _InboundDocument> _inboundDocuments = {};
+  final List<_InboundNotice> _inboundNotices = [];
+  final List<_InboundNotice> _inboundRecent = [];
+  var _inboundSequence = 0;
+
+  /// Puts a waiting document in [user]'s inbox and returns its identifier.
+  String deliverInbound(
+    String user, {
+    required String fileName,
+    required Uint8List bytes,
+    String contentType = 'application/pdf',
+    DateTime? receivedAt,
+  }) {
+    final id = newId();
+    _inboundDocuments[id] = _InboundDocument(
+      id: id,
+      user: user,
+      fileName: fileName,
+      contentType: contentType,
+      bytes: bytes,
+      sha256: sha256.convert(bytes).toString(),
+      receivedAt: receivedAt ?? DateTime.now().toUtc(),
+    );
+    _inboundRecent.insert(0, _InboundNotice(newId(), user, 'documents', []));
+    return id;
+  }
+
+  /// Adds a notice for [user] and returns its message identifier.
+  String addInboundNotice(
+    String user, {
+    required String outcome,
+    List<Map<String, Object?>> rejections = const [],
+  }) {
+    final id = newId();
+    _inboundNotices.add(_InboundNotice(id, user, outcome, List.of(rejections)));
+    _inboundRecent.insert(0, _InboundNotice(id, user, outcome, []));
+    return id;
+  }
+
+  /// Changes a document's stored bytes, so its hash no longer matches.
+  void corruptInbound(String documentId) {
+    _inboundDocuments[documentId]!.bytes = Uint8List.fromList([1, 2, 3]);
+  }
+
+  http.Response? _inboundObject(http.Request request) {
+    final match = RegExp(r'^/inbound/([^/]+)$').firstMatch(request.url.path);
+    if (match == null) return null;
+    final document = _inboundDocuments[match[1]];
+    if (document == null) return http.Response('', 404);
+    inboundDownloads.add(document.id);
+    return http.Response.bytes(document.bytes, 200);
+  }
+
+  http.Response? _inbound(String user, http.Request request) {
+    final path = request.url.path;
+    final method = request.method;
+    if (path == '/v1/inbound-mail/status' && method == 'GET') {
+      if (!inboundSupported) throw _HttpError(404, 'NOT_FOUND');
+      return _json(200, {'available': inboundAvailable});
+    }
+    final match = RegExp(
+      r'^/v1/workspaces/([^/]+)/inbound-(address|documents)(?:/([^/]+)/([a-z]+))?$',
+    ).firstMatch(path);
+    if (match == null) return null;
+    if (!inboundSupported) throw _HttpError(404, 'NOT_FOUND');
+    final ws = _member(user, match[1]!);
+    if (ws.members[user] == 'viewer') throw _HttpError(403, 'READ_ONLY');
+    if (match[2] == 'address') return _inboundAddress(ws, user, method);
+    final documentId = match[3];
+    if (documentId == null) return _inboundInbox(user);
+    final document = _inboundDocuments[documentId];
+    if (document?.user != user && document != null) {
+      throw _HttpError(404, 'NOT_FOUND');
+    }
+    switch ((method, match[4])) {
+      case ('GET', 'download'):
+        if (document == null || document.state != 'waiting') {
+          throw _HttpError(404, 'NOT_FOUND');
+        }
+        return _json(200, {
+          'url': 'https://objects.test/inbound/$documentId',
+          'expiresAt': DateTime.now()
+              .add(const Duration(minutes: 5))
+              .toUtc()
+              .toIso8601String(),
+        });
+      case ('POST', 'acknowledge'):
+        if (document == null) throw _HttpError(404, 'NOT_FOUND');
+        inboundAcknowledged.add(documentId);
+        if (document.state == 'waiting') document.state = 'collected';
+        return http.Response('', 204);
+      case ('POST', 'reject'):
+        if (document == null) throw _HttpError(404, 'NOT_FOUND');
+        if (document.state == 'waiting') {
+          final body = _body(request);
+          document.state = 'rejected';
+          _inboundNotices.add(
+            _InboundNotice(newId(), user, 'documents', [
+              {
+                'fileName': document.fileName,
+                'code': body['code'],
+                'detail': body['detail'],
+              },
+            ]),
+          );
+        }
+        return http.Response('', 204);
+    }
+    return null;
+  }
+
+  http.Response? _inboundAddress(FakeWorkspace ws, String user, String method) {
+    final key = '${ws.id}/$user';
+    switch (method) {
+      case 'GET':
+        final address = _inboundAddresses[key];
+        if (address == null) throw _HttpError(404, 'NOT_FOUND');
+        return _json(200, address.toJson());
+      case 'PUT':
+        final address = _InboundAddress(
+          'token${_inboundSequence++}@receipts.test',
+          DateTime.now().toUtc(),
+        );
+        _inboundAddresses[key] = address;
+        return _json(200, address.toJson());
+      case 'DELETE':
+        _inboundAddresses.remove(key);
+        return http.Response('', 204);
+    }
+    return null;
+  }
+
+  http.Response _inboundInbox(String user) => _json(200, {
+    'documents': [
+      for (final d in _inboundDocuments.values)
+        if (d.user == user && d.state == 'waiting') d.toJson(),
+    ],
+    'notices': [
+      for (final n in _inboundNotices)
+        if (n.user == user) n.toJson(),
+    ],
+    if (inboundSendsRecent)
+      'recent': [
+        for (final r in _inboundRecent)
+          if (r.user == user) r.toJson(),
+      ],
+  });
+
   // Fault injection --------------------------------------------------------
 
   /// When true every request fails as if the device were offline.
@@ -170,7 +336,9 @@ class FakeSyncServer {
       failRequests--;
       return _json(503, _error('UNAVAILABLE'));
     }
-    if (request.url.host == 'objects.test') return _object(request);
+    if (request.url.host == 'objects.test') {
+      return _inboundObject(request) ?? _object(request);
+    }
     http.Response response;
     try {
       response = await _api(request);
@@ -188,6 +356,8 @@ class FakeSyncServer {
     final path = request.url.path;
     final method = request.method;
     final user = _user(request);
+    final inbound = _inbound(user, request);
+    if (inbound != null) return inbound;
     if (path == '/v1/workspaces') {
       if (method == 'POST') return _createWorkspace(user, _body(request));
       if (method == 'GET') {
@@ -1161,4 +1331,62 @@ class UploadIntent {
 
   /// Pages counted at completion.
   int? pages;
+}
+
+class _InboundAddress {
+  _InboundAddress(this.address, this.createdAt);
+  final String address;
+  final DateTime createdAt;
+
+  Map<String, Object?> toJson() => {
+    'address': address,
+    'createdAt': createdAt.toIso8601String(),
+  };
+}
+
+class _InboundDocument {
+  _InboundDocument({
+    required this.id,
+    required this.user,
+    required this.fileName,
+    required this.contentType,
+    required this.bytes,
+    required this.sha256,
+    required this.receivedAt,
+  });
+
+  final String id;
+  final String user;
+  final String fileName;
+  final String contentType;
+  Uint8List bytes;
+  final String sha256;
+  final DateTime receivedAt;
+  String state = 'waiting';
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'fileName': fileName,
+    'contentType': contentType,
+    'sizeBytes': bytes.length,
+    'sha256': sha256,
+    'receivedAt': receivedAt.toIso8601String(),
+  };
+}
+
+class _InboundNotice {
+  _InboundNotice(this.messageId, this.user, this.outcome, this.rejections);
+  final String messageId;
+  final String user;
+  final String outcome;
+  final List<Map<String, Object?>> rejections;
+  final DateTime receivedAt = DateTime.now().toUtc();
+
+  Map<String, Object?> toJson() => {
+    'messageId': messageId,
+    'sender': 'shop@example.com',
+    'receivedAt': receivedAt.toIso8601String(),
+    'outcome': outcome,
+    'rejections': rejections,
+  };
 }

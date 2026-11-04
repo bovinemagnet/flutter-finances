@@ -1,10 +1,9 @@
-package com.paulsnow.finance.server.bankfeeds;
+package com.paulsnow.finance.server.common;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -50,16 +49,5 @@ class TokenCipherTest {
         assertThat(cipher.available()).isTrue();
         assertThatThrownBy(() -> new TokenCipher("c2hvcnQ=")).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> new TokenCipher("not base64!")).isInstanceOf(IllegalStateException.class);
-    }
-
-    @Test
-    void backsOffExponentiallyWithinBounds() {
-        BankFeedProperties properties = new BankFeedProperties(null, null, null, Duration.ofMinutes(1),
-                Duration.ofMinutes(10), 0, null);
-        assertThat(properties.backoff(1, Duration.ZERO)).isEqualTo(Duration.ofMinutes(1));
-        assertThat(properties.backoff(2, Duration.ZERO)).isEqualTo(Duration.ofMinutes(2));
-        assertThat(properties.backoff(3, Duration.ZERO)).isEqualTo(Duration.ofMinutes(4));
-        assertThat(properties.backoff(3, Duration.ofMinutes(7))).isEqualTo(Duration.ofMinutes(7));
-        assertThat(properties.backoff(30, Duration.ZERO)).isEqualTo(Duration.ofMinutes(10));
     }
 }

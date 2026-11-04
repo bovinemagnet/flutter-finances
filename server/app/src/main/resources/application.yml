@@ -100,6 +100,15 @@ finance:
     # participation model are a pending business decision (BANK 01).
     sandbox:
       enabled: false
+  inbound-mail:
+    # Base64 AES key that encrypts forwarding address tokens, and the domain
+    # of those addresses. Email forwarding is unavailable without both.
+    token-key: ${FINANCE_INBOUND_MAIL_TOKEN_KEY:}
+    domain: ${FINANCE_INBOUND_MAIL_DOMAIN:}
+    # The sandbox provider, for development and tests only. No real provider
+    # is wired: choosing an inbound email service is a pending decision.
+    sandbox:
+      enabled: false
   imports:
     max-rows: 50000
     synchronous-row-limit: 1000

@@ -358,6 +358,7 @@ public class WorkspaceDirectory {
         }
         jdbc.sql("update membership set role = ? where workspace_id = ? and user_id = ?")
                 .params(role, workspaceId, userId).update();
+        events.publishEvent(new MembershipChanged(workspaceId, userId, role));
         events.publishEvent(AuditEvent.of(workspaceId, actor.id(), "member.role_changed", "user", userId)
                 .withDetail(role));
     }
@@ -383,6 +384,7 @@ public class WorkspaceDirectory {
                 .params(Timestamp.from(now()), workspaceId, userId).update();
         jdbc.sql("delete from membership where workspace_id = ? and user_id = ?").params(workspaceId, userId)
                 .update();
+        events.publishEvent(new MembershipChanged(workspaceId, userId, null));
         events.publishEvent(AuditEvent.of(workspaceId, actor.id(), "member.removed", "user", userId));
         return devices;
     }

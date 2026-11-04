@@ -650,6 +650,59 @@ pending purchase; day 1 posts that purchase under a new id and adds a
 subscription; day 2 changes a transaction's id and reverses the
 subscription. Its consent lasts 90 days and pages hold two transactions.
 
+## Email receipt forwarding (P1)
+
+A member forwards an email to a private address; its attachments are held until
+that member's device collects them as ordinary receipts. The server never
+creates a receipt or a sync command, and never stores an email body. A forwarded
+email can only create a receipt for review.
+
+`GET /v1/inbound-mail/status` returns `{"available": boolean}`. It is true only
+with a provider, a token key and a domain configured. Only the `sandbox` provider
+exists until an inbound email service is chosen.
+
+Each path below starts `/v1/workspaces/{workspaceId}`. Viewers get
+`403 READ_ONLY`. A document belonging to another member or workspace gives the
+same `404 NOT_FOUND` as a missing one.
+
+| Method and path | Purpose |
+| --- | --- |
+| `GET /inbound-address` | The caller's `{"address", "createdAt"}`; `404` while turned off |
+| `PUT /inbound-address` | Turn on, or replace; a replaced address stops working at once. `409 INBOUND_MAIL_UNAVAILABLE` without a provider |
+| `DELETE /inbound-address` | Turn off (`204`); waiting documents can still be collected |
+| `GET /inbound-documents` | `{"documents": [{"id", "fileName", "contentType", "sizeBytes", "sha256", "receivedAt"}], "notices": [{"messageId", "sender", "receivedAt", "outcome", "rejections": [{"fileName", "code", "detail"}]}], "recent": [{"messageId", "sender", "receivedAt", "outcome"}]}`; `recent` is the latest 20 emails, newest first |
+| `GET /inbound-documents/{id}/download` | `{"url", "expiresAt"}`, a short-lived presigned link |
+| `POST /inbound-documents/{id}/acknowledge` | The receipt is durably saved: delete the server's copy (`204`). Repeating it changes nothing |
+| `POST /inbound-documents/{id}/reject` | `{"code", "detail"}`: the device refused the document, so it is not offered again (`204`) |
+
+`POST /v1/inbound-mail/webhooks/{provider}` needs no user token. It verifies
+`X-Webhook-Id`, `X-Webhook-Timestamp` and `X-Webhook-Signature`, the latter `v1=`
+and the hex HMAC-SHA256 of `"<id>.<timestamp>.<raw body>"` for the sandbox. It
+answers `401 INVALID_SIGNATURE`, `413 DELIVERY_TOO_LARGE` above 64 MiB, or
+`202 {"status": "accepted"}`. Every verified delivery gets the same answer,
+including one to an unknown or revoked address, so the response reveals no
+address; those are dropped and audited. A repeated provider message id is handled
+once.
+
+Outcomes are `processing`, `documents`, `no_attachment`, `rejected`,
+`rate_limited` (over 50 messages per address per day) and `failed` (still
+`processing` after an hour). Attachments are identified from their bytes as JPEG,
+PNG, HEIC or PDF, and scanned. Only a byte order mark and whitespace may come
+before a PDF header, which refuses other files carrying one further in. Inline images under 20 KB are ignored and do not
+count towards the limit of 10 per message. Rejection codes are `UNSUPPORTED_TYPE`,
+`TOO_LARGE` (over 20 MB), `TOO_MANY`, the scanner's reason (such as
+`ACTIVE_CONTENT`), and `REJECTED_ON_DEVICE`.
+
+A device that refuses every remaining document of a message leaves it `rejected`.
+A device tells the member itself, as `not_collected`, about a document it has
+failed to collect for a week; this outcome is never sent by the server.
+Dismissing a notice saves an `inboundNoticeDismissal` entity, so members and
+devices never overwrite one another's dismissals.
+
+Uncollected documents and message records are deleted after 30 days. Removing a
+member, or making them a viewer, revokes their address and deletes what was
+waiting for them.
+
 ## Entity JSON
 
 Journal:
