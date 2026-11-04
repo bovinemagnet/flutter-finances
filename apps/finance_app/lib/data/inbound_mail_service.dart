@@ -107,7 +107,8 @@ class InboundMailService {
         // Already saved, so there is nothing to fetch. The app may have stopped
         // before acknowledging it or reading it.
         await _acknowledge(workspaceId, document);
-        _readIfUnread(saved);
+        // Read again, because a reading may have arrived by sync meanwhile.
+        _readIfUnread(state.receipts.receipt(receiptId) ?? saved);
         return _Result.arrived;
       }
       final bytes = await client.download(workspaceId, document);

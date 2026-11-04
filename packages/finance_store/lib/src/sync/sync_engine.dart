@@ -4,6 +4,7 @@ import 'package:finance_core/finance_core.dart';
 
 import '../store/command_effects.dart';
 import '../store/entity_ref.dart';
+import '../store/finance_store.dart' show changedFields;
 import '../store/local_state.dart';
 import '../store/outbox.dart';
 import '../store/review.dart';
@@ -29,8 +30,8 @@ class SyncEngine {
   final ReceiptVault vault;
 
   /// For each entity type holding values a device works out for itself rather
-  /// than a person entering them, those fields. See [_onlyDerived].
-  final Map<String, Set<String>> derivedFields;
+  /// than a person entering them, which fields those are.
+  final Map<String, DerivedFields> derivedFields;
 
   LocalState get _state => ctx.state;
   Outbox get _outbox => ctx.outbox;
@@ -80,8 +81,14 @@ class SyncEngine {
           case CommandStatus.previouslyApplied:
             _accepted(entry, result);
             tally.accepted++;
-          case CommandStatus.conflict when _onlyDerived(entry, result):
+          case CommandStatus.conflict
+              when _derivedConflict(entry, result) ==
+                  _DerivedConflict.takeServer:
             _takeServerState(entry, result);
+          case CommandStatus.conflict
+              when _derivedConflict(entry, result) ==
+                  _DerivedConflict.keepResult:
+            _resendOnServerState(entry, result);
           case CommandStatus.conflict:
             final deleted = result.conflict?.serverState == null;
             _hold(
@@ -174,16 +181,16 @@ class SyncEngine {
 
   /// Whether this conflict is only over values each device works out for
   /// itself, such as the result of reading the same document. Nobody could
-  /// usefully choose between those, so the first to reach the server is kept.
+  /// usefully choose between those, so no one is asked to.
   ///
   /// It never applies to anything a person changed here: the local entity may
   /// differ from the server's only in [derivedFields], or where it holds no
-  /// value of its own. Journals, accounts and deletions always go to review.
-  bool _onlyDerived(OutboxEntry entry, CommandResult result) {
+  /// value and never did. Journals, accounts and deletions always go to review.
+  _DerivedConflict _derivedConflict(OutboxEntry entry, CommandResult result) {
     final primary = entry.primary;
-    final derived = derivedFields[primary.type];
+    final rule = derivedFields[primary.type];
     final server = result.conflict?.serverState;
-    if (derived == null || server == null) return false;
+    if (rule == null || server == null) return _DerivedConflict.no;
     final commandsOnlyEditThis = _outbox
         .closure(entry)
         .every(
@@ -191,15 +198,47 @@ class SyncEngine {
               e.command.type == CommandType.entityUpsert &&
               e.keys.every((key) => key == primary),
         );
-    if (!commandsOnlyEditThis) return false;
+    if (!commandsOnlyEditThis) return _DerivedConflict.no;
     final local = _state.json(primary) ?? const <String, Object?>{};
-    return local.keys
-        .where((field) => !derived.contains(field))
+    final commands = _outbox.closure(entry);
+    bool same(String field) =>
+        jsonEncode(local[field]) == jsonEncode(server[field]);
+    final onlyDerivedDiffers = local.keys
+        .where((field) => !rule.fields.contains(field))
         .every(
           (field) =>
-              _holdsNoValue(local[field]) ||
-              jsonEncode(local[field]) == jsonEncode(server[field]),
+              same(field) ||
+              (_holdsNoValue(local[field]) && !_wasCleared(commands, field)),
         );
+    if (!onlyDerivedDiffers) return _DerivedConflict.no;
+    // A failed or unfinished attempt is not a result, so one here replaces it,
+    // unless a person has entered something there.
+    final resultHereOnly =
+        rule.result != null &&
+        !_holdsNoValue(local[rule.result]) &&
+        _holdsNoValue(server[rule.result]);
+    final serverHasNothingElse = server.keys
+        .where((field) => !rule.fields.contains(field))
+        .every((field) => same(field) || _holdsNoValue(server[field]));
+    return resultHereOnly && serverHasNothingElse
+        ? _DerivedConflict.keepResult
+        : _DerivedConflict.takeServer;
+  }
+
+  /// Whether [commands] removed a value from [field], rather than the field
+  /// simply never having held one. Creating an entity sends every field.
+  bool _wasCleared(List<OutboxEntry> commands, String field) {
+    var hadValue = false;
+    for (final entry in commands) {
+      final fields = entry.command.payload['fields'] as Map? ?? const {};
+      if (!fields.containsKey(field)) continue;
+      if (!_holdsNoValue(fields[field])) {
+        hadValue = true;
+      } else if (hadValue || entry.command.baseRevision > 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
   bool _holdsNoValue(Object? value) => switch (value) {
@@ -210,7 +249,7 @@ class SyncEngine {
   };
 
   /// Drops [entry] and every later command built on it for the server's
-  /// version. There is nothing to review, because [_onlyDerived] held.
+  /// version. There is nothing to review, because [_derivedConflict] said so.
   void _takeServerState(OutboxEntry entry, CommandResult result) {
     final closure = _outbox.closure(entry);
     _revert(closure);
@@ -222,6 +261,25 @@ class SyncEngine {
     for (final dropped in closure) {
       _outbox.setStatus(dropped.seq, OutboxStatus.discarded);
     }
+  }
+
+  /// Sends the local version again on top of the server's, so that a result
+  /// replaces an attempt that produced none.
+  void _resendOnServerState(OutboxEntry entry, CommandResult result) {
+    final primary = entry.primary;
+    final local = _state.json(primary)!;
+    _takeServerState(entry, result);
+    final fields = changedFields(_state.json(primary) ?? const {}, local);
+    if (fields.isEmpty) return;
+    ctx.record(
+      ctx.newCommand(
+        type: CommandType.entityUpsert,
+        entity: primary,
+        payload: {'fields': fields},
+      ),
+      undoable: false,
+      description: 'Save ${primary.type}',
+    );
   }
 
   /// Holds [entry] and every later command built on it for review, puts
@@ -436,6 +494,30 @@ class SyncEngine {
     ctx.setSyncValue(SyncKeys.rebuild, null);
     return held;
   });
+}
+
+/// What to do about a conflict over values a device works out for itself.
+enum _DerivedConflict {
+  /// It is not only about those: a person reviews it.
+  no,
+
+  /// The server's version is kept.
+  takeServer,
+
+  /// The local version is sent again, because only it holds a result.
+  keepResult,
+}
+
+/// Fields of an entity type that a device works out for itself, rather than a
+/// person entering them.
+class DerivedFields {
+  const DerivedFields(this.fields, {this.result});
+
+  final Set<String> fields;
+
+  /// The one of [fields] that holds a finished result. A copy with a result is
+  /// kept over one without: a failed or unfinished attempt is not a result.
+  final String? result;
 }
 
 /// The server's validation code for a command schema it does not support.

@@ -207,7 +207,7 @@ void main() {
 
   group('values a device works out for itself', () {
     const derived = {
-      'reading': {'state', 'readingId'},
+      'reading': DerivedFields({'state', 'readingId'}, result: 'readingId'),
     };
     late Device c;
     late Device d;
@@ -298,6 +298,83 @@ void main() {
       });
     }
 
+    group('when the other device has no result', () {
+      Map<String, Object?> unread(String state) => {
+        ...reading('ignored'),
+        'state': state,
+        'readingId': null,
+      };
+
+      for (final attempt in ['failed', 'still reading']) {
+        test('a result here replaces "$attempt"', () async {
+          await c.store.upsertEntity('reading', 'shared', unread(attempt));
+          await d.store.upsertEntity('reading', 'shared', reading('from-d'));
+          await c.sync();
+          final report = await d.sync();
+          expect(report.push.conflicts, 0);
+          expect(d.store.openReviewItems(), isEmpty);
+          expect(d.store.pendingCommandCount, 0);
+          expect(
+            d.store.entity('reading', 'shared')!.json['readingId'],
+            'from-d',
+          );
+          await c.sync();
+          expect(
+            c.store.entity('reading', 'shared')!.json['readingId'],
+            'from-d',
+          );
+          expect(c.store.openReviewItems(), isEmpty);
+        });
+      }
+
+      test('a person\'s value there stops a result replacing it', () async {
+        await c.store.upsertEntity('reading', 'shared', {
+          ...unread('reviewed'),
+          'note': 'For the tax return',
+        });
+        await d.store.upsertEntity('reading', 'shared', reading('from-d'));
+        await c.sync();
+        await d.sync();
+        expect(d.store.openReviewItems(), isEmpty);
+        final kept = d.store.entity('reading', 'shared')!.json;
+        expect(kept['state'], 'reviewed');
+        expect(kept['readingId'], isNull);
+        expect(kept['note'], 'For the tax return');
+      });
+
+      test('with no result on either side, the first is kept', () async {
+        await c.store.upsertEntity('reading', 'shared', unread('failed'));
+        await d.store.upsertEntity(
+          'reading',
+          'shared',
+          unread('still reading'),
+        );
+        await c.sync();
+        await d.sync();
+        expect(d.store.openReviewItems(), isEmpty);
+        expect(d.store.entity('reading', 'shared')!.json['state'], 'failed');
+      });
+    });
+
+    test('clearing a value is reviewed as usual', () async {
+      await c.store.upsertEntity(
+        'reading',
+        'shared',
+        reading('from-c', note: 'First note'),
+      );
+      await c.sync();
+      await d.sync();
+      await c.store.upsertEntity(
+        'reading',
+        'shared',
+        reading('from-c', note: 'Second note'),
+      );
+      await d.store.upsertEntity('reading', 'shared', reading('from-c'));
+      await c.sync();
+      await d.sync();
+      expect(d.store.openReviewItems(), hasLength(1));
+    });
+
     test('a later edit by a person is reviewed as usual', () async {
       await c.store.upsertEntity('reading', 'shared', reading('from-c'));
       await d.store.upsertEntity('reading', 'shared', reading('from-d'));
@@ -334,7 +411,12 @@ void main() {
         'e',
         server,
         derivedFields: const {
-          'journal': {'amountMinor', 'status', 'postings', 'replaces'},
+          'journal': DerivedFields({
+            'amountMinor',
+            'status',
+            'postings',
+            'replaces',
+          }),
         },
       );
       addTearDown(e.close);

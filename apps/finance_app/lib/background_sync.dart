@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:workmanager/workmanager.dart';
 
+import 'data/app_sync_client.dart';
 import 'data/oidc.dart';
 import 'data/platform_key_store.dart';
 import 'data/sync_controller.dart';
@@ -48,7 +49,7 @@ void backgroundSyncDispatcher() {
         httpClient: httpClient,
       );
       if (!await session.isSignedIn) return true;
-      await SyncClient(
+      await appSyncClient(
         store,
         httpClient: httpClient,
         baseUri: Uri.parse(settings.serverUrl),

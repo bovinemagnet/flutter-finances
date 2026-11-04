@@ -458,9 +458,7 @@ class AppState extends ChangeNotifier {
   /// future, which can only be a mistake.
   bool _replacesObservation(String accountId, LocalDate date) {
     final existing = balanceObservation(accountId);
-    return existing == null ||
-        existing.date <= date ||
-        existing.date > today();
+    return existing == null || existing.date <= date || existing.date > today();
   }
 
   Map<String, Object?> _observationJson(
@@ -484,8 +482,15 @@ class AppState extends ChangeNotifier {
     TransactionDraft? adjustment,
   }) async {
     final id = ownedEntityId(AppEntityTypes.balanceObservation, account.id);
+    // The account as it is now: it may have changed since the screen opened.
+    final current = store.account(account.id) ?? account;
+    final reconciled = current.lastReconciledOn;
+    final keepReconciled =
+        reconciled != null && reconciled > date && reconciled <= today();
     await store.saveReconciliation(
-      account: account.copyWith(lastReconciledOn: date),
+      account: keepReconciled
+          ? current
+          : current.copyWith(lastReconciledOn: date),
       adjustment: adjustment,
       statement: _replacesObservation(account.id, date)
           ? (

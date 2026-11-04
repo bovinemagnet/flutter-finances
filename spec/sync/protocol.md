@@ -735,15 +735,23 @@ unique across entity types: an `imageFingerprint` takes
 `ownedEntityId('imageFingerprint', assetId)`, not the id of its `documentAsset`.
 
 A client may declare fields of an opaque entity type as ones a device works out
-for itself, rather than a person entering them. The app declares
-`extractionState` and `latestExtractionId` on `receipt`, and the reading results
-on `itemExtraction`. When a push conflicts, the client drops its commands for the
-entity and takes the server's version, with no review item, only if every command
-built on it is an `entity.upsert` of that entity alone and its local copy differs
-from the server's only in those fields, or where it holds no value. So the first
-reading of a document to reach the server is kept. This is a client decision: the
-server still reports the conflict. It never applies to journals, accounts,
-categories, deletions or anything a person entered, which go to review as usual.
+for itself, rather than a person entering them, and which of them holds a finished
+result. The app declares `extractionState` and `latestExtractionId` on `receipt`,
+with `latestExtractionId` as the result, and the reading results on
+`itemExtraction`. When a push conflicts, the client resolves it with no review item
+only if every command built on it is an `entity.upsert` of that entity alone, and
+its local copy differs from the server's only in those fields, or where it holds no
+value and did not hold one before. Then:
+
+- If only the local copy holds a result and the server's holds nothing else of its
+  own, the client resends its copy on top of the server's. A failed or unfinished
+  read is not a reading.
+- Otherwise it drops its commands and takes the server's version, so the first
+  reading to reach the server is kept.
+
+This is a client decision: the server still reports the conflict. It never applies
+to journals, accounts, categories, deletions, or a value a person entered or
+cleared, which go to review as usual.
 
 Balance observation: `{"id", "accountId", "date", "balanceMinor"}`, saved at
 `ownedEntityId('balanceObservation', accountId)`. It records what a statement

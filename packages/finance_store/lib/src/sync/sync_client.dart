@@ -173,7 +173,7 @@ class SyncClient {
     this.batchSize = 500,
     this.pageSize = 500,
     int uploadConcurrency = 2,
-    Map<String, Set<String>> derivedFields = const {},
+    Map<String, DerivedFields> derivedFields = const {},
   }) : _store = store,
        _ctx = store.context,
        transport = SyncTransport(

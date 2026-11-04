@@ -99,7 +99,7 @@ void main() {
 
   e2eTest('two devices reading one document keep the first reading', () async {
     const derived = {
-      'reading': {'state', 'readingId'},
+      'reading': DerivedFields({'state', 'readingId'}, result: 'readingId'),
     };
     final user = newUser('owner');
     final a = await E2eDevice.create(
@@ -149,6 +149,41 @@ void main() {
     await a.client.sync();
     expect((await b.client.sync()).push.conflicts, 1);
     expect(b.store.openReviewItems().single.kind, ReviewKind.conflict);
+
+    // A failed attempt is not a reading, so a real one replaces it.
+    final failed = newId();
+    await a.store.upsertEntity('reading', failed, {
+      'id': failed,
+      'state': 'failed',
+      'readingId': null,
+      'note': null,
+    });
+    await b.store.upsertEntity('reading', failed, {
+      ...reading('from-b'),
+      'id': failed,
+    });
+    await a.client.sync();
+    expect((await b.client.sync()).push.conflicts, 0);
+    expect(b.store.pendingCommandCount, 0);
+    await a.client.sync();
+    expect(a.store.entity('reading', failed)!.json['readingId'], 'from-b');
+
+    // Identical details confirmed on two devices can mean two expenses, so a
+    // person must see it, even though each proposed the same values.
+    final reviewed = newId();
+    for (final device in [a, b]) {
+      await device.store.upsertEntity('reading', reviewed, {
+        ...reading('from-${device.name}'),
+        'id': reviewed,
+        'confirmed': {'merchant': 'Grocer', 'date': '2026-11-04'},
+      });
+    }
+    await a.client.sync();
+    await b.client.sync();
+    expect(
+      b.store.openReviewItems().map((r) => r.entity.id),
+      contains(reviewed),
+    );
   });
 
   e2eTest('offline history uploads and a second device receives identical '

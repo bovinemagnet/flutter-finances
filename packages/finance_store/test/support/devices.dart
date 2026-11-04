@@ -22,7 +22,7 @@ class Device {
     int uploadConcurrency = 2,
     int pageSize = 500,
     String user = FakeSyncServer.defaultUser,
-    Map<String, Set<String>> derivedFields = const {},
+    Map<String, DerivedFields> derivedFields = const {},
   }) async {
     final store = await newStore(temp.sub(name), keys: MemoryKeyStore());
     return wrap(
@@ -45,7 +45,7 @@ class Device {
     int uploadConcurrency = 2,
     int pageSize = 500,
     String user = FakeSyncServer.defaultUser,
-    Map<String, Set<String>> derivedFields = const {},
+    Map<String, DerivedFields> derivedFields = const {},
   }) {
     final sleeps = <Duration>[];
     final client = SyncClient(
