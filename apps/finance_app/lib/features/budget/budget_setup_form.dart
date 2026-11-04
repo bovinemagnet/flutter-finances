@@ -11,6 +11,12 @@ const payFrequencies = {
   Frequency.monthly: 'Monthly',
 };
 
+const _budgetModeLabels = {
+  BudgetMode.groups: 'Needs, wants, savings',
+  BudgetMode.zeroBased: 'Every dollar assigned',
+  BudgetMode.categoryOnly: 'Categories only',
+};
+
 /// The choices behind a budget: take-home pay, a pay cycle and a template.
 /// Used during first-run setup and when a budget is set up later.
 class BudgetSetupForm extends StatefulWidget {
@@ -114,35 +120,33 @@ class _BudgetSetupFormState extends State<BudgetSetupForm> {
             onChanged: (id) => _change(() => model.payAccountId = id),
           ),
         const SizedBox(height: 8),
-        // Three long labels only keep their words whole on a phone without
-        // the selected icon.
-        SegmentedButton<BudgetMode>(
-          showSelectedIcon: !compact,
-          style: compact
-              ? const ButtonStyle(
-                  padding: WidgetStatePropertyAll(
-                    EdgeInsets.symmetric(horizontal: 4),
-                  ),
-                )
-              : null,
-          segments: const [
-            ButtonSegment(
-              value: BudgetMode.groups,
-              label: Text('Needs, wants, savings'),
-            ),
-            ButtonSegment(
-              value: BudgetMode.zeroBased,
-              label: Text('Every dollar assigned'),
-            ),
-            ButtonSegment(
-              value: BudgetMode.categoryOnly,
-              label: Text('Categories only'),
-            ),
-          ],
-          selected: {model.budgetMode},
-          onSelectionChanged: (s) =>
-              _change(() => model.budgetMode = s.single),
-        ),
+        // Three long labels cannot share a phone's width without breaking
+        // words, so there they wrap as separate choices.
+        if (compact)
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final MapEntry(key: mode, value: label)
+                  in _budgetModeLabels.entries)
+                ChoiceChip(
+                  label: Text(label),
+                  selected: model.budgetMode == mode,
+                  onSelected: (_) => _change(() => model.budgetMode = mode),
+                ),
+            ],
+          )
+        else
+          SegmentedButton<BudgetMode>(
+            segments: [
+              for (final MapEntry(key: mode, value: label)
+                  in _budgetModeLabels.entries)
+                ButtonSegment(value: mode, label: Text(label)),
+            ],
+            selected: {model.budgetMode},
+            onSelectionChanged: (s) =>
+                _change(() => model.budgetMode = s.single),
+          ),
         if (model.budgetMode == BudgetMode.groups) ...[
           for (final group in defaultGroups)
             Row(

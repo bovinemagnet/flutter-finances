@@ -47,6 +47,9 @@ class ReceiptService {
   final AppState state;
   store.FinanceStore get _store => state.store;
 
+  /// Receipts being read on this device at the moment.
+  final _reading = <String>{};
+
   List<T> _all<T>(String type, T Function(Map<String, Object?>) decode) => [
     for (final r in _store.entities(type))
       if (!r.deleted) decode(r.json),
@@ -273,18 +276,26 @@ class ReceiptService {
     Future<OcrResult> Function() recognise,
   ) async {
     var current = receipt(receiptId)!;
-    if (current.extractionState == ExtractionState.extractionFailed ||
-        current.extractionState == ExtractionState.captured) {
-      current = current.withExtractionEvent(
-        current.extractionState == ExtractionState.extractionFailed
-            ? ExtractionEvent.retry
-            : ExtractionEvent.queue,
-      );
+    // A reviewed receipt stays as decided: reading it again could offer a
+    // second expense for the same purchase.
+    if (current.extractionState == ExtractionState.reviewed ||
+        _reading.contains(receiptId)) {
+      return current;
     }
+    final queueEvent = switch (current.extractionState) {
+      ExtractionState.captured => ExtractionEvent.queue,
+      ExtractionState.extractionFailed => ExtractionEvent.retry,
+      ExtractionState.needsReview => ExtractionEvent.rerun,
+      // Saved as being read, with nothing reading it: the app stopped.
+      ExtractionState.extracting => ExtractionEvent.interrupt,
+      _ => null,
+    };
+    if (queueEvent != null) current = current.withExtractionEvent(queueEvent);
     current = current.withExtractionEvent(ExtractionEvent.start);
-    await _putReceipt(current);
+    _reading.add(receiptId);
     String? extractionId;
     try {
+      await _putReceipt(current);
       final ocr = await recognise();
       if (_superseded(receiptId)) return receipt(receiptId) ?? current;
       final extraction = parseReceipt(
@@ -321,6 +332,8 @@ class ReceiptService {
       extractionId = extraction.id;
     } on Exception {
       // Reported below, as a failed extraction.
+    } finally {
+      _reading.remove(receiptId);
     }
     if (_superseded(receiptId)) return receipt(receiptId) ?? current;
     final latest = receipt(receiptId)!;
@@ -333,6 +346,21 @@ class ReceiptService {
     state.refresh();
     return finished;
   }
+
+  /// Whether this device holds the receipt's original rather than only knowing
+  /// of it from another device.
+  bool isHeldHere(String receiptId) => _store.vault
+      .assetsFor(ReceiptEntityTypes.receipt, receiptId)
+      .any((asset) => asset.localState == store.AssetLocalState.present);
+
+  /// Whether [receipt] was left unread here and can be read now, for example
+  /// because the app stopped before reading it or part-way through.
+  bool canReadAgain(Receipt receipt) =>
+      receipt.deletedAt == null &&
+      (receipt.extractionState == ExtractionState.captured ||
+          receipt.extractionState == ExtractionState.extracting) &&
+      !_reading.contains(receipt.id) &&
+      isHeldHere(receipt.id);
 
   /// Whether a review or a deletion happened while the receipt was being read.
   /// That decision stands: reading never undoes it (REC 06).

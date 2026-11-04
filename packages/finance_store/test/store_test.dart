@@ -372,6 +372,55 @@ void main() {
     });
   });
 
+  group('saving a reconciliation', () {
+    const bank = Account(
+      id: 'recon-bank',
+      name: 'Everyday',
+      type: AccountType.transaction,
+    );
+    final date = LocalDate(2026, 11, 4);
+
+    TransactionDraft adjustment() => TransactionDraft(
+      type: TransactionType.adjustment,
+      accountId: bank.id,
+      amount: Money(10000, Currency.aud),
+      effectiveDate: date,
+    );
+
+    test('saves the adjustment, the account and the statement', () async {
+      await store.createAccount(bank);
+      final journal = await store.saveReconciliation(
+        account: bank.copyWith(lastReconciledOn: date),
+        adjustment: adjustment(),
+        statement: (
+          type: 'statement',
+          id: 'statement-1',
+          json: {'id': 'statement-1'},
+        ),
+      );
+      expect(store.journal(journal!.id), isNotNull);
+      expect(store.account(bank.id)!.lastReconciledOn, date);
+      expect(store.entity('statement', 'statement-1'), isNotNull);
+    });
+
+    test('a failure leaves nothing behind', () async {
+      await store.createAccount(bank);
+      await store.upsertEntity('statement', 'gone', {'id': 'gone'});
+      await store.deleteEntity('statement', 'gone');
+      final journals = store.journals().length;
+      await expectLater(
+        store.saveReconciliation(
+          account: bank.copyWith(lastReconciledOn: date),
+          adjustment: adjustment(),
+          statement: (type: 'statement', id: 'gone', json: {'id': 'gone'}),
+        ),
+        throwsStateError,
+      );
+      expect(store.journals(), hasLength(journals));
+      expect(store.account(bank.id)!.lastReconciledOn, isNull);
+    });
+  });
+
   group('search', () {
     test('matches payee prefixes, amounts and dates', () async {
       final a = await store.postTransaction(

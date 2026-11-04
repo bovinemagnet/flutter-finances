@@ -105,13 +105,9 @@ class InboundMailService {
       final saved = state.receipts.receipt(receiptId);
       if (saved != null) {
         // Already saved, so there is nothing to fetch. The app may have stopped
-        // before acknowledging it or reading it. A copy that came from another
-        // device is read there, where its document is.
+        // before acknowledging it or reading it.
         await _acknowledge(workspaceId, document);
-        if (saved.extractionState == ExtractionState.captured &&
-            _heldHere(receiptId)) {
-          unawaited(_read(saved));
-        }
+        _readIfUnread(saved);
         return _Result.arrived;
       }
       final bytes = await client.download(workspaceId, document);
@@ -141,8 +137,7 @@ class InboundMailService {
         return _Result.failed;
       }
       await _acknowledge(workspaceId, document);
-      // Runs alongside, so slow recognition never holds up other documents.
-      unawaited(_read(receipt));
+      _readIfUnread(receipt);
       return _Result.arrived;
     } on InboundDocumentGoneException {
       return _Result.gone;
@@ -155,9 +150,14 @@ class InboundMailService {
     }
   }
 
-  bool _heldHere(String receiptId) => state.store.vault
-      .assetsFor(ReceiptEntityTypes.receipt, receiptId)
-      .any((asset) => asset.localState == AssetLocalState.present);
+  /// A copy that came from another device is read there, where its document
+  /// is. Runs alongside, so slow recognition never holds up other documents.
+  void _readIfUnread(Receipt receipt) {
+    if (receipt.extractionState == ExtractionState.captured &&
+        state.receipts.isHeldHere(receipt.id)) {
+      unawaited(_read(receipt));
+    }
+  }
 
   void _countFailure(InboundDocument document) =>
       _failedCaptures.update(document.id, (n) => n + 1, ifAbsent: () => 1);
