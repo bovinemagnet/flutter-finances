@@ -3,6 +3,9 @@ import 'package:test/test.dart';
 
 /// NFR 09: planning computations over a 100,000-transaction workspace with
 /// 20 accounts stay well under a second.
+/// Timings on a shared CI runner spike. A real slowdown still fails every try.
+const _timingRetries = 2;
+
 void main() {
   const aud = Currency.aud;
   final start = LocalDate(2022, 7, 1);
@@ -81,7 +84,7 @@ void main() {
     });
     expect(evaluation.lines, hasLength(30));
     expect(ms, lessThan(1000), reason: 'took $ms ms');
-  });
+  }, retry: _timingRetries);
 
   test('90-day forecast', () {
     late CashForecast forecast;
@@ -93,7 +96,7 @@ void main() {
     });
     expect(forecast.days, hasLength(90));
     expect(ms, lessThan(1000), reason: 'took $ms ms');
-  });
+  }, retry: _timingRetries);
 
   test('financial year reports', () {
     final range = DateRange.financialYear(2025);
@@ -103,7 +106,7 @@ void main() {
       netWorthHistory(ledger, range);
     });
     expect(ms, lessThan(1000), reason: 'took $ms ms');
-  });
+  }, retry: _timingRetries);
 
   test('anomaly detection for a month (NFR 02 Overview insights)', () {
     final month = DateRange(LocalDate(2026, 6, 1), LocalDate(2026, 6, 30));
@@ -112,5 +115,5 @@ void main() {
       detectSpendingSpikes(ledger: ledger, month: month.start);
     });
     expect(ms, lessThan(1000), reason: 'took $ms ms');
-  });
+  }, retry: _timingRetries);
 }

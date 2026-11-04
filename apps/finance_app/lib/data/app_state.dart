@@ -53,6 +53,7 @@ class AppState extends ChangeNotifier {
     _chart = null;
     _ledger = null;
     _insights = null;
+    _lastEntries = null;
     notifyListeners();
   }
 
@@ -117,6 +118,34 @@ class AppState extends ChangeNotifier {
   /// the entry's because entity ids are unique across types.
   static String _reviewedJournal(EntityRecord record) =>
       record.json['journalId'] as String? ?? record.ref.id;
+
+  ({LocalDate today, Map<String, LocalDate> dates})? _lastEntries;
+
+  /// The latest posted or pending entry on each account, up to today. This is
+  /// how far the app actually knows an account, whatever today's date is.
+  Map<String, LocalDate> get lastEntryDates {
+    final now = today();
+    final cached = _lastEntries;
+    if (cached != null && cached.today == now) return cached.dates;
+    final dates = <String, LocalDate>{};
+    for (final journal in ledger.journals) {
+      if (!journal.status.inPostedLedger &&
+          journal.status != JournalStatus.pending) {
+        continue;
+      }
+      final date = journal.effectiveDate;
+      if (date > now) continue;
+      for (final posting in journal.postings) {
+        final id = posting.ledgerAccountId;
+        final latest = dates[id];
+        if (chart.hasAccount(id) && (latest == null || date > latest)) {
+          dates[id] = date;
+        }
+      }
+    }
+    _lastEntries = (today: now, dates: dates);
+    return dates;
+  }
 
   /// Posted and pending entries the user has not reviewed yet (Journey C).
   Set<String> get unreviewedJournalIds {
@@ -341,6 +370,92 @@ class AppState extends ChangeNotifier {
       )
       .length;
 
+  /// The minimum cash buffer, if one has been set.
+  Money? get minimumBuffer => switch (_preferences['minimumBufferMinor']) {
+    final int minor => Money(minor, currency),
+    _ => null,
+  };
+
+  Future<void> setMinimumBuffer(Money value) async {
+    await _setPreferences({'minimumBufferMinor': value.minor});
+    refresh();
+  }
+
+  /// Whether the Overview's first-use checklist was dismissed.
+  bool get setupChecklistHidden => _preferences['setupChecklistHidden'] == true;
+
+  Future<void> hideSetupChecklist() async {
+    await _setPreferences({'setupChecklistHidden': true});
+    refresh();
+  }
+
+  List<InboundNotice> _inboundNotices = const [];
+
+  /// Forwarded emails that did not fully become receipts, except those the
+  /// user has dismissed.
+  List<InboundNotice> get inboundNotices => [
+    for (final notice in _inboundNotices)
+      if (store.entity(
+            AppEntityTypes.inboundNoticeDismissal,
+            _dismissalId(notice.messageId),
+          ) ==
+          null)
+        notice,
+  ];
+
+  void setInboundNotices(List<InboundNotice> notices) {
+    _inboundNotices = notices;
+    notifyListeners();
+  }
+
+  static String _dismissalId(String messageId) =>
+      ownedEntityId(AppEntityTypes.inboundNoticeDismissal, messageId);
+
+  /// Hides a notice. Each dismissal is its own record, so members and devices
+  /// never overwrite one another's.
+  Future<void> dismissInboundNotice(String messageId) async {
+    final id = _dismissalId(messageId);
+    await _put(AppEntityTypes.inboundNoticeDismissal, id, {
+      'id': id,
+      'messageId': messageId,
+    });
+    refresh();
+  }
+
+  /// The newest balance a statement reported for an account. It is an
+  /// observation kept beside the ledger: it never changes a balance, which is
+  /// always calculated from entries.
+  ({LocalDate date, Money balance})? balanceObservation(String accountId) {
+    final record = store.entity(
+      AppEntityTypes.balanceObservation,
+      ownedEntityId(AppEntityTypes.balanceObservation, accountId),
+    );
+    if (record == null || record.deleted) return null;
+    return (
+      date: LocalDate.parse(record.json['date'] as String),
+      balance: Money(record.json['balanceMinor'] as int, currency),
+    );
+  }
+
+  /// Records what a statement reported. An older statement does not replace a
+  /// newer one.
+  Future<void> saveBalanceObservation(
+    String accountId, {
+    required LocalDate date,
+    required Money balance,
+  }) async {
+    final existing = balanceObservation(accountId);
+    if (existing != null && existing.date > date) return;
+    final id = ownedEntityId(AppEntityTypes.balanceObservation, accountId);
+    await _put(AppEntityTypes.balanceObservation, id, {
+      'id': id,
+      'accountId': accountId,
+      'date': date.toString(),
+      'balanceMinor': balance.minor,
+    });
+    refresh();
+  }
+
   bool get appLockEnabled => _preferences['appLock'] == true;
 
   /// How receipt dates such as 03/04/2026 are read (OCR 04).
@@ -560,15 +675,17 @@ class AppState extends ChangeNotifier {
     ).evaluateAt(at ?? today());
   }
 
-  CashForecast forecast({Scenario? scenario}) => buildCashForecast(
-    ledger: ledger,
-    today: today(),
-    schedules: schedules,
-    overrides: overrides,
-    payments: payments,
-    reservations: reservations,
-    scenario: scenario,
-  );
+  CashForecast forecast({Scenario? scenario, LocalDate? end}) =>
+      buildCashForecast(
+        ledger: ledger,
+        today: today(),
+        end: end,
+        schedules: schedules,
+        overrides: overrides,
+        payments: payments,
+        reservations: reservations,
+        scenario: scenario,
+      );
 
   /// The next confirmed payday, used as the discretionary horizon.
   LocalDate nextPayday() {
@@ -589,11 +706,6 @@ class AppState extends ChangeNotifier {
 
   DiscretionaryEstimate discretionary() {
     final payday = nextPayday();
-    final preferences = store.entity(
-      AppEntityTypes.appPreferences,
-      AppEntityTypes.appPreferencesId,
-    );
-    final buffer = preferences?.json['minimumBufferMinor'] as int?;
     return estimateDiscretionary(
       plan: budgetPlan,
       ledger: ledger,
@@ -605,7 +717,7 @@ class AppState extends ChangeNotifier {
       reservations: reservations,
       adjustments: adjustments,
       savingsAllocations: savingsAllocations,
-      minimumBuffer: buffer == null ? null : Money(buffer, currency),
+      minimumBuffer: minimumBuffer,
       accountDataAsOf: {
         for (final account in chart.accounts)
           if (account.dataSource == 'manual') account.id: today(),

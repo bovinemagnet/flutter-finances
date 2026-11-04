@@ -34,6 +34,14 @@ finance:
     enabled: true
     poll-interval: 200ms
     base-backoff: 1s
+  inbound-mail:
+    # tool/e2e/run.sh generates a throwaway key and secret for each run.
+    token-key: ${FINANCE_INBOUND_MAIL_TOKEN_KEY}
+    domain: receipts.test
+    webhook-secrets:
+      sandbox: ${FINANCE_INBOUND_MAIL_WEBHOOK_SECRET}
+    sandbox:
+      enabled: true
   bank-feeds:
     # tool/e2e/run.sh generates a throwaway key for each run.
     token-key: ${FINANCE_BANK_FEEDS_TOKEN_KEY}

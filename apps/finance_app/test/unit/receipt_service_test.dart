@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -10,6 +11,7 @@ import 'package:finance_app/platform/services.dart';
 import 'package:finance_app/platform/text_recognition.dart';
 import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
+import 'package:finance_store/finance_store.dart' as store show VaultAssetKind;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:intl/date_symbol_data_local.dart';
@@ -32,6 +34,24 @@ class _FakeRecogniser implements TextRecogniser {
   Future<OcrResult> recognise(List<Uint8List> images) async {
     if (text == null) throw const TextRecognitionException('unavailable');
     return OcrResult.fromText(text!, engine: 'fake', engineVersion: '1');
+  }
+}
+
+/// Recognition that waits for [hold], as a slow engine does.
+class _HeldRecogniser implements TextRecogniser {
+  final hold = Completer<void>();
+  @override
+  String get unavailableMessage => 'unavailable';
+  @override
+  Future<bool> isAvailable() async => true;
+  @override
+  Future<OcrResult> recognise(List<Uint8List> images) async {
+    await hold.future;
+    return OcrResult.fromText(
+      'TOTAL 13.50',
+      engine: 'fake',
+      engineVersion: '1',
+    );
   }
 }
 
@@ -62,6 +82,199 @@ void main() {
     image.exif.gpsIfd['GPSLatitude'] = img.IfdValueRational(27, 1);
     return img.encodeJpg(image);
   }
+
+  test('an image the decoder cannot read is still kept', () async {
+    final good = Uint8List.fromList(
+      img.encodeJpg(img.Image(width: 400, height: 600)),
+    );
+    var start = 2;
+    while (!(good[start] == 0xFF && good[start + 1] == 0xC0)) {
+      start++;
+    }
+    // A sampling factor of zero passes validation but stops the decoder.
+    final bad = Uint8List.fromList(good)..[start + 11] = 0;
+    final receipt = await state.receipts.capture([
+      CapturedFile(bad, source: CaptureSource.fileImport),
+    ]);
+    expect(state.receipts.receipt(receipt.id), isNotNull);
+    expect(state.receipts.pagesFor(receipt.id), hasLength(1));
+  });
+
+  /// A JPEG that passes validation but stops the decoder.
+  Uint8List damagedPhoto() {
+    final good = Uint8List.fromList(
+      img.encodeJpg(img.Image(width: 400, height: 600)),
+    );
+    var start = 2;
+    while (!(good[start] == 0xFF && good[start + 1] == 0xC0)) {
+      start++;
+    }
+    return Uint8List.fromList(good)..[start + 11] = 0;
+  }
+
+  test('a damaged image still gets its other warnings', () async {
+    final bad = damagedPhoto();
+    final first = await state.receipts.capture([
+      CapturedFile(bad, source: CaptureSource.fileImport),
+    ]);
+    final second = await state.receipts.capture([
+      CapturedFile(bad, source: CaptureSource.fileImport),
+    ]);
+    final warnings = await state.receipts.warningsFor(second.id);
+    expect(warnings.map((w) => w.otherReceiptId), contains(first.id));
+  });
+
+  test('an image fingerprint does not share the id of its document', () async {
+    final receipt = await state.receipts.capture([
+      CapturedFile(photo(), source: CaptureSource.fileImport),
+    ]);
+    final assetId = state.receipts.pagesFor(receipt.id).single.sourceAssetId;
+    expect(state.store.entity(ReceiptEntityTypes.fingerprint, assetId), isNull);
+    expect(
+      state.store.entity(
+        ReceiptEntityTypes.fingerprint,
+        ownedEntityId(ReceiptEntityTypes.fingerprint, assetId),
+      ),
+      isNotNull,
+    );
+  });
+
+  group('while a receipt is being read', () {
+    late _HeldRecogniser recogniser;
+    late Receipt receipt;
+    late Future<Receipt> reading;
+
+    setUp(() async {
+      recogniser = _HeldRecogniser();
+      receipt = await state.receipts.capture([
+        CapturedFile(photo(), source: CaptureSource.fileImport),
+      ]);
+      reading = state.receipts.extract(receipt.id, recogniser);
+      await Future<void>.delayed(Duration.zero);
+    });
+
+    ReceiptFields confirmed() => ReceiptFields(
+      merchant: 'Fresh Grocer',
+      date: today,
+      total: Money(1350, aud),
+    );
+
+    test('a review stands when reading finishes later', () async {
+      await state.receipts.review(
+        receipt.id,
+        confirmed(),
+        const CreateExpense(accountId: 'bank', categoryId: 'groceries'),
+      );
+      recogniser.hold.complete();
+      await reading;
+      final after = state.receipts.receipt(receipt.id)!;
+      expect(after.extractionState, ExtractionState.reviewed);
+      expect(after.outcome, ReviewOutcome.expenseCreated);
+      expect(after.confirmed.total, Money(1350, aud));
+    });
+
+    test('a deletion stands when reading finishes later', () async {
+      await state.receipts.deleteDocument(receipt.id);
+      recogniser.hold.complete();
+      await reading;
+      expect(state.receipts.receipts(), isEmpty);
+      expect(state.store.entities(ReceiptEntityTypes.extraction), isEmpty);
+    });
+
+    test('with nothing else done, reading finishes as usual', () async {
+      recogniser.hold.complete();
+      await reading;
+      final after = state.receipts.receipt(receipt.id)!;
+      expect(after.extractionState, ExtractionState.needsReview);
+      expect(after.latestExtractionId, isNotNull);
+    });
+  });
+
+  group('capturing with a known id', () {
+    const id = '11111111-1111-5111-8111-111111111111';
+
+    test('makes one receipt however many times it runs', () async {
+      final receipts = state.receipts;
+      final first = await receipts.capture([
+        CapturedFile(photo(), source: CaptureSource.email),
+      ], receiptId: id);
+      final second = await receipts.capture([
+        CapturedFile(photo(), source: CaptureSource.email),
+      ], receiptId: id);
+      expect(first.id, id);
+      expect(second.id, id);
+      expect(receipts.receipts(), hasLength(1));
+      expect(receipts.pagesFor(id), hasLength(1));
+    });
+
+    test('a retry after a partial capture does not duplicate pages', () async {
+      final receipts = state.receipts;
+      // The app stopped after writing a page, before the receipt itself.
+      await state.store.upsertEntity(
+        ReceiptEntityTypes.page,
+        nameBasedId(id, 'page-1'),
+        receiptPageToJson(
+          ReceiptPage(
+            id: nameBasedId(id, 'page-1'),
+            receiptId: id,
+            pageNumber: 1,
+            sourceAssetId: 'interrupted',
+            sourcePageIndex: 0,
+          ),
+        ),
+      );
+      await receipts.capture([
+        CapturedFile(photo(), source: CaptureSource.email),
+      ], receiptId: id);
+      expect(receipts.pagesFor(id), hasLength(1));
+    });
+
+    test('a retry reuses a document already saved', () async {
+      final receipts = state.receipts;
+      final asset = await state.store.vault.saveAsset(
+        ownerType: ReceiptEntityTypes.receipt,
+        ownerId: id,
+        kind: store.VaultAssetKind.source,
+        contentType: 'image/jpeg',
+        bytes: photo(),
+        assetId: nameBasedId(id, 'asset-0'),
+      );
+      await receipts.capture([
+        CapturedFile(photo(), source: CaptureSource.email),
+      ], receiptId: id);
+      expect(receipts.pagesFor(id).single.sourceAssetId, asset.id);
+    });
+
+    test('two devices derive the same pages and documents', () async {
+      await state.receipts.capture([
+        CapturedFile(photo(), source: CaptureSource.email),
+      ], receiptId: id);
+      final page = state.receipts.pagesFor(id).single;
+      expect(page.id, nameBasedId(id, 'page-1'));
+      expect(page.sourceAssetId, nameBasedId(id, 'asset-0'));
+    });
+
+    test('uses the time it is given', () async {
+      final at = DateTime.utc(2026, 10, 1, 9);
+      final receipt = await state.receipts.capture(
+        [CapturedFile(photo(), source: CaptureSource.email)],
+        receiptId: id,
+        capturedAt: at,
+      );
+      expect(receipt.capturedAt, at);
+    });
+
+    test('dates the document by that time, as every device will', () async {
+      final at = DateTime.utc(2026, 10, 1, 9);
+      await state.receipts.capture(
+        [CapturedFile(photo(), source: CaptureSource.email)],
+        receiptId: id,
+        capturedAt: at,
+      );
+      final page = state.receipts.pagesFor(id).single;
+      expect(state.store.vault.asset(page.sourceAssetId)!.createdAt, at);
+    });
+  });
 
   setUp(() async {
     dir = await Directory.systemTemp.createTemp('receipts_test');

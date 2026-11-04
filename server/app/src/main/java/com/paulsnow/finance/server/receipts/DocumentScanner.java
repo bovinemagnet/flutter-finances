@@ -1,6 +1,9 @@
 package com.paulsnow.finance.server.receipts;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Optional;
+import java.util.Set;
 
 /**
  * Decides whether a quarantined document may be released. Deployments can
@@ -38,4 +41,55 @@ public interface DocumentScanner {
      * @return the verdict
      */
     Verdict scan(String contentType, Path file);
+
+    /**
+     * Identifies a document from its leading bytes, whatever it claims to be.
+     *
+     * @param bytes the document
+     * @return its content type, or empty when it is not an accepted type
+     */
+    static Optional<String> detectContentType(byte[] bytes) {
+        if (startsWith(bytes, 0, 0xFF, 0xD8, 0xFF)) {
+            return Optional.of(ContentTypes.JPEG);
+        }
+        if (startsWith(bytes, 0, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)) {
+            return Optional.of(ContentTypes.PNG);
+        }
+        if (startsWith(bytes, pdfHeaderOffset(bytes), '%', 'P', 'D', 'F', '-')) {
+            return Optional.of(ContentTypes.PDF);
+        }
+        if (bytes.length >= 12 && startsWith(bytes, 4, 'f', 't', 'y', 'p')) {
+            String brand = new String(bytes, 8, 4, StandardCharsets.US_ASCII);
+            if (Set.of("heic", "heix", "hevc", "heim", "heis", "mif1").contains(brand)) {
+                return Optional.of(ContentTypes.HEIC);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Skips a byte order mark and whitespace, the only things accepted before a
+     * PDF header. Anything else could be another file carrying a PDF header
+     * further in, such as an executable.
+     */
+    private static int pdfHeaderOffset(byte[] bytes) {
+        int offset = startsWith(bytes, 0, 0xEF, 0xBB, 0xBF) ? 3 : 0;
+        while (offset < bytes.length && (bytes[offset] == ' ' || bytes[offset] == '\t' || bytes[offset] == '\r'
+                || bytes[offset] == '\n')) {
+            offset++;
+        }
+        return offset;
+    }
+
+    private static boolean startsWith(byte[] bytes, int offset, int... expected) {
+        if (bytes.length < offset + expected.length) {
+            return false;
+        }
+        for (int i = 0; i < expected.length; i++) {
+            if ((bytes[offset + i] & 0xFF) != expected[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
 }

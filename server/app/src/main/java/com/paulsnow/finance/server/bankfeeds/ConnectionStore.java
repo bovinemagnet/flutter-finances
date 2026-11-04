@@ -14,6 +14,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.paulsnow.finance.server.common.TokenCipher;
 import com.paulsnow.finance.server.bankfeeds.BankFeedProvider.ProviderAccount;
 import com.paulsnow.finance.server.bankfeeds.BankFeedProvider.ProviderGrant;
 import com.paulsnow.finance.server.bankfeeds.BankFeedProvider.ProviderTokens;

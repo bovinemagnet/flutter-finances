@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
 import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
@@ -219,5 +220,48 @@ Future<T> eventually<T>(
       if (DateTime.now().isAfter(deadline)) rethrow;
       await Future<void>.delayed(const Duration(milliseconds: 250));
     }
+  }
+}
+
+/// Posts a signed email to the server's sandbox inbound mail provider.
+Future<void> deliverToSandbox({
+  required String to,
+  required String fileName,
+  required Uint8List bytes,
+}) async {
+  final secret = Platform.environment['FINANCE_E2E_INBOUND_SECRET']!;
+  final body = utf8.encode(
+    jsonEncode({
+      'messageId': newId(),
+      'to': to,
+      'from': 'shop@example.com',
+      'subject': 'Your receipt',
+      'attachments': [
+        {
+          'fileName': fileName,
+          'contentBase64': base64Encode(bytes),
+          'inline': false,
+        },
+      ],
+    }),
+  );
+  final id = newId();
+  final timestamp = '${DateTime.now().millisecondsSinceEpoch ~/ 1000}';
+  final digest = Hmac(
+    sha256,
+    utf8.encode(secret),
+  ).convert([...utf8.encode('$id.$timestamp.'), ...body]);
+  final response = await http.post(
+    Uri.parse('$baseUrl/v1/inbound-mail/webhooks/sandbox'),
+    headers: {
+      'content-type': 'application/json',
+      'x-webhook-id': id,
+      'x-webhook-timestamp': timestamp,
+      'x-webhook-signature': 'v1=$digest',
+    },
+    body: body,
+  );
+  if (response.statusCode != 202) {
+    throw StateError('Delivery refused: ${response.statusCode}');
   }
 }

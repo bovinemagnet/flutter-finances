@@ -5,6 +5,7 @@ import '../../data/sync_controller.dart';
 import 'bank_feeds_screen.dart';
 import 'conflicts_screen.dart';
 import 'extraction_consent_screen.dart';
+import 'forwarding_address_screen.dart';
 import 'household_screen.dart';
 
 /// Sync controls for the settings page.
@@ -212,6 +213,11 @@ class SyncSection extends StatelessWidget {
                   ),
                 ),
               ),
+              if (controller.settings.isComplete)
+                _ForwardingTile(
+                  key: ValueKey(controller.settings.serverUrl),
+                  controller: controller,
+                ),
               ListTile(
                 leading: const Icon(Icons.document_scanner_outlined),
                 title: const Text('Cloud text recognition'),
@@ -248,4 +254,45 @@ class SyncSection extends StatelessWidget {
       },
     );
   }
+}
+
+/// Offers email forwarding only where the service provides it. A failed check
+/// hides the option rather than showing an error for something optional.
+class _ForwardingTile extends StatefulWidget {
+  const _ForwardingTile({super.key, required this.controller});
+  final SyncController controller;
+
+  @override
+  State<_ForwardingTile> createState() => _ForwardingTileState();
+}
+
+class _ForwardingTileState extends State<_ForwardingTile> {
+  late final Future<bool> _available = _check();
+
+  Future<bool> _check() async {
+    try {
+      return await widget.controller.inboundMail.available();
+    } on Exception {
+      return false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<bool>(
+    future: _available,
+    builder: (context, snapshot) {
+      if (snapshot.data != true) return const SizedBox.shrink();
+      return ListTile(
+        leading: const Icon(Icons.forward_to_inbox_outlined),
+        title: const Text('Forward receipts by email'),
+        subtitle: const Text('A private address for emailed receipts'),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) =>
+                ForwardingAddressScreen(controller: widget.controller),
+          ),
+        ),
+      );
+    },
+  );
 }

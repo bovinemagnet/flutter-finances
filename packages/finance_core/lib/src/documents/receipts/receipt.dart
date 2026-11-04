@@ -13,6 +13,7 @@ enum CaptureSource {
   fileImport,
   paste,
   dragAndDrop,
+  email,
 }
 
 /// The user's decision at review (REC 06).

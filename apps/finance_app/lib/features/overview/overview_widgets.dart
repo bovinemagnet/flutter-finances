@@ -20,12 +20,17 @@ class FigureTile extends StatelessWidget {
     required this.value,
     this.caption,
     this.captionColour,
+    this.planned = false,
   });
 
   final String label;
   final String value;
   final String? caption;
   final Color? captionColour;
+
+  /// Mutes a figure that has not happened yet, so it reads differently from
+  /// money that has. The caption says so in words.
+  final bool planned;
 
   @override
   Widget build(BuildContext context) {
@@ -43,7 +48,13 @@ class FigureTile extends StatelessWidget {
               FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
-                child: Text(value, style: palette.figure(size: 24)),
+                child: Text(
+                  value,
+                  style: palette.figure(
+                    size: 24,
+                    color: planned ? palette.muted : null,
+                  ),
+                ),
               ),
               if (caption != null) ...[
                 const SizedBox(height: 6),

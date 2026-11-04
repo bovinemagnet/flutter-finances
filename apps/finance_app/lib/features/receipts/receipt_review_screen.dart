@@ -699,7 +699,20 @@ class _PagePreview extends StatelessWidget {
                   label:
                       'Receipt image, page ${page.pageNumber}. The fields beside it can be edited.',
                   image: true,
-                  child: Image.memory(bytes, fit: BoxFit.contain),
+                  child: Image.memory(
+                    bytes,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, _, _) => const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text(
+                          'This image is damaged and cannot be shown. '
+                          'Your original is still saved.',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               );
             },

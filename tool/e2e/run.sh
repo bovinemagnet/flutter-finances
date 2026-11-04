@@ -121,10 +121,13 @@ wait_for "PostgreSQL" 60 "$CONTAINER_ENGINE" exec "$RUN_ID-postgres" \
 wait_for "MinIO" 60 curl -fsS "http://127.0.0.1:$MINIO_PORT/minio/health/live"
 
 log "starting the server on $APP_PORT"
+INBOUND_SECRET="$(head -c 32 /dev/urandom | base64)"
 FINANCE_DB_URL="jdbc:postgresql://127.0.0.1:$PG_PORT/finance" \
 FINANCE_S3_ENDPOINT="http://127.0.0.1:$MINIO_PORT" \
 FINANCE_E2E_PUBLIC_KEY="file:$KEYS/test-only-public.pem" \
 FINANCE_BANK_FEEDS_TOKEN_KEY="$(head -c 32 /dev/urandom | base64)" \
+FINANCE_INBOUND_MAIL_TOKEN_KEY="$(head -c 32 /dev/urandom | base64)" \
+FINANCE_INBOUND_MAIL_WEBHOOK_SECRET="$INBOUND_SECRET" \
   java -jar "$JAR" --spring.profiles.active=e2e --server.port="$APP_PORT" \
   >"$WORK/server.log" 2>&1 &
 SERVER_PID=$!
@@ -134,4 +137,5 @@ log "running the end-to-end tests"
 cd "$ROOT/packages/finance_store"
 FINANCE_E2E_BASE_URL="http://127.0.0.1:$APP_PORT" \
 FINANCE_E2E_PRIVATE_KEY="$KEYS/test-only-private.pem" \
+FINANCE_E2E_INBOUND_SECRET="$INBOUND_SECRET" \
   dart test -P e2e test/e2e "$@"

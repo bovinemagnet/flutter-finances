@@ -1,5 +1,7 @@
 import 'package:finance_app/app/shell.dart';
 import 'package:finance_app/app/theme.dart';
+import 'package:finance_app/features/budget/budget_setup_form.dart';
+import 'package:finance_app/features/onboarding/onboarding_model.dart';
 import 'package:finance_app/features/transactions/transaction_form.dart';
 import 'package:finance_app/features/transactions/transaction_form_model.dart';
 import 'package:finance_core/finance_core.dart';
@@ -46,8 +48,53 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  // The narrowest common phone, and the phone the wrapping was seen on.
-  for (final width in [360.0, 411.0]) {
+  /// How many lines each word of [text] takes. A label may wrap between words
+  /// but must not break inside one.
+  void expectWordsWhole(WidgetTester tester, String text) {
+    final paragraph = tester.renderObject<RenderParagraph>(find.text(text).last);
+    for (final match in RegExp(r'\S+').allMatches(text)) {
+      final boxes = paragraph.getBoxesForSelection(
+        TextSelection(baseOffset: match.start, extentOffset: match.end),
+      );
+      expect({for (final box in boxes) box.top}, hasLength(1), reason: match[0]);
+    }
+  }
+
+  // The narrowest common phone, and the phones the wrapping was seen on.
+  for (final width in [360.0, 402.0, 411.0]) {
+    testWidgets('budget templates keep their words whole at $width wide', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        Size(width, 800),
+        // Set-up shows the form inside a stepper, its narrowest home.
+        Scaffold(
+          body: Stepper(
+            controlsBuilder: (_, _) => const SizedBox(),
+            steps: [
+              Step(
+                title: const Text('Budget'),
+                isActive: true,
+                content: BudgetSetupForm(
+                  model: OnboardingModel(today: LocalDate(2026, 11, 4)),
+                  payAccounts: const [],
+                  onChanged: () {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      for (final label in [
+        'Needs, wants, savings',
+        'Every dollar assigned',
+        'Categories only',
+      ]) {
+        expectWordsWhole(tester, label);
+      }
+    });
+
     testWidgets('navigation labels stay on one line at $width wide', (
       tester,
     ) async {

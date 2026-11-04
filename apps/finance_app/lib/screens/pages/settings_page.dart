@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
 import '../../app/appearance.dart';
-import '../../data/entity_types.dart';
 import '../../features/imports/import_screen.dart';
 import '../../features/settings/rules_screen.dart';
 import '../../format/formatters.dart';
@@ -201,7 +200,8 @@ class SettingsPage extends StatelessWidget {
     }
   }
 
-  Future<void> _setBuffer(BuildContext context) async {
+  /// Asks for the minimum cash buffer and saves it.
+  static Future<void> editMinimumBuffer(BuildContext context) async {
     final state = AppScope.of(context);
     final controller = TextEditingController();
     final value = await showDialog<Money>(
@@ -234,21 +234,7 @@ class SettingsPage extends StatelessWidget {
         ],
       ),
     );
-    if (value == null) return;
-    final existing = state.store.entity(
-      AppEntityTypes.appPreferences,
-      AppEntityTypes.appPreferencesId,
-    );
-    await state.store.upsertEntity(
-      AppEntityTypes.appPreferences,
-      AppEntityTypes.appPreferencesId,
-      {
-        ...?existing?.json,
-        'id': AppEntityTypes.appPreferencesId,
-        'minimumBufferMinor': value.minor,
-      },
-    );
-    state.refresh();
+    if (value != null) await state.setMinimumBuffer(value);
   }
 
   @override
@@ -257,14 +243,7 @@ class SettingsPage extends StatelessWidget {
     final services = AppScope.servicesOf(context);
     final capabilities = services.capabilities;
     final settings = state.settings;
-    final buffer =
-        state.store
-                .entity(
-                  AppEntityTypes.appPreferences,
-                  AppEntityTypes.appPreferencesId,
-                )
-                ?.json['minimumBufferMinor']
-            as int?;
+    final buffer = state.minimumBuffer;
     final passwordProtected =
         WorkspaceDescriptor.read(
           AppScope.servicesOf(context).workspaceDirectory,
@@ -346,12 +325,8 @@ class SettingsPage extends StatelessWidget {
         ListTile(
           leading: const Icon(Icons.shield_outlined),
           title: const Text('Minimum cash buffer'),
-          subtitle: Text(
-            buffer == null
-                ? 'Not set'
-                : formatMoney(Money(buffer, state.currency)),
-          ),
-          onTap: () => _setBuffer(context),
+          subtitle: Text(buffer == null ? 'Not set' : formatMoney(buffer)),
+          onTap: () => editMinimumBuffer(context),
         ),
         ListTile(
           leading: const Icon(Icons.calendar_month_outlined),

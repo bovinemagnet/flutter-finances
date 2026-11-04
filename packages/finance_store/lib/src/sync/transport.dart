@@ -184,16 +184,18 @@ class SyncTransport {
   Future<http.Response> send(
     Future<http.BaseRequest> Function() build, {
     bool Function(int status)? acceptStatus,
+    Duration? timeout,
   }) async {
+    final limit = timeout ?? this.timeout;
     Object? lastError;
     var description = '';
     for (var attempt = 1; attempt <= retry.maxAttempts; attempt++) {
       final request = await build();
       description = '${request.method} ${request.url.path}';
       try {
-        final streamed = await client.send(request).timeout(timeout);
+        final streamed = await client.send(request).timeout(limit);
         final response = await http.Response.fromStream(streamed)
-            .timeout(timeout);
+            .timeout(limit);
         final status = response.statusCode;
         if (status >= 200 && status < 300) return response;
         if (acceptStatus?.call(status) ?? false) return response;

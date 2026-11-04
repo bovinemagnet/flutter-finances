@@ -6,7 +6,9 @@ import 'package:finance_store/finance_store.dart';
 import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 
+import '../platform/text_recognition.dart';
 import 'app_state.dart';
+import 'inbound_mail_service.dart';
 import 'oidc.dart';
 
 /// Server and identity provider addresses for synced mode.
@@ -98,6 +100,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     this.pushDelay = const Duration(seconds: 1),
     this.retry = const RetryPolicy(),
     this.accessToken,
+    this.recogniser,
   }) : _http = httpClient ?? http.Client();
 
   final AppState state;
@@ -122,6 +125,9 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Transport retry policy; tests shorten it.
   final RetryPolicy retry;
+
+  /// Reads forwarded receipt images once they are saved.
+  final TextRecogniser? recogniser;
 
   /// Replaces the browser session, for tests and service accounts.
   final AccessTokenProvider? accessToken;
@@ -158,6 +164,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     await settingsStore.write(value);
     _session = null;
     _client = null;
+    _collector = null;
     notifyListeners();
   }
 
@@ -358,6 +365,18 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
   /// Bank feed connections and their proposals (P1).
   BankFeedClient get bankFeeds => BankFeedClient.of(client);
 
+  /// The member's forwarding address and what it received (P1).
+  InboundMailClient get inboundMail => InboundMailClient.of(client);
+
+  InboundMailService? _collector;
+
+  /// Replaced when the settings change, since it holds that service's client.
+  InboundMailService get _inboundCollector => _collector ??= InboundMailService(
+    state: state,
+    client: inboundMail,
+    recogniser: recogniser,
+  );
+
   /// Consent to, and results of, optional cloud extraction (P1).
   ExtractionClient get extraction => ExtractionClient.of(client);
 
@@ -408,6 +427,8 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
       lastError = null;
       phase = SyncPhase.idle;
       _startWaiting();
+      // Runs alongside, so a slow download never holds up the sync's status.
+      unawaited(_inboundCollector.collect());
     } on AuthenticationRequiredException {
       lastError = 'Sign in again to continue syncing';
       phase = SyncPhase.failed;

@@ -34,6 +34,20 @@ String formatDate(LocalDate date, {String locale = 'en_AU'}) => DateFormat(
   locale,
 ).format(DateTime(date.year, date.month, date.day));
 
+/// What a statement reported, in words that keep it apart from a calculated
+/// balance.
+String formatObservedBalance(
+  Money balance,
+  LocalDate date, {
+  required bool owed,
+}) => switch ((owed, balance.isNegative)) {
+  (true, false) =>
+    'Bank says ${formatMoney(balance)} owed on ${formatDate(date)}',
+  (true, true) =>
+    'Bank says ${formatMoney(balance.abs())} in credit on ${formatDate(date)}',
+  (false, _) => 'Bank balance ${formatMoney(balance)} on ${formatDate(date)}',
+};
+
 /// A financial year by its short name, otherwise both dates.
 String formatDateRange(DateRange range, {String locale = 'en_AU'}) {
   final label = range.label;

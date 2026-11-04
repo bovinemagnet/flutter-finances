@@ -19,10 +19,14 @@ class PlanPage extends StatefulWidget {
 }
 
 class _PlanPageState extends State<PlanPage> {
+  static const _forecastTabIndex = 2;
+
   LocalDate? _month;
 
   /// Hypothetical changes; they alter only the projection (PLAN 03).
   final _whatIf = <ScenarioChange>[];
+
+  var _horizon = ForecastHorizon.days90;
 
   Future<void> _addOneOff() async {
     final state = AppScope.of(context);
@@ -160,11 +164,25 @@ class _PlanPageState extends State<PlanPage> {
     final scenario = _whatIf.isEmpty
         ? null
         : Scenario(id: 'what-if', name: 'What if', changes: List.of(_whatIf));
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Wrap(
+    return ForecastView(
+      forecast: state.forecast(
+        scenario: scenario,
+        end: _horizon.endFrom(state.today()),
+      ),
+      header: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 8,
+        children: [
+          SegmentedButton<ForecastHorizon>(
+            showSelectedIcon: false,
+            segments: [
+              for (final horizon in ForecastHorizon.values)
+                ButtonSegment(value: horizon, label: Text(horizon.label)),
+            ],
+            selected: {_horizon},
+            onSelectionChanged: (s) => setState(() => _horizon = s.single),
+          ),
+          Wrap(
             spacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
@@ -185,18 +203,17 @@ class _PlanPageState extends State<PlanPage> {
                 ),
             ],
           ),
-        ),
-        if (_whatIf.isNotEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
+          if (_whatIf.isNotEmpty)
+            const Text(
               'Hypothetical: nothing is recorded or changed in your accounts.',
             ),
-          ),
-        Expanded(
-          child: ForecastView(forecast: state.forecast(scenario: scenario)),
-        ),
-      ],
+          if (_horizon != ForecastHorizon.days90)
+            const Text(
+              'Further ahead is less certain: this counts only your scheduled '
+              'bills and income, not everyday spending.',
+            ),
+        ],
+      ),
     );
   }
 
@@ -366,21 +383,37 @@ class _PlanPageState extends State<PlanPage> {
                 Tab(text: 'Forecast'),
               ],
             ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  tooltip: 'Previous month',
-                  icon: const Icon(Icons.chevron_left),
-                  onPressed: () => setState(() => _month = month.addMonths(-1)),
-                ),
-                Text('${month.month.toString().padLeft(2, '0')}/${month.year}'),
-                IconButton(
-                  tooltip: 'Next month',
-                  icon: const Icon(Icons.chevron_right),
-                  onPressed: () => setState(() => _month = month.addMonths(1)),
-                ),
-              ],
+            // Months apply to bills and the calendar; the forecast has its own
+            // horizon.
+            Builder(
+              builder: (context) {
+                final tabs = DefaultTabController.of(context);
+                return AnimatedBuilder(
+                  animation: tabs,
+                  builder: (context, _) => tabs.index == _forecastTabIndex
+                      ? const SizedBox.shrink()
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            IconButton(
+                              tooltip: 'Previous month',
+                              icon: const Icon(Icons.chevron_left),
+                              onPressed: () =>
+                                  setState(() => _month = month.addMonths(-1)),
+                            ),
+                            Text(
+                              '${month.month.toString().padLeft(2, '0')}/${month.year}',
+                            ),
+                            IconButton(
+                              tooltip: 'Next month',
+                              icon: const Icon(Icons.chevron_right),
+                              onPressed: () =>
+                                  setState(() => _month = month.addMonths(1)),
+                            ),
+                          ],
+                        ),
+                );
+              },
             ),
             Expanded(
               child: TabBarView(

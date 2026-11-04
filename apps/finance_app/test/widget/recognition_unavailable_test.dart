@@ -22,6 +22,18 @@ const _fastKdf = Argon2idParameters(
   parallelism: 1,
 );
 
+/// A JPEG that passes validation but stops the decoder.
+Uint8List _damagedJpeg() {
+  final good = Uint8List.fromList(
+    img.encodeJpg(img.Image(width: 400, height: 600)),
+  );
+  var start = 2;
+  while (!(good[start] == 0xFF && good[start + 1] == 0xC0)) {
+    start++;
+  }
+  return Uint8List.fromList(good)..[start + 11] = 0;
+}
+
 CapturedFile _photo() => CapturedFile(
   Uint8List.fromList(img.encodePng(img.Image(width: 4, height: 4))),
   source: CaptureSource.camera,
@@ -61,6 +73,23 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  testWidgets('a damaged image says so instead of showing nothing', (
+    tester,
+  ) async {
+    await openStore(tester);
+    late String receiptId;
+    await tester.runAsync(() async {
+      receiptId = (await state.receipts.capture([
+        CapturedFile(_damagedJpeg(), source: CaptureSource.fileImport),
+      ])).id;
+    });
+    await pump(tester, ReceiptReviewScreen(receiptId: receiptId));
+    await tester.runAsync(() => Future<void>.delayed(Durations.long2));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('cannot be shown'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('capturing says the receipt cannot be read here', (
     tester,

@@ -106,6 +106,7 @@ class _FinanceAppState extends State<FinanceApp> {
       browserSignIn: (session) => signInWithBrowser(session, capabilities),
       platform: Platform.operatingSystem,
       deviceName: Platform.localHostname,
+      recogniser: widget.services.textRecogniser,
     );
   }
 

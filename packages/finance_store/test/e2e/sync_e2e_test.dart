@@ -1,6 +1,9 @@
 @Tags(['e2e'])
 library;
 
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
 import 'package:test/test.dart';
@@ -594,6 +597,76 @@ void main() {
         'slowest ${slowest.inMilliseconds}',
       );
       expect(slowest, lessThan(const Duration(seconds: 10)));
+    },
+  );
+
+  e2eTest('email forwarding: a sandbox delivery becomes a document that is '
+      'collected once, and touches no financial data', () async {
+    final owner = await device('owner', newUser('owner'));
+    final workspace = await owner.client.createRemoteWorkspace(name: 'Home');
+    await owner.join(workspace);
+    final client = InboundMailClient.of(owner.client);
+    expect(await client.available(), isTrue);
+    final address = await client.createOrReplaceAddress(workspace.id);
+
+    final bytes = Uint8List.fromList(
+      utf8.encode('%PDF-1.7\nforwarded receipt\n%%EOF\n'),
+    );
+    await deliverToSandbox(
+      to: address.address,
+      fileName: 'receipt.pdf',
+      bytes: bytes,
+    );
+
+    // The server handles a delivery in the background.
+    var inbox = await client.inbox(workspace.id);
+    for (var i = 0; i < 100 && inbox.documents.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      inbox = await client.inbox(workspace.id);
+    }
+    final document = inbox.documents.single;
+    expect(document.fileName, 'receipt.pdf');
+    expect(await client.download(workspace.id, document), bytes);
+
+    await client.acknowledge(workspace.id, document.id);
+    await client.acknowledge(workspace.id, document.id);
+    expect((await client.inbox(workspace.id)).documents, isEmpty);
+    await expectLater(
+      client.download(workspace.id, document),
+      throwsA(isA<InboundDocumentGoneException>()),
+    );
+
+    await owner.client.sync();
+    expect(owner.store.journals(), isEmpty);
+  });
+
+  e2eTest(
+    'email forwarding: another member cannot see or collect a document',
+    () async {
+      final owner = await device('owner', newUser('owner'));
+      final workspace = await owner.client.createRemoteWorkspace(name: 'Home');
+      await owner.join(workspace);
+      final client = InboundMailClient.of(owner.client);
+      final address = await client.createOrReplaceAddress(workspace.id);
+      await deliverToSandbox(
+        to: address.address,
+        fileName: 'receipt.pdf',
+        bytes: Uint8List.fromList(utf8.encode('%PDF-1.7\nx\n%%EOF\n')),
+      );
+      var inbox = await client.inbox(workspace.id);
+      for (var i = 0; i < 100 && inbox.documents.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        inbox = await client.inbox(workspace.id);
+      }
+      final document = inbox.documents.single;
+
+      final stranger = await device('stranger', newUser('stranger'));
+      final other = InboundMailClient.of(stranger.client);
+      await expectLater(
+        other.download(workspace.id, document),
+        throwsA(isA<Exception>()),
+      );
+      expect((await client.inbox(workspace.id)).documents, hasLength(1));
     },
   );
 }

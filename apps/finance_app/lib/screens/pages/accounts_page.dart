@@ -85,6 +85,12 @@ class AccountsPage extends StatelessWidget {
                   account.lastReconciledOn == null
                       ? 'never reconciled'
                       : 'reconciled to ${formatDate(account.lastReconciledOn!)}',
+                  if (state.balanceObservation(account.id) case final observed?)
+                    formatObservedBalance(
+                      observed.balance,
+                      observed.date,
+                      owed: account.type.isLiability,
+                    ),
                 ].join(' · '),
               ),
               trailing: Row(
@@ -169,6 +175,7 @@ class ReconcileScreen extends StatefulWidget {
 class _ReconcileScreenState extends State<ReconcileScreen> {
   late LocalDate _date = widget.state.today();
   final _balance = TextEditingController();
+  String? _saveError;
   late final Set<String> _cleared = {
     for (final j in widget.state.ledger.journalsForAccount(widget.account.id))
       if (widget.account.lastReconciledOn != null &&
@@ -228,24 +235,41 @@ class _ReconcileScreenState extends State<ReconcileScreen> {
       JournalFactory(state.chart),
       confirmAdjustment: confirm,
     );
-    if (result.adjustment != null) {
-      await state.post(
-        TransactionDraft(
-          type: TransactionType.adjustment,
-          accountId: widget.account.id,
-          amount: difference,
-          effectiveDate: _date,
-          notes: 'Reconciliation adjustment',
+    try {
+      if (result.adjustment != null) {
+        final adjustment = await state.post(
+          TransactionDraft(
+            type: TransactionType.adjustment,
+            accountId: widget.account.id,
+            amount: difference,
+            effectiveDate: _date,
+            notes: 'Reconciliation adjustment',
+          ),
+        );
+        // Finishing again after a later step fails must not adjust twice.
+        _cleared.add(adjustment.id);
+      }
+      await state.saveAccount(
+        AccountEdit(
+          widget.account.copyWith(lastReconciledOn: _date),
+          null,
+          _date,
         ),
       );
+      await state.saveBalanceObservation(
+        widget.account.id,
+        date: _date,
+        balance: statement,
+      );
+    } on Exception {
+      if (mounted) {
+        setState(
+          () => _saveError =
+              'The reconciliation could not be saved. Try finishing it again.',
+        );
+      }
+      return;
     }
-    await state.saveAccount(
-      AccountEdit(
-        widget.account.copyWith(lastReconciledOn: _date),
-        null,
-        _date,
-      ),
-    );
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -332,6 +356,17 @@ class _ReconcileScreenState extends State<ReconcileScreen> {
               ],
             ),
           ),
+          if (_saveError != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Semantics(
+                liveRegion: true,
+                child: Text(
+                  _saveError!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.all(16),
             child: FilledButton(

@@ -1,4 +1,4 @@
-package com.paulsnow.finance.server.bankfeeds;
+package com.paulsnow.finance.server.common;
 
 import java.nio.ByteBuffer;
 import java.security.GeneralSecurityException;
@@ -12,21 +12,21 @@ import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 /**
- * AES-GCM encryption of provider tokens at rest, with a fresh 96-bit nonce
- * per encryption and the connection identifier as associated data, so a
- * ciphertext copied to another connection does not decrypt. The key comes
+ * AES-GCM encryption of secrets at rest, with a fresh 96-bit nonce
+ * per encryption and the owner's identifier as associated data, so a
+ * ciphertext copied to another owner does not decrypt. The key comes
  * from configuration (a secret store in production), never the database.
  *
  * @author Paul Snow
  * @since 0.0.0
  */
-final class TokenCipher {
+public final class TokenCipher {
 
     private static final int NONCE_BYTES = 12;
     private static final int TAG_BITS = 128;
 
     /** A nonce and the ciphertext with its authentication tag. */
-    record Sealed(byte[] nonce, byte[] ciphertext) {
+    public record Sealed(byte[] nonce, byte[] ciphertext) {
     }
 
     private final SecretKey key;
@@ -35,10 +35,10 @@ final class TokenCipher {
     /**
      * Creates a cipher from a base64 key.
      *
-     * @param base64Key 16, 24 or 32 bytes in base64, or blank when bank feeds are not configured
+     * @param base64Key 16, 24 or 32 bytes in base64, or blank when the feature using it is not configured
      * @throws IllegalStateException when the key is present but malformed
      */
-    TokenCipher(String base64Key) {
+    public TokenCipher(String base64Key) {
         if (base64Key == null || base64Key.isBlank()) {
             this.key = null;
             return;
@@ -47,20 +47,20 @@ final class TokenCipher {
         try {
             bytes = Base64.getDecoder().decode(base64Key.strip());
         } catch (IllegalArgumentException e) {
-            throw new IllegalStateException("finance.bank-feeds.token-key must be base64");
+            throw new IllegalStateException("The token key must be base64");
         }
         if (bytes.length != 16 && bytes.length != 24 && bytes.length != 32) {
-            throw new IllegalStateException("finance.bank-feeds.token-key must be a 128, 192 or 256-bit AES key");
+            throw new IllegalStateException("The token key must be a 128, 192 or 256-bit AES key");
         }
         this.key = new SecretKeySpec(bytes, "AES");
     }
 
     /** Returns whether a key is configured. */
-    boolean available() {
+    public boolean available() {
         return key != null;
     }
 
-    Sealed encrypt(UUID connectionId, byte[] plaintext) {
+    public Sealed encrypt(UUID connectionId, byte[] plaintext) {
         byte[] nonce = new byte[NONCE_BYTES];
         random.nextBytes(nonce);
         try {
@@ -71,7 +71,7 @@ final class TokenCipher {
         }
     }
 
-    byte[] decrypt(UUID connectionId, Sealed sealed) {
+    public byte[] decrypt(UUID connectionId, Sealed sealed) {
         try {
             return cipher(Cipher.DECRYPT_MODE, sealed.nonce(), connectionId).doFinal(sealed.ciphertext());
         } catch (GeneralSecurityException e) {
