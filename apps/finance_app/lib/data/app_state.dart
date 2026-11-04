@@ -444,15 +444,57 @@ class AppState extends ChangeNotifier {
     required LocalDate date,
     required Money balance,
   }) async {
-    final existing = balanceObservation(accountId);
-    if (existing != null && existing.date > date) return;
+    if (!_replacesObservation(accountId, date)) return;
     final id = ownedEntityId(AppEntityTypes.balanceObservation, accountId);
-    await _put(AppEntityTypes.balanceObservation, id, {
-      'id': id,
-      'accountId': accountId,
-      'date': date.toString(),
-      'balanceMinor': balance.minor,
-    });
+    await _put(
+      AppEntityTypes.balanceObservation,
+      id,
+      _observationJson(id, accountId, date, balance),
+    );
+    refresh();
+  }
+
+  /// A statement does not replace a newer one, unless that one is dated in the
+  /// future, which can only be a mistake.
+  bool _replacesObservation(String accountId, LocalDate date) {
+    final existing = balanceObservation(accountId);
+    return existing == null ||
+        existing.date <= date ||
+        existing.date > today();
+  }
+
+  Map<String, Object?> _observationJson(
+    String id,
+    String accountId,
+    LocalDate date,
+    Money balance,
+  ) => {
+    'id': id,
+    'accountId': accountId,
+    'date': date.toString(),
+    'balanceMinor': balance.minor,
+  };
+
+  /// Saves a finished reconciliation as one action, so a failure leaves nothing
+  /// to adjust twice when it is finished again.
+  Future<void> completeReconciliation(
+    Account account, {
+    required LocalDate date,
+    required Money statement,
+    TransactionDraft? adjustment,
+  }) async {
+    final id = ownedEntityId(AppEntityTypes.balanceObservation, account.id);
+    await store.saveReconciliation(
+      account: account.copyWith(lastReconciledOn: date),
+      adjustment: adjustment,
+      statement: _replacesObservation(account.id, date)
+          ? (
+              type: AppEntityTypes.balanceObservation,
+              id: id,
+              json: _observationJson(id, account.id, date, statement),
+            )
+          : null,
+    );
     refresh();
   }
 

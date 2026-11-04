@@ -87,7 +87,8 @@ class Receipt {
 
   final String id;
 
-  /// When the receipt was saved (UTC).
+  /// When the receipt was saved or, for a forwarded one, when its email arrived
+  /// (UTC).
   final DateTime capturedAt;
   final CaptureSource source;
   final ExtractionState extractionState;

@@ -139,6 +139,88 @@ void main() {
     );
   });
 
+  group('reading a receipt again', () {
+    late Receipt receipt;
+
+    setUp(() async {
+      receipt = await state.receipts.capture([
+        CapturedFile(photo(), source: CaptureSource.fileImport),
+      ]);
+    });
+
+    Future<void> leaveAs(ExtractionState extractionState) =>
+        state.store.upsertEntity(
+          ReceiptEntityTypes.receipt,
+          receipt.id,
+          receiptToJson(receipt.copyWith(extractionState: extractionState)),
+        );
+
+    test('finishes a read the app stopped part-way through', () async {
+      await leaveAs(ExtractionState.extracting);
+      expect(state.receipts.canReadAgain(state.receipts.receipt(receipt.id)!), isTrue);
+      final read = await state.receipts.extract(
+        receipt.id,
+        _FakeRecogniser(_receiptText),
+      );
+      expect(read.extractionState, ExtractionState.needsReview);
+    });
+
+    test('does not offer a read that is still running', () async {
+      final recogniser = _HeldRecogniser();
+      final reading = state.receipts.extract(receipt.id, recogniser);
+      await Future<void>.delayed(Duration.zero);
+      final current = state.receipts.receipt(receipt.id)!;
+      expect(current.extractionState, ExtractionState.extracting);
+      expect(state.receipts.canReadAgain(current), isFalse);
+      recogniser.hold.complete();
+      await reading;
+    });
+
+    test('offers a receipt that was never read', () async {
+      expect(state.receipts.canReadAgain(receipt), isTrue);
+    });
+
+    test('does not offer a receipt whose document is elsewhere', () async {
+      final other = Receipt(
+        id: newId(),
+        capturedAt: DateTime.utc(2026, 11, 4),
+        source: CaptureSource.email,
+      );
+      expect(state.receipts.canReadAgain(other), isFalse);
+    });
+
+    test('cloud text can replace a reading that needs review', () async {
+      final first = await state.receipts.extract(
+        receipt.id,
+        _FakeRecogniser(_receiptText),
+      );
+      final second = await state.receipts.extractFromText(
+        receipt.id,
+        'TOTAL 20.00',
+      );
+      expect(second.extractionState, ExtractionState.needsReview);
+      expect(second.latestExtractionId, isNot(first.latestExtractionId));
+    });
+
+    test('cloud text leaves a reviewed receipt as it is', () async {
+      await state.receipts.review(
+        receipt.id,
+        ReceiptFields(
+          merchant: 'Fresh Grocer',
+          date: today,
+          total: Money(1350, aud),
+        ),
+        const CreateExpense(accountId: 'bank', categoryId: 'groceries'),
+      );
+      final after = await state.receipts.extractFromText(
+        receipt.id,
+        'TOTAL 20.00',
+      );
+      expect(after.extractionState, ExtractionState.reviewed);
+      expect(after.outcome, ReviewOutcome.expenseCreated);
+    });
+  });
+
   group('while a receipt is being read', () {
     late _HeldRecogniser recogniser;
     late Receipt receipt;

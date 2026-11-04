@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -21,6 +22,22 @@ const _fastKdf = Argon2idParameters(
   iterations: 1,
   parallelism: 1,
 );
+
+/// Recognition that waits for [hold], as a slow engine does.
+class _HeldRecogniser implements TextRecogniser {
+  final hold = Completer<void>();
+  var started = 0;
+  @override
+  String get unavailableMessage => 'unavailable';
+  @override
+  Future<bool> isAvailable() async => true;
+  @override
+  Future<OcrResult> recognise(List<Uint8List> images) async {
+    started++;
+    await hold.future;
+    return OcrResult.fromText('TOTAL 1.00', engine: 'fake', engineVersion: '1');
+  }
+}
 
 /// A JPEG that passes validation but stops the decoder.
 Uint8List _damagedJpeg() {
@@ -74,6 +91,77 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('a receipt deleted while it was read gets no reading message', (
+    tester,
+  ) async {
+    await openStore(tester);
+    final recogniser = _HeldRecogniser();
+    final base = testServices();
+    await tester.pumpWidget(
+      AppScope(
+        state: state,
+        services: AppServices(
+          capabilities: base.capabilities,
+          scanner: base.scanner,
+          fileImporter: base.fileImporter,
+          shareInbox: base.shareInbox,
+          notifications: base.notifications,
+          textRecogniser: recogniser,
+          workspaceDirectory: base.workspaceDirectory,
+          authenticator: base.authenticator,
+        ),
+        child: MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => saveCapturedReceipt(context, [_photo()]),
+                child: const Text('Capture'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Capture'));
+    await tester.runAsync(() async {
+      while (recogniser.started == 0) {
+        await Future<void>.delayed(Durations.short1);
+      }
+      await state.receipts.deleteDocument(state.receipts.receipts().single.id);
+      recogniser.hold.complete();
+      await Future<void>.delayed(Durations.medium1);
+    });
+    // Messages queue, so let "Receipt saved" finish before looking for another.
+    var sawNoOther = true;
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 500));
+      sawNoOther &=
+          find.textContaining('could not be read').evaluate().isEmpty &&
+          find.text('Receipt read; ready to review').evaluate().isEmpty;
+    }
+    expect(sawNoOther, isTrue);
+  });
+
+  testWidgets('a read that did not finish offers trying again', (tester) async {
+    await openStore(tester);
+    late String receiptId;
+    await tester.runAsync(() async {
+      final receipt = await state.receipts.capture([_photo()]);
+      receiptId = receipt.id;
+      await state.store.upsertEntity(
+        'receipt',
+        receipt.id,
+        receiptToJson(
+          receipt.copyWith(extractionState: ExtractionState.extracting),
+        ),
+      );
+      state.refresh();
+    });
+    await pump(tester, ReceiptReviewScreen(receiptId: receiptId));
+    expect(find.text('This receipt was not finished being read'), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
+  });
+
   testWidgets('a damaged image says so instead of showing nothing', (
     tester,
   ) async {
@@ -88,6 +176,7 @@ void main() {
     await tester.runAsync(() => Future<void>.delayed(Durations.long2));
     await tester.pumpAndSettle();
     expect(find.textContaining('cannot be shown'), findsOneWidget);
+    expect(find.textContaining('damaged'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

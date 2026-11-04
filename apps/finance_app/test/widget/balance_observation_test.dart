@@ -20,25 +20,27 @@ const _fastKdf = Argon2idParameters(
 const _aud = Currency.aud;
 
 /// UX 03: what a bank reported stays distinct from what the app calculates.
-/// Fails the last step of a reconciliation once, as a full disk would.
+/// Fails saving a reconciliation once, as a full disk would.
 class _FailsOnceAppState extends AppState {
   _FailsOnceAppState(super.store, {required super.today});
   var _failed = false;
 
   @override
-  Future<void> saveBalanceObservation(
-    String accountId, {
+  Future<void> completeReconciliation(
+    Account account, {
     required LocalDate date,
-    required Money balance,
+    required Money statement,
+    TransactionDraft? adjustment,
   }) {
     if (!_failed) {
       _failed = true;
       throw const FileSystemException('disk full');
     }
-    return super.saveBalanceObservation(
-      accountId,
+    return super.completeReconciliation(
+      account,
       date: date,
-      balance: balance,
+      statement: statement,
+      adjustment: adjustment,
     );
   }
 }
@@ -201,45 +203,79 @@ void main() {
     expect(find.textContaining('owed'), findsNothing);
   });
 
-  testWidgets('finishing again after a failed save adds no second adjustment', (
+  group('when saving a reconciliation fails', () {
+    Future<void> startFailing(WidgetTester tester) async {
+      await tester.runAsync(() async {
+        final store = await FinanceStore.create(
+          dir,
+          keyProtection: KeyProtection.password('secret', kdf: _fastKdf),
+        );
+        await store.createAccount(bank);
+        state = _FailsOnceAppState(store, today: () => LocalDate(2026, 11, 4));
+        await state.post(
+          TransactionDraft(
+            type: TransactionType.openingBalance,
+            accountId: 'bank',
+            amount: Money(100000, _aud),
+            effectiveDate: LocalDate(2026, 11, 1),
+          ),
+        );
+      });
+      await pumpPage(tester, ReconcileScreen(state: state, account: bank));
+      await tester.enterText(find.byType(TextField).first, '1100');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(CheckboxListTile).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Finish reconciliation'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Record adjustment'));
+      await settle(tester);
+    }
+
+    testWidgets('it says so, and finishing again adjusts only once', (
+      tester,
+    ) async {
+      await startFailing(tester);
+      expect(find.byType(ReconcileScreen), findsOneWidget);
+      expect(find.textContaining('could not be saved'), findsOneWidget);
+      expect(state.ledger.journals, hasLength(1));
+
+      await tester.tap(find.text('Finish reconciliation'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Record adjustment'));
+      await settle(tester);
+      expect(state.ledger.journals, hasLength(2));
+      expect(state.ledger.displayBalance('bank'), Money(110000, _aud));
+      expect(state.balanceObservation('bank')!.balance, Money(110000, _aud));
+    });
+
+    testWidgets('the message goes once the amount changes', (tester) async {
+      await startFailing(tester);
+      await tester.enterText(find.byType(TextField).first, '1000');
+      await tester.pumpAndSettle();
+      expect(find.textContaining('could not be saved'), findsNothing);
+    });
+  });
+
+  testWidgets('a statement dated in the future can be corrected', (
     tester,
   ) async {
+    await start(tester);
     await tester.runAsync(() async {
-      final store = await FinanceStore.create(
-        dir,
-        keyProtection: KeyProtection.password('secret', kdf: _fastKdf),
+      await state.saveBalanceObservation(
+        'bank',
+        date: LocalDate(2027, 11, 1),
+        balance: Money(90000, _aud),
       );
-      await store.createAccount(bank);
-      state = _FailsOnceAppState(store, today: () => LocalDate(2026, 11, 4));
-      await state.post(
-        TransactionDraft(
-          type: TransactionType.openingBalance,
-          accountId: 'bank',
-          amount: Money(100000, _aud),
-          effectiveDate: LocalDate(2026, 11, 1),
-        ),
+      await state.saveBalanceObservation(
+        'bank',
+        date: LocalDate(2026, 11, 1),
+        balance: Money(80000, _aud),
       );
     });
-    await pumpPage(tester, ReconcileScreen(state: state, account: bank));
-    await tester.enterText(find.byType(TextField).first, '1100');
-    await tester.pumpAndSettle();
-    await tester.tap(find.byType(CheckboxListTile).first);
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Finish reconciliation'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Record adjustment'));
-    await settle(tester);
-    expect(find.byType(ReconcileScreen), findsOneWidget);
-    expect(find.textContaining('could not be saved'), findsOneWidget);
-    expect(state.ledger.journals, hasLength(2));
-
-    await tester.tap(find.text('Finish reconciliation'));
-    await settle(tester);
-    expect(find.text('Record adjustment'), findsNothing);
-    expect(state.ledger.journals, hasLength(2));
-    expect(state.ledger.displayBalance('bank'), Money(110000, _aud));
-    expect(state.balanceObservation('bank')!.balance, Money(110000, _aud));
+    final observed = state.balanceObservation('bank')!;
+    expect(observed.date, LocalDate(2026, 11, 1));
+    expect(observed.balance, Money(80000, _aud));
   });
 
   testWidgets('finishing a reconciliation saves what the statement said', (

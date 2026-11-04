@@ -29,7 +29,12 @@ void main() {
     return {for (final box in boxes) box.top}.length;
   }
 
-  Future<void> pump(WidgetTester tester, Size size, Widget home) async {
+  Future<void> pump(
+    WidgetTester tester,
+    Size size,
+    Widget home, {
+    double scale = 1.1,
+  }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -39,7 +44,7 @@ void main() {
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(
             context,
-          ).copyWith(textScaler: const TextScaler.linear(1.1)),
+          ).copyWith(textScaler: TextScaler.linear(scale)),
           child: child!,
         ),
         home: home,
@@ -60,9 +65,19 @@ void main() {
     }
   }
 
-  // The narrowest common phone, and the phones the wrapping was seen on.
-  for (final width in [360.0, 402.0, 411.0]) {
-    testWidgets('budget templates keep their words whole at $width wide', (
+  // Narrow phones, and larger text set in the system settings.
+  for (final (width, scale) in [
+    (320.0, 1.0),
+    (320.0, 1.1),
+    (340.0, 1.1),
+    (360.0, 1.1),
+    (360.0, 1.3),
+    (390.0, 1.3),
+    (402.0, 1.1),
+    (411.0, 1.1),
+    (411.0, 1.5),
+  ]) {
+    testWidgets('budget templates keep their words whole at $width, $scale', (
       tester,
     ) async {
       await pump(
@@ -85,6 +100,7 @@ void main() {
             ],
           ),
         ),
+        scale: scale,
       );
       for (final label in [
         'Needs, wants, savings',
@@ -94,7 +110,10 @@ void main() {
         expectWordsWhole(tester, label);
       }
     });
+  }
 
+  // The narrowest common phone, and the phones the wrapping was seen on.
+  for (final width in [360.0, 402.0, 411.0]) {
     testWidgets('navigation labels stay on one line at $width wide', (
       tester,
     ) async {

@@ -1,3 +1,4 @@
+import 'package:finance_core/finance_core.dart' show ExtractionState;
 import 'package:finance_store/finance_store.dart';
 import 'package:flutter/material.dart';
 
@@ -80,6 +81,12 @@ Future<void> saveCapturedReceipt(
       const SnackBar(content: Text('Receipt saved on this device')),
     );
     final read = await state.receipts.extract(receipt.id, recogniser);
+    // Reviewed or deleted while it was being read: that decision stands, and
+    // the reading no longer matters.
+    if (read.deletedAt != null ||
+        read.extractionState == ExtractionState.reviewed) {
+      return;
+    }
     messenger.showSnackBar(
       SnackBar(
         content: Text(

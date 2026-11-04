@@ -313,6 +313,36 @@ class FinanceStore {
     });
   }
 
+  /// Saves a finished reconciliation as one action: the [adjustment] when the
+  /// statement differed, the [account] with its reconciled date, and the
+  /// [statement] it was checked against. A failure leaves none of them saved,
+  /// so finishing again later cannot adjust the balance twice.
+  Future<Journal?> saveReconciliation({
+    required Account account,
+    TransactionDraft? adjustment,
+    ({String type, String id, Map<String, Object?> json})? statement,
+  }) async {
+    final journal = adjustment == null
+        ? null
+        : JournalFactory(_ctx.chart()).build(adjustment);
+    _ctx.write(() {
+      if (journal != null) _postJournal(journal);
+      _update(
+        EntityRef(EntityTypes.account, account.id),
+        accountToJson(account),
+        'Update account',
+      );
+      if (statement != null) {
+        final ref = EntityRef(statement.type, statement.id);
+        if (_ctx.state.snapshot(ref)?.deleted ?? false) {
+          throw StateError('$ref is deleted');
+        }
+        _update(ref, statement.json, 'Save ${ref.type}', allowCreate: true);
+      }
+    });
+    return journal;
+  }
+
   void _postJournal(Journal journal, {String? description}) {
     final ref = EntityRef(EntityTypes.journal, journal.id);
     final existing = _ctx.state.snapshot(ref);

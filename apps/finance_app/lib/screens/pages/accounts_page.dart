@@ -195,6 +195,7 @@ class _ReconcileScreenState extends State<ReconcileScreen> {
     final state = widget.state;
     final statement = _statement;
     if (statement == null) return;
+    setState(() => _saveError = null);
     final session = Reconciliation(
       accountId: widget.account.id,
       statementDate: _date,
@@ -236,36 +237,26 @@ class _ReconcileScreenState extends State<ReconcileScreen> {
       confirmAdjustment: confirm,
     );
     try {
-      if (result.adjustment != null) {
-        final adjustment = await state.post(
-          TransactionDraft(
-            type: TransactionType.adjustment,
-            accountId: widget.account.id,
-            amount: difference,
-            effectiveDate: _date,
-            notes: 'Reconciliation adjustment',
-          ),
-        );
-        // Finishing again after a later step fails must not adjust twice.
-        _cleared.add(adjustment.id);
-      }
-      await state.saveAccount(
-        AccountEdit(
-          widget.account.copyWith(lastReconciledOn: _date),
-          null,
-          _date,
-        ),
-      );
-      await state.saveBalanceObservation(
-        widget.account.id,
+      await state.completeReconciliation(
+        widget.account,
         date: _date,
-        balance: statement,
+        statement: statement,
+        adjustment: result.adjustment == null
+            ? null
+            : TransactionDraft(
+                type: TransactionType.adjustment,
+                accountId: widget.account.id,
+                amount: difference,
+                effectiveDate: _date,
+                notes: 'Reconciliation adjustment',
+              ),
       );
     } on Exception {
       if (mounted) {
         setState(
           () => _saveError =
-              'The reconciliation could not be saved. Try finishing it again.',
+              'The reconciliation could not be saved, and nothing was changed. '
+              'Try finishing it again.',
         );
       }
       return;
@@ -308,7 +299,7 @@ class _ReconcileScreenState extends State<ReconcileScreen> {
                           : 'Statement closing balance',
                       prefixText: r'$ ',
                     ),
-                    onChanged: (_) => setState(() {}),
+                    onChanged: (_) => setState(() => _saveError = null),
                   ),
                 ),
                 TextButton(

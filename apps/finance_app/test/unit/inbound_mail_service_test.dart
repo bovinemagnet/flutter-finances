@@ -314,6 +314,37 @@ void main() {
     );
   });
 
+  test('a receipt arriving from elsewhere during a download is left alone', () async {
+    await start();
+    final id = deliver(bytes: _photo(), contentType: 'image/png');
+    final receiptId = nameBasedId(id, 'inbound-receipt');
+    final service = InboundMailService(
+      state: state,
+      client: controller.inboundMail,
+      recogniser: recogniser,
+      capture: (files, {receiptId, capturedAt}) async {
+        // Only the record has arrived; the document is on the other device.
+        final arrived = Receipt(
+          id: receiptId!,
+          capturedAt: DateTime.utc(2026, 11, 4),
+          source: CaptureSource.email,
+        );
+        await state.store.upsertEntity(
+          ReceiptEntityTypes.receipt,
+          arrived.id,
+          receiptToJson(arrived),
+        );
+        return arrived;
+      },
+    );
+    await service.collect();
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    expect(
+      state.receipts.receipt(receiptId)!.extractionState,
+      ExtractionState.captured,
+    );
+  });
+
   test('a forwarded image syncs without needing a decision', () async {
     await start();
     deliver(bytes: _photo(), contentType: 'image/png');

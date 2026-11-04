@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:finance_core/finance_core.dart';
+import 'package:finance_store/finance_store.dart' show AssetCorruptException;
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
@@ -170,11 +171,16 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
                   )
                 : const SizedBox.shrink(),
           ),
-        if (receipt.extractionState == ExtractionState.extractionFailed)
+        if (receipt.extractionState == ExtractionState.extractionFailed ||
+            service.canReadAgain(receipt))
           Card(
             child: ListTile(
               leading: const Icon(Icons.error_outline),
-              title: const Text('This receipt could not be read'),
+              title: Text(
+                receipt.extractionState == ExtractionState.extractionFailed
+                    ? 'This receipt could not be read'
+                    : 'This receipt was not finished being read',
+              ),
               subtitle: const Text(
                 'The image is kept. Enter the details or try again.',
               ),
@@ -207,7 +213,8 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
         Wrap(
           spacing: 8,
           children: [
-            if (AppScope.syncOf(context)?.isSynced ?? false)
+            if ((AppScope.syncOf(context)?.isSynced ?? false) &&
+                receipt.extractionState != ExtractionState.reviewed)
               OutlinedButton.icon(
                 icon: const Icon(Icons.cloud_download_outlined),
                 label: const Text('Use cloud text'),
@@ -671,8 +678,12 @@ class _PagePreview extends StatelessWidget {
             future: read(page),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
-                return const Center(
-                  child: Text('The image is not on this device yet'),
+                return Center(
+                  child: Text(
+                    snapshot.error is AssetCorruptException
+                        ? 'The copy of this image on this device is damaged'
+                        : 'The image is not on this device yet',
+                  ),
                 );
               }
               if (!snapshot.hasData) {
@@ -706,7 +717,7 @@ class _PagePreview extends StatelessWidget {
                       child: Padding(
                         padding: EdgeInsets.all(16),
                         child: Text(
-                          'This image is damaged and cannot be shown. '
+                          'This image cannot be shown on this device. '
                           'Your original is still saved.',
                           textAlign: TextAlign.center,
                         ),

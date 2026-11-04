@@ -150,7 +150,10 @@ class _ReceiptsPageState extends State<ReceiptsPage> {
                       subtitle: Text(
                         [
                           if (fields.date != null) formatDate(fields.date!),
-                          extractionLabels[r.extractionState]!,
+                          r.extractionState == ExtractionState.extracting &&
+                                  state.receipts.canReadAgain(r)
+                              ? 'Not finished being read'
+                              : extractionLabels[r.extractionState]!,
                           linked.contains(r.id) ? 'Matched' : 'Not matched',
                           if (state.isUnsynced(
                             ReceiptEntityTypes.receipt,
