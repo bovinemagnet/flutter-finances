@@ -74,7 +74,14 @@ class _Series {
 class CategoryActivityIndex {
   CategoryActivityIndex._(this.currency);
 
-  factory CategoryActivityIndex.fromLedger(LedgerProjection ledger) {
+  /// The index of [ledger]. A ledger never changes and an index is read-only,
+  /// so each ledger builds one, however many reports ask for it (NFR 02).
+  factory CategoryActivityIndex.fromLedger(LedgerProjection ledger) =>
+      _byLedger[ledger] ??= CategoryActivityIndex._build(ledger);
+
+  static final _byLedger = Expando<CategoryActivityIndex>();
+
+  factory CategoryActivityIndex._build(LedgerProjection ledger) {
     final chart = ledger.chart;
     final index = CategoryActivityIndex._(chart.currency);
     for (final journal in ledger.journals) {

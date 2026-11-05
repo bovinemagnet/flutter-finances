@@ -148,6 +148,63 @@ void main() {
     expect(state.insights(), isA<List<Insight>>());
   });
 
+  test('the budget is worked out once until something changes', () async {
+    await onboard();
+    final first = state.budgetEvaluation()!;
+    expect(identical(state.budgetEvaluation(), first), isTrue);
+    expect(identical(state.budgetEvaluation(at: today), first), isTrue);
+
+    // A saved entry counts straight away.
+    await state.post(
+      TransactionDraft(
+        type: TransactionType.expense,
+        accountId: 'bank',
+        amount: Money(500, aud),
+        effectiveDate: today,
+        splits: [Split(categoryId('Groceries'), Money(500, aud))],
+      ),
+    );
+    final afterEntry = state.budgetEvaluation()!;
+    expect(identical(afterEntry, first), isFalse);
+    int spent(BudgetPeriodEvaluation e) => [...e.lines, ...e.unbudgeted]
+        .where((l) => l.targetId == categoryId('Groceries'))
+        .fold(0, (total, l) => total + l.postedNet.minor);
+    expect(spent(afterEntry), spent(first) + 500);
+
+    // So does a changed plan.
+    final plan = state.budgetPlan!;
+    await state.savePlan(
+      BudgetPlan(
+        id: plan.id,
+        name: 'Renamed',
+        mode: plan.mode,
+        schedule: plan.schedule,
+        versions: plan.versions,
+      ),
+    );
+    expect(identical(state.budgetEvaluation(), afterEntry), isFalse);
+
+    // Another date gets its own answer, and today's is still right after it.
+    final earlier = today.addMonths(-3);
+    final other = state.budgetEvaluation(at: earlier);
+    expect(other!.period.contains(today), isFalse);
+    expect(state.budgetEvaluation()!.period.contains(today), isTrue);
+  });
+
+  test('tomorrow gets its own budget without a refresh', () async {
+    var now = today;
+    await state.store.close();
+    final store = await FinanceStore.open(
+      dir,
+      keyProtection: KeyProtection.password('secret', kdf: _fastKdf),
+    );
+    state = AppState(store, today: () => now);
+    await onboard();
+    final before = state.budgetEvaluation()!;
+    now = before.period.end.addDays(1);
+    expect(state.budgetEvaluation()!.period.contains(now), isTrue);
+  });
+
   test('insight dismissal and rule switches persist', () async {
     await onboard();
     await state.post(

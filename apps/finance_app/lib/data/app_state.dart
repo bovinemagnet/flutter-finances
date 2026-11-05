@@ -54,6 +54,7 @@ class AppState extends ChangeNotifier {
     _ledger = null;
     _insights = null;
     _lastEntries = null;
+    _budgetEvaluation = null;
     notifyListeners();
   }
 
@@ -794,16 +795,27 @@ class AppState extends ChangeNotifier {
     refresh();
   }
 
+  /// The budget at a date, today unless given. Only the latest answer is
+  /// kept until the next [refresh]: the Overview asks for today's several
+  /// times in a build, and each answer goes through every entry (NFR 02).
   BudgetPeriodEvaluation? budgetEvaluation({LocalDate? at}) {
+    final date = at ?? today();
+    final cached = _budgetEvaluation;
+    if (cached != null && cached.date == date) return cached.evaluation;
     final plan = budgetPlan;
-    if (plan == null) return null;
-    return BudgetEvaluator(
-      plan: plan,
-      ledger: ledger,
-      adjustments: adjustments,
-      savingsAllocations: savingsAllocations,
-    ).evaluateAt(at ?? today());
+    final evaluation = plan == null
+        ? null
+        : BudgetEvaluator(
+            plan: plan,
+            ledger: ledger,
+            adjustments: adjustments,
+            savingsAllocations: savingsAllocations,
+          ).evaluateAt(date);
+    _budgetEvaluation = (date: date, evaluation: evaluation);
+    return evaluation;
   }
+
+  ({LocalDate date, BudgetPeriodEvaluation? evaluation})? _budgetEvaluation;
 
   CashForecast forecast({Scenario? scenario, LocalDate? end}) =>
       buildCashForecast(
@@ -852,6 +864,7 @@ class AppState extends ChangeNotifier {
         for (final account in chart.accounts)
           if (account.dataSource == 'manual') account.id: today(),
       },
+      budgetEvaluation: budgetEvaluation(),
     );
   }
 

@@ -605,8 +605,13 @@ class FinanceStore {
   /// All live journals as a [LedgerProjection], for code written against
   /// finance_core. Prefer the SQL aggregates for large workspaces.
   LedgerProjection projection() {
-    final rows = _ctx.db.select('SELECT * FROM journals WHERE deleted = 0');
-    final postings = _ctx.state.postingsFor(rows.map((r) => r['id'] as String));
+    // Only the columns a journal needs: reading a row costs per column.
+    final rows = _ctx.db.select(
+      'SELECT id, type, status, effective_date, entered_at, account_id, '
+      'counter_account_id, amount_minor, payee, notes, tags_json, refund_of, '
+      'reversal_of, replaces FROM journals WHERE deleted = 0',
+    );
+    final postings = _ctx.state.allPostings();
     // One query for all of them, since most workspaces have few or none.
     final annotations = <String, Map<String, Object?>>{};
     for (final r in _ctx.db.select(

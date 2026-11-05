@@ -10,15 +10,22 @@ class LocalDate implements Comparable<LocalDate> {
     }
   }
 
+  /// Reads `YYYY-MM-DD`. Opening a workspace parses one of these for every
+  /// entry, so this reads the digits directly (NFR 02).
   factory LocalDate.parse(String text) {
-    final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(text.trim());
-    if (match == null) throw FormatException('Expected YYYY-MM-DD', text);
+    final trimmed = text.trim();
+    final year = trimmed.length == 10 ? _digits(trimmed, 0, 4) : -1;
+    final month = _digits(trimmed, 5, 7);
+    final day = _digits(trimmed, 8, 10);
+    if (year < 0 ||
+        month < 0 ||
+        day < 0 ||
+        trimmed.codeUnitAt(4) != _dash ||
+        trimmed.codeUnitAt(7) != _dash) {
+      throw FormatException('Expected YYYY-MM-DD', text);
+    }
     try {
-      return LocalDate(
-        int.parse(match[1]!),
-        int.parse(match[2]!),
-        int.parse(match[3]!),
-      );
+      return LocalDate(year, month, day);
     } on ArgumentError {
       throw FormatException('Invalid date', text);
     }
@@ -31,8 +38,29 @@ class LocalDate implements Comparable<LocalDate> {
   final int month;
   final int day;
 
-  static int daysInMonth(int year, int month) =>
-      DateTime.utc(year, month + 1, 0).day;
+  static const _dash = 0x2d;
+
+  /// The ASCII digits of [text] from [start] up to [end] as a number, or -1
+  /// if any is missing or is not a digit.
+  static int _digits(String text, int start, int end) {
+    if (end > text.length) return -1;
+    var value = 0;
+    for (var i = start; i < end; i++) {
+      final digit = text.codeUnitAt(i) - 0x30;
+      if (digit < 0 || digit > 9) return -1;
+      value = value * 10 + digit;
+    }
+    return value;
+  }
+
+  /// The length of a month. A month outside 1 to 12 counts on from [year], as
+  /// `DateTime` does.
+  static int daysInMonth(int year, int month) => switch (month) {
+    1 || 3 || 5 || 7 || 8 || 10 || 12 => 31,
+    4 || 6 || 9 || 11 => 30,
+    2 => year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) ? 29 : 28,
+    _ => DateTime.utc(year, month + 1, 0).day,
+  };
 
   DateTime _utc() => DateTime.utc(year, month, day);
 

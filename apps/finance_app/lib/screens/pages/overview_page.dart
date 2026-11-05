@@ -10,6 +10,7 @@ import '../../app/theme.dart';
 import '../../data/app_state.dart';
 import '../../features/overview/discretionary_card.dart';
 import '../../features/overview/insight_list.dart';
+import '../../features/overview/latest_entries.dart';
 import '../../features/overview/overview_widgets.dart';
 import '../../features/overview/setup_checklist.dart';
 import '../../features/overview/spending_pace.dart';
@@ -470,14 +471,7 @@ class _RecentEntries extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = FinancePalette.of(context);
     final chart = state.chart;
-    final journals =
-        state.ledger.journals
-            .where((j) => j.type != TransactionType.reversal)
-            .toList()
-          ..sort((a, b) {
-            final byDate = b.effectiveDate.compareTo(a.effectiveDate);
-            return byDate != 0 ? byDate : b.enteredAt.compareTo(a.enteredAt);
-          });
+    final journals = latestEntries(state.ledger.journals, 6);
     return OverviewSection(
       title: 'Recent transactions',
       action: 'All transactions',
@@ -485,7 +479,7 @@ class _RecentEntries extends StatelessWidget {
       children: [
         if (journals.isEmpty)
           const ListTile(title: Text('No transactions yet')),
-        for (final journal in journals.take(6))
+        for (final journal in journals)
           Builder(
             builder: (context) {
               final account =

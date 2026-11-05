@@ -100,6 +100,7 @@ DiscretionaryEstimate estimateDiscretionary({
   int staleAfterDays = 3,
   Set<String>? discretionaryTargetIds,
   List<String> additionalMissingInputs = const [],
+  BudgetPeriodEvaluation? budgetEvaluation,
 }) {
   final currency = ledger.chart.currency;
   final zero = Money.zero(currency);
@@ -121,12 +122,13 @@ DiscretionaryEstimate estimateDiscretionary({
   Money? commitments;
   final evaluation = plan == null
       ? null
-      : BudgetEvaluator(
-          plan: plan,
-          ledger: ledger,
-          adjustments: adjustments,
-          savingsAllocations: savingsAllocations,
-        ).evaluateAt(today);
+      : budgetEvaluation ??
+            BudgetEvaluator(
+              plan: plan,
+              ledger: ledger,
+              adjustments: adjustments,
+              savingsAllocations: savingsAllocations,
+            ).evaluateAt(today);
   final version = evaluation?.version;
   final targets =
       discretionaryTargetIds ??
