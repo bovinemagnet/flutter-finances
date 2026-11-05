@@ -309,6 +309,32 @@ void main() {
     }
   });
 
+  e2eTest(
+    'who owes a debt reaches the other device, with its repayment',
+    () async {
+      final s = await twoDevices();
+      final debt = await s.a.store.postTransaction(
+        TransactionDraft(
+          type: TransactionType.reimbursableExpense,
+          accountId: s.chart.bank,
+          amount: m('40.00'),
+          effectiveDate: d('2026-07-01'),
+          owedBy: 'Sam',
+        ),
+      );
+      expect((await s.a.sync()).push.conflicts, 0);
+      await s.b.sync();
+      expect(s.b.store.journal(debt.id)!.owedBy, 'Sam');
+
+      await s.b.store.setOwedBy(debt.id, 'Alex');
+      expect((await s.b.sync()).push.conflicts, 0);
+      await s.a.sync();
+      expect(s.a.store.journal(debt.id)!.owedBy, 'Alex');
+      expect(s.a.store.searchTransactions('Alex').single.id, debt.id);
+      expect(owedToMe(s.a.store.projection()).total, m('40.00'));
+    },
+  );
+
   e2eTest('metadata merges field by field; the same field conflicts', () async {
     final s = await twoDevices();
     final j = await s.a.store.postTransaction(

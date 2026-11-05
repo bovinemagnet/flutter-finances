@@ -147,7 +147,7 @@ class _TransactionListState extends State<TransactionList> {
             label: 'Search transactions',
             textField: true,
             child: SearchBar(
-              hintText: 'Search payee, notes, amount or tag',
+              hintText: 'Search payee, notes, amount, tag or name',
               leading: const Icon(Icons.search),
               onChanged: (q) => setState(() => _query = q.trim()),
             ),

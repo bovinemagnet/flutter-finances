@@ -319,8 +319,9 @@ command can resurrect them (A15).
 
 **Journals.** Journals change only through `journal.post` and
 `journal.correct`; `entity.upsert` of a journal is `USE_JOURNAL_COMMANDS`
-(clients annotate payee, notes and tags through a `journalAnnotation`
-entity). A reversal must be type `reversal`, status `posted`, dated on the
+(clients annotate payee, notes, tags and who owes a debt, `owedBy`, through a
+`journalAnnotation` entity). A reversal must be type `reversal`, status
+`posted`, dated on the
 original's effective date, with `reversalOf` set and postings that cancel
 the original per account (`REVERSAL_MISMATCH`). A replacement's `replaces`
 must be the original's id (`REPLACEMENT_MISMATCH`). Correcting a reversed

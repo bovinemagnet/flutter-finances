@@ -76,6 +76,7 @@ class Journal {
     this.refundOf,
     this.reversalOf,
     this.replaces,
+    this.owedBy,
   }) : postings = List.unmodifiable(postings),
        tags = Set.unmodifiable(tags);
 
@@ -101,11 +102,17 @@ class Journal {
   final String? reversalOf;
   final String? replaces;
 
+  /// Who owes this money back, when the person noted it. Held in the entry's
+  /// annotation rather than the journal itself, so it can be added or changed
+  /// without a correction and is not part of what the server checks.
+  final String? owedBy;
+
   Journal copyWith({
     JournalStatus? status,
     String? payee,
     String? notes,
     Set<String>? tags,
+    String? owedBy,
   }) => Journal(
     id: id,
     type: type,
@@ -122,6 +129,7 @@ class Journal {
     refundOf: refundOf,
     reversalOf: reversalOf,
     replaces: replaces,
+    owedBy: owedBy ?? this.owedBy,
   );
 
   /// Sum of postings against one ledger account.

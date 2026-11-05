@@ -10,11 +10,11 @@ Two things leave the app: CSV exports for use in spreadsheets, and the portable 
 
 === Formula sanitisation
 
-Spreadsheet applications treat a cell that starts with certain characters as a formula. `sanitiseCsvValue` prefixes an apostrophe when a text value starts with `=`, `+`, `-`, `@`, a tab or a carriage return. It is applied to every text field (account, payee, category, type, status, notes, tags, journal id and report headers) and not to amounts, which are written as plain decimals so they stay numbers.
+Spreadsheet applications treat a cell that starts with certain characters as a formula. `sanitiseCsvValue` prefixes an apostrophe when a text value starts with `=`, `+`, `-`, `@`, a tab or a carriage return. It is applied to every text field (account, payee, category, type, status, notes, tags, owed by, journal id and report headers) and not to amounts, which are written as plain decimals so they stay numbers.
 
 === Transaction export
 
-`exportTransactionsCsv` uses the columns `Date`, `Account`, `Payee`, `Category`, `Amount`, `Currency`, `Type`, `Status`, `Notes`, `Tags`, `Journal ID`.
+`exportTransactionsCsv` uses the columns `Date`, `Account`, `Payee`, `Category`, `Amount`, `Currency`, `Type`, `Status`, `Notes`, `Tags`, `Owed by`, `Journal ID`.
 
 * One row per category line, so split entries sum correctly. Entries without categories, such as transfers, give one row per account line, the entry's own account first.
 * Amounts are signed from the account's point of view (negative is money out).
@@ -73,7 +73,7 @@ The store's `stageRestore` produces a `RestorePreview` (a separate class from th
 Backups, the CSV export, the receipts export and the financial year pack all leave the app through a `FileExporter` (`apps/finance_app/lib/platform`). iOS and Android do not offer the save and folder dialogs that `file_selector` provides on desktop ("Choose a save location" is unsupported on both, and "Choose a directory" on iOS), so on a phone these exports previously did not work. There are two implementations.
 
 * `DesktopFileExporter` uses a save dialog for a file and a folder dialog for a folder. If the chosen folder already exists, the export is written to a new one named with `-2` and so on, and nothing is written over.
-* `ShareFileExporter` uses the share sheet. A folder is shared as one zip file. The temporary copy holds unencrypted receipts, so it is always deleted once the share finishes. On Android the `share_plus` plugin also keeps its own copy in the app's cache until the next share.
+* `ShareFileExporter` uses the share sheet. A folder is shared as one zip file. The temporary copy holds unencrypted receipts, so it is always deleted once the share finishes. The `share_plus` plugin keeps its own copy in the app's cache. It is not removed as soon as the sheet closes because the receiving app may not have read it yet. The app deletes it ten minutes after a share, at once if the person backed out or sharing failed, and on the next start if the app was closed before then. A new share cancels the pending deletion, since the plugin replaces the copy itself.
 
 A backup is recorded as made (and the reminder cleared) only once the person has kept it, and a failure is shown rather than ignored.
 

@@ -60,6 +60,7 @@ CorrectionResult correctJournal(Journal original, Journal? replacement) {
           tags: replacement.tags,
           refundOf: replacement.refundOf ?? original.refundOf,
           replaces: original.id,
+          owedBy: replacement.owedBy,
         );
   return CorrectionResult(
     original.copyWith(status: JournalStatus.reversed),

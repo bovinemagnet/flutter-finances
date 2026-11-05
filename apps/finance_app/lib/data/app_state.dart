@@ -278,9 +278,15 @@ class AppState extends ChangeNotifier {
             notes: draft.notes,
             tags: draft.tags,
             refundOf: draft.refundOf,
+            owedBy: draft.owedBy,
           ),
         );
       }
+      refresh();
+      return null;
+    }
+    if (draft != null && _onlyWhoOwesDiffers(existing, draft)) {
+      await store.setOwedBy(journalId, draft.owedBy);
       refresh();
       return null;
     }
@@ -290,6 +296,20 @@ class AppState extends ChangeNotifier {
     }
     refresh();
     return result;
+  }
+
+  /// A name is not a financial change, so it needs no reversal.
+  bool _onlyWhoOwesDiffers(Journal existing, TransactionDraft draft) {
+    if (draft.owedBy == existing.owedBy) return false;
+    final built = JournalFactory(chart).build(draft);
+    return built.status == existing.status &&
+        built.effectiveDate == existing.effectiveDate &&
+        built.payee == existing.payee &&
+        built.notes == existing.notes &&
+        setEquals(built.tags, existing.tags) &&
+        built.refundOf == existing.refundOf &&
+        // Postings hold the amount, the accounts and so the type.
+        listEquals(built.postings, existing.postings);
   }
 
   Future<void> _mergeReview(

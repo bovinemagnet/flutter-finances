@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -48,14 +49,33 @@ class DesktopFileExporter implements FileExporter {
 /// have no save dialog an app can open, and iOS has no folder dialog. A folder
 /// is shared as one zip. The temporary copy holds unencrypted receipts, so it is
 /// always deleted afterwards.
+///
+/// On Android the share plugin keeps a copy of its own in the cache, which it
+/// only clears on the next share. The app that received the file may not have
+/// read it when the sheet closes, so that copy goes after [clearAfter], or at
+/// once if nothing was shared, and [clearLeftovers] clears one left by an
+/// earlier run.
 class ShareFileExporter implements FileExporter {
   ShareFileExporter({
     required this.temporaryDirectory,
     Future<bool> Function(String path)? share,
+    this.clearAfter = const Duration(minutes: 10),
   }) : _share = share ?? _shareWithSheet;
 
   final Directory temporaryDirectory;
   final Future<bool> Function(String path) _share;
+  final Duration clearAfter;
+  Timer? _clearing;
+
+  Future<void> clearLeftovers() async {
+    final copies = Directory('${temporaryDirectory.path}/share_plus');
+    try {
+      if (copies.existsSync()) await copies.delete(recursive: true);
+    } on FileSystemException {
+      // Cache that cannot be cleared must not stop the app; the plugin and
+      // Android both clear it later.
+    }
+  }
 
   static Future<bool> _shareWithSheet(String path) async {
     final view = ui.PlatformDispatcher.instance.views.first;
@@ -77,13 +97,21 @@ class ShareFileExporter implements FileExporter {
   Future<ExportOutcome> _withTemporary(
     Future<String> Function(Directory working) prepare,
   ) async {
+    _clearing?.cancel();
     await temporaryDirectory.create(recursive: true);
     final working = await temporaryDirectory.createTemp('export');
+    var shared = false;
     try {
       final path = await prepare(working);
-      return await _share(path) ? ExportOutcome.saved : ExportOutcome.cancelled;
+      shared = await _share(path);
+      return shared ? ExportOutcome.saved : ExportOutcome.cancelled;
     } finally {
       if (working.existsSync()) await working.delete(recursive: true);
+      if (shared) {
+        _clearing = Timer(clearAfter, clearLeftovers);
+      } else {
+        await clearLeftovers();
+      }
     }
   }
 

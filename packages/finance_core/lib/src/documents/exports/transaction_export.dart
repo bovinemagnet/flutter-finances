@@ -40,6 +40,7 @@ const transactionExportHeader = [
   'Status',
   'Notes',
   'Tags',
+  'Owed by',
   'Journal ID',
 ];
 
@@ -95,6 +96,7 @@ String exportTransactionsCsv(
       sanitiseCsvValue(journal.status.name),
       sanitiseCsvValue(journal.notes ?? ''),
       sanitiseCsvValue((journal.tags.toList()..sort()).join('; ')),
+      sanitiseCsvValue(journal.owedBy ?? ''),
       sanitiseCsvValue(journal.id),
     ];
 

@@ -141,6 +141,21 @@ void main() {
       expect(csv.split('\n').first, startsWith('id,effectiveDate'));
     });
 
+    test('keeps who owes a debt', () async {
+      await source.postTransaction(
+        TransactionDraft(
+          type: TransactionType.reimbursableExpense,
+          accountId: 'bank',
+          amount: m('40.00'),
+          effectiveDate: d('2026-07-06'),
+          owedBy: 'Sam',
+        ),
+      );
+      await export();
+      final entries = await readBackupEntries(archive, secret);
+      expect(utf8.decode(entries['data/entities.json']!), contains('Sam'));
+    });
+
     test('a wrong recovery secret cannot read the archive', () async {
       await export();
       await expectLater(

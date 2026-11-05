@@ -284,6 +284,15 @@ class _TransactionFormState extends State<TransactionForm>
                     ? null
                     : (value) => setState(() => model.paidForSomeone = value),
               ),
+              if (model.paidForSomeone) ...[
+                const SizedBox(height: 8),
+                TextFormField(
+                  initialValue: model.owedBy,
+                  decoration: const InputDecoration(labelText: 'Who owes you?'),
+                  textCapitalization: TextCapitalization.words,
+                  onChanged: (v) => model.owedBy = v,
+                ),
+              ],
               const SizedBox(height: 8),
             ],
             if (model.needsCategory) ...[

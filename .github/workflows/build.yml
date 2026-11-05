@@ -45,6 +45,9 @@ jobs:
       - name: Build App Bundle
         working-directory: apps/finance_app
         run: flutter build appbundle --release
+      - name: Check the downloaded PDFium against its pinned checksums
+        working-directory: apps/finance_app
+        run: dart run tool/verify_pdfium.dart
       - uses: actions/upload-artifact@v7
         with:
           name: android-unsigned
@@ -76,6 +79,9 @@ jobs:
       - name: Build
         working-directory: apps/finance_app
         run: flutter build linux --release
+      - name: Check the downloaded PDFium against its pinned checksums
+        working-directory: apps/finance_app
+        run: dart run tool/verify_pdfium.dart
       - name: Package (.tar.gz and .deb)
         run: tool/packaging/linux/build-deb.sh --require-deb --out dist/linux
       - name: Check the package installs on the baseline
@@ -104,6 +110,9 @@ jobs:
       - name: Build
         working-directory: apps/finance_app
         run: flutter build windows --release
+      - name: Check the downloaded PDFium against its pinned checksums
+        working-directory: apps/finance_app
+        run: dart run tool/verify_pdfium.dart
       - uses: actions/upload-artifact@v7
         with:
           name: windows-unsigned

@@ -130,6 +130,9 @@ jobs:
         run: |
           flutter build appbundle --release --build-name "$VERSION" --build-number "$BUILD_NUMBER"
           flutter build apk --release --build-name "$VERSION" --build-number "$BUILD_NUMBER"
+      - name: Check the downloaded PDFium against its pinned checksums
+        working-directory: apps/finance_app
+        run: dart run tool/verify_pdfium.dart
       - name: Verify the release signature
         run: |
           apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
@@ -416,6 +419,9 @@ jobs:
       - name: Build
         working-directory: apps/finance_app
         run: flutter build windows --release --build-name $env:VERSION --build-number $env:BUILD_NUMBER
+      - name: Check the downloaded PDFium against its pinned checksums
+        working-directory: apps/finance_app
+        run: dart run tool/verify_pdfium.dart
       - name: Package and sign the MSIX
         working-directory: apps/finance_app
         env:
@@ -479,6 +485,9 @@ jobs:
       - name: Build
         working-directory: apps/finance_app
         run: flutter build linux --release --build-name "$VERSION" --build-number "$BUILD_NUMBER"
+      - name: Check the downloaded PDFium against its pinned checksums
+        working-directory: apps/finance_app
+        run: dart run tool/verify_pdfium.dart
       - name: Package
         run: tool/packaging/linux/build-deb.sh --version "$VERSION" --require-deb --out dist
       - name: Check the package installs on the baseline

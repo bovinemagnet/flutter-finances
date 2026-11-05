@@ -90,10 +90,12 @@ SearchDocument journalSearchDocument({
   String? payee,
   String? notes,
   required List<String> tags,
+  String? owedBy,
 }) => SearchDocument(
   payee: payee ?? '',
   notes: notes ?? '',
   tags: tags.join(' '),
+  body: owedBy ?? '',
 );
 
 /// Entity type holding user annotations of a journal (payee, notes, tags).
@@ -129,6 +131,7 @@ void reindexJournal(Database db, String journalId) {
   var payee = rows.first['payee'] as String?;
   var notes = rows.first['notes'] as String?;
   var tags = decodeTags(rows.first['tags_json']);
+  String? owedBy;
   final annotation = db.select(
     'SELECT json FROM entities WHERE entity_type = ? AND id = ? '
     'AND deleted = 0',
@@ -139,12 +142,18 @@ void reindexJournal(Database db, String journalId) {
     if (a.containsKey('payee')) payee = a['payee'] as String?;
     if (a.containsKey('notes')) notes = a['notes'] as String?;
     if (a['tags'] is List) tags = (a['tags'] as List).cast<String>();
+    owedBy = a['owedBy'] as String?;
   }
   putSearchDocument(
     db,
     'journal',
     journalId,
-    journalSearchDocument(payee: payee, notes: notes, tags: tags),
+    journalSearchDocument(
+      payee: payee,
+      notes: notes,
+      tags: tags,
+      owedBy: owedBy,
+    ),
   );
 }
 

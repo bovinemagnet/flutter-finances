@@ -30,6 +30,7 @@ class TransactionsPage extends StatelessWidget {
       ];
       if (categories.length > 1) return 'Split (${categories.length})';
       if (categories.isNotEmpty) return categories.single;
+      if (j.owedBy case final who?) return 'Paid for $who';
       return transactionTypeLabels[j.type]!;
     }
 

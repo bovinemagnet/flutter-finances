@@ -5,7 +5,9 @@ import 'package:finance_app/data/app_state.dart';
 import 'package:finance_app/features/accounts/owed_screen.dart';
 import 'package:finance_app/features/transactions/transaction_form.dart';
 import 'package:finance_app/features/transactions/transaction_form_model.dart';
+import 'package:finance_app/format/formatters.dart';
 import 'package:finance_app/screens/pages/overview_page.dart';
+import 'package:finance_app/screens/pages/transactions_page.dart';
 import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
 import 'package:flutter/material.dart' hide Split;
@@ -53,16 +55,21 @@ void main() {
     state = AppState(store, today: () => today);
   });
 
-  Future<Journal> paidFor(int minor, {String payee = 'Concert tickets'}) =>
-      state.post(
-        TransactionDraft(
-          type: TransactionType.reimbursableExpense,
-          accountId: 'bank',
-          amount: Money(minor, _aud),
-          effectiveDate: LocalDate(2026, 7, 1),
-          payee: payee,
-        ),
-      );
+  Future<Journal> paidFor(
+    int minor, {
+    String? payee = 'Concert tickets',
+    String? owedBy,
+    LocalDate? date,
+  }) => state.post(
+    TransactionDraft(
+      type: TransactionType.reimbursableExpense,
+      accountId: 'bank',
+      amount: Money(minor, _aud),
+      effectiveDate: date ?? LocalDate(2026, 7, 1),
+      payee: payee,
+      owedBy: owedBy,
+    ),
+  );
 
   Future<void> pumpPage(WidgetTester tester, Widget page) async {
     tester.view.physicalSize = const Size(411, 1600);
@@ -127,13 +134,36 @@ void main() {
     });
 
     test('is remembered in a saved draft', () {
-      final m = model()..paidForSomeone = true;
+      final m = model()
+        ..paidForSomeone = true
+        ..owedBy = 'Sam';
       final back = TransactionFormModel.fromDraftJson(
         m.chart,
         m.toDraftJson(),
         today: today,
       );
       expect(back.paidForSomeone, isTrue);
+      expect(back.owedBy, 'Sam');
+    });
+
+    test('notes who owes it, without needing to', () {
+      TransactionFormModel filled(String who) => model()
+        ..accountId = 'bank'
+        ..amountText = '40'
+        ..paidForSomeone = true
+        ..owedBy = who;
+      expect(filled('  Sam ').toDraft().owedBy, 'Sam');
+      expect(filled('').errors, isEmpty);
+      expect(filled('   ').toDraft().owedBy, isNull);
+    });
+
+    test('forgets who when it is no longer paid for someone', () {
+      final m = model()
+        ..accountId = 'bank'
+        ..amountText = '40'
+        ..categoryId = 'food'
+        ..owedBy = 'Sam';
+      expect(m.toDraft().owedBy, isNull);
     });
 
     test('opens as itself when edited', () {
@@ -154,6 +184,48 @@ void main() {
       expect(edit.paidForSomeone, isTrue);
       expect(edit.type, TransactionType.expense);
       expect(edit.toDraft().type, TransactionType.reimbursableExpense);
+    });
+
+    test('opens with the name it had', () {
+      final m = model();
+      final journal = JournalFactory(m.chart).build(
+        TransactionDraft(
+          type: TransactionType.reimbursableExpense,
+          accountId: 'bank',
+          amount: Money(4000, _aud),
+          effectiveDate: today,
+          owedBy: 'Sam',
+        ),
+      );
+      final edit = TransactionFormModel.fromJournal(
+        m.chart,
+        journal,
+        today: today,
+      );
+      expect(edit.owedBy, 'Sam');
+      expect(edit.toDraft().owedBy, 'Sam');
+    });
+
+    testWidgets('asks who only once the switch is on', (tester) async {
+      tester.view.physicalSize = const Size(411, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final m = model();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: TransactionForm(model: m, onSave: (_) async {}),
+          ),
+        ),
+      );
+      expect(find.widgetWithText(TextFormField, 'Who owes you?'), findsNothing);
+      await tester.tap(find.text('Someone will pay me back'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Who owes you?'),
+        'Sam',
+      );
+      expect(m.owedBy, 'Sam');
     });
 
     testWidgets('the switch hides the category and explains', (tester) async {
@@ -213,6 +285,31 @@ void main() {
       expect(find.textContaining(r'$50.00'), findsOneWidget);
     });
 
+    testWidgets('says who owes each debt', (tester) async {
+      await start(tester);
+      await tester.runAsync(() => paidFor(4000, owedBy: 'Sam'));
+      await pumpPage(tester, const OwedScreen());
+      expect(find.text('Concert tickets'), findsOneWidget);
+      expect(find.textContaining('Sam'), findsOneWidget);
+    });
+
+    testWidgets('names a debt after the person when it has nothing else', (
+      tester,
+    ) async {
+      await start(tester);
+      await tester.runAsync(() => paidFor(4000, payee: null, owedBy: 'Sam'));
+      await pumpPage(tester, const OwedScreen());
+      expect(find.text('Paid for Sam'), findsOneWidget);
+      expect(find.textContaining('Sam'), findsOneWidget);
+    });
+
+    testWidgets('a debt with no name still reads properly', (tester) async {
+      await start(tester);
+      await tester.runAsync(() => paidFor(4000, payee: null));
+      await pumpPage(tester, const OwedScreen());
+      expect(find.text('Paid for someone'), findsOneWidget);
+    });
+
     Future<void> openRepayment(WidgetTester tester, String payee) async {
       await tester.tap(find.text(payee));
       await tester.pumpAndSettle();
@@ -262,6 +359,91 @@ void main() {
       await tester.pumpAndSettle();
       await confirm(tester);
       expect(state.ledger.displayBalance('save'), Money(4000, _aud));
+    });
+
+    group('the date', () {
+      Future<Journal> repayment() async {
+        return state.ledger.journals.singleWhere(
+          (j) => j.type == TransactionType.reimbursement,
+        );
+      }
+
+      testWidgets('is today unless changed', (tester) async {
+        await start(tester);
+        await tester.runAsync(() => paidFor(4000));
+        await pumpPage(tester, const OwedScreen());
+        await openRepayment(tester, 'Concert tickets');
+        expect(find.text(formatDate(today)), findsOneWidget);
+        await confirm(tester);
+        expect((await repayment()).effectiveDate, today);
+      });
+
+      testWidgets('can be an earlier day', (tester) async {
+        await start(tester);
+        await tester.runAsync(() => paidFor(4000));
+        await pumpPage(tester, const OwedScreen());
+        await openRepayment(tester, 'Concert tickets');
+        await tester.tap(find.widgetWithText(TextButton, 'Change'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('10'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('OK'));
+        await tester.pumpAndSettle();
+        expect(find.text(formatDate(LocalDate(2026, 7, 10))), findsOneWidget);
+        await confirm(tester);
+        expect((await repayment()).effectiveDate, LocalDate(2026, 7, 10));
+      });
+
+      testWidgets('runs from the debt to today', (tester) async {
+        await start(tester);
+        await tester.runAsync(() => paidFor(4000));
+        await pumpPage(tester, const OwedScreen());
+        await openRepayment(tester, 'Concert tickets');
+        await tester.tap(find.widgetWithText(TextButton, 'Change'));
+        await tester.pumpAndSettle();
+        final picker = tester.widget<DatePickerDialog>(
+          find.byType(DatePickerDialog),
+        );
+        expect(picker.firstDate, DateTime(2026, 7, 1));
+        expect(picker.lastDate, DateTime(2026, 7, 15));
+        expect(picker.initialDate, DateTime(2026, 7, 15));
+      });
+
+      testWidgets('still opens when the debt is dated in the future', (
+        tester,
+      ) async {
+        await start(tester);
+        await tester.runAsync(() => paidFor(4000, date: LocalDate(2026, 8, 1)));
+        await pumpPage(tester, const OwedScreen());
+        await openRepayment(tester, 'Concert tickets');
+        await tester.tap(find.widgetWithText(TextButton, 'Change'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        final picker = tester.widget<DatePickerDialog>(
+          find.byType(DatePickerDialog),
+        );
+        expect(picker.firstDate, DateTime(2026, 7, 15));
+        expect(picker.lastDate, DateTime(2026, 7, 15));
+      });
+
+      testWidgets('leaves the dialog usable on a small phone', (tester) async {
+        await start(tester);
+        await tester.runAsync(() => paidFor(4000));
+        tester.view.physicalSize = const Size(320, 420);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          AppScope(
+            state: state,
+            services: testServices(),
+            child: const MaterialApp(home: OwedScreen()),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Concert tickets'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
     });
 
     for (final (text, why) in [
@@ -316,6 +498,31 @@ void main() {
       });
       await pumpPage(tester, const OwedScreen());
       expect(find.textContaining(r'$10.00 received'), findsOneWidget);
+    });
+  });
+
+  group('the list of entries', () {
+    Future<void> openEntries(WidgetTester tester) =>
+        pumpPage(tester, const TransactionsPage());
+
+    testWidgets('says who a debt is for', (tester) async {
+      await start(tester);
+      await tester.runAsync(() => paidFor(4000, owedBy: 'Sam'));
+      await openEntries(tester);
+      expect(find.textContaining('Paid for Sam'), findsOneWidget);
+    });
+
+    testWidgets('finds a debt by who owes it', (tester) async {
+      await start(tester);
+      await tester.runAsync(() async {
+        await paidFor(4000, owedBy: 'Sam');
+        await paidFor(1000, payee: 'Dinner', owedBy: 'Alex');
+      });
+      await openEntries(tester);
+      await tester.enterText(find.byType(SearchBar), 'sam');
+      await tester.pumpAndSettle();
+      expect(find.text('Concert tickets'), findsOneWidget);
+      expect(find.text('Dinner'), findsNothing);
     });
   });
 
