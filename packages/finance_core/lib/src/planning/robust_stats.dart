@@ -14,40 +14,53 @@ int divideRounded(int value, int divisor) {
     medianAndMadOfSorted([...values]..sort());
 
 /// [medianAndMad] of [sorted], which must be non-empty and in ascending
-/// order, in linear time and without sorting.
+/// order, in logarithmic time and without sorting or copying.
 ({int median4, int mad4}) medianAndMadOfSorted(List<int> sorted) {
   final n = sorted.length;
   final mid = n ~/ 2;
   final m2 = n.isOdd ? 2 * sorted[mid] : sorted[mid - 1] + sorted[mid];
-  // The deviations |2v - 2M| grow outwards from the median, so merging the
-  // values below it (walking down) with those from it (walking up) yields
-  // them in ascending order.
-  var right = 0;
+  // The deviations |2v - 2M| grow outwards from the median: walking up from
+  // it gives one ascending run, walking down gives another.
+  var split = 0;
   var high = n;
-  while (right < high) {
-    final m = (right + high) >> 1;
+  while (split < high) {
+    final m = (split + high) >> 1;
     if (2 * sorted[m] < m2) {
-      right = m + 1;
+      split = m + 1;
     } else {
       high = m;
     }
   }
-  var left = right - 1;
-  int next() {
-    if (left < 0 ||
-        (right < n && 2 * sorted[right] - m2 <= m2 - 2 * sorted[left])) {
-      return 2 * sorted[right++] - m2;
+  final upCount = n - split;
+  final downCount = split;
+  int up(int i) => 2 * sorted[split + i] - m2;
+  int down(int i) => m2 - 2 * sorted[split - 1 - i];
+
+  // The [k]th smallest (from zero) of both runs together: find how many of
+  // the first k + 1 come from the upward run.
+  int kth(int k) {
+    var low = k + 1 > downCount ? k + 1 - downCount : 0;
+    var top = k + 1 < upCount ? k + 1 : upCount;
+    while (low < top) {
+      final i = (low + top) >> 1;
+      if (up(i) < down(k - i)) {
+        low = i + 1;
+      } else {
+        top = i;
+      }
     }
-    return m2 - 2 * sorted[left--];
+    final fromUp = low;
+    final fromDown = k + 1 - fromUp;
+    if (fromUp == 0) return down(fromDown - 1);
+    if (fromDown == 0) return up(fromUp - 1);
+    final a = up(fromUp - 1);
+    final b = down(fromDown - 1);
+    return a > b ? a : b;
   }
 
   // Twice the median of the deviations gives 4 × MAD.
-  var previous = 0;
-  for (var k = 0; k < mid; k++) {
-    previous = next();
-  }
-  final middle = next();
-  return (median4: 2 * m2, mad4: n.isOdd ? 2 * middle : previous + middle);
+  final middle = kth(mid);
+  return (median4: 2 * m2, mad4: n.isOdd ? 2 * middle : kth(mid - 1) + middle);
 }
 
 /// Whether [value] is unusually high against [history] by the modified
