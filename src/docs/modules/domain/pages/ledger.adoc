@@ -77,7 +77,16 @@ System accounts have fixed identifiers so every device agrees on them without sy
 
 In the entry form, choosing the Refund type offers a "Refund of" list of recent purchases when the caller supplies one. Choosing a purchase sets `refundOf`, fills in the account when it is empty and, when the purchase has a single category, that category. "Not linked" is also allowed. The entry editor screen supplies up to 50 of the most recent posted expenses, newest first, so "Refund of" is offered there whenever the entry type is Refund.
 
+[[owed-to-you]]
+On an Expense, the switch "Someone will pay me back" records a reimbursable expense. The amount is held in the reimbursement receivable instead of being counted as spending, and the entry has no category. Recording a repayment takes an amount, up to what is still owed, and an account. Part payments are allowed. It posts a reimbursement linked to the debt through `refundOf`, which returns money to the account without counting as income. Nothing is recorded automatically. The Overview and the debts screen are described in xref:domain:reports-and-insights.adoc[].
+
 For a signed opening balance or adjustment, the user-facing amount is money held for an asset and money owed for a liability; `toLedgerSign` converts a liability amount into a credit.
+
+== Tags
+
+Tags are held as journal annotations and are not part of the postings. The entry form suggests tags already in use, most used first, and keeps a tag that is still being typed when the entry is saved. Rows in the transaction list show their tags. The ledger projection now includes annotations, so a tag change reaches reports without touching balances.
+
+Settings, Tags lists each tag with how many current entries use it, and can rename or merge tags. A rename changes every affected entry in one transaction through journal annotations, so postings, balances and history do not change. A merge warns first, and once done the entries cannot be separated again. For spending per tag see xref:domain:reports-and-insights.adoc#spending-by-tag[Spending by tag].
 
 == Draft validation
 

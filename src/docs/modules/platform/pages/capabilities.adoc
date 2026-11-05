@@ -37,6 +37,8 @@ The capabilities are computed by `PlatformCapabilities.forPlatform`: mobile mean
 . The optional app lock uses the `local_auth` plugin (`lib/app/app_lock.dart`) and is offered in settings only when the device reports that it supports device authentication (biometrics or the device passcode). That follows the plugin's platforms: Android, iOS, macOS and Windows, but not Linux. The lock hides the interface on launch and after the application has been in the background for five minutes; it gates the screen only, and the data key stays protected by the platform key store. On Linux there is no app lock, but a workspace protected by a password asks for it on every launch.
 ====
 
+Exports and backups leave the device through the `FileExporter` interface in `apps/finance_app/lib/platform`, so the choice between dialogs and the share sheet is made by the adapter rather than by finance code. `DesktopFileExporter` is used on desktop and `ShareFileExporter` on phones; see xref:domain:exports-and-backups.adoc#delivering-files[Delivering files].
+
 Builds must be produced on each operating system. See xref:building-and-releasing.adoc[].
 
 == Planned validation
