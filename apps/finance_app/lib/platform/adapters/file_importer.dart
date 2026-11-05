@@ -24,6 +24,16 @@ const _statementTypes = XTypeGroup(
   ],
 );
 
+/// A backup in each platform's terms. Phones know nothing of this extension:
+/// iOS refuses a filter with no type identifier, and Android cannot map it to a
+/// file type, so both offer all files and the restore checks what was chosen.
+const backupFileTypes = XTypeGroup(
+  label: 'Finance backups',
+  extensions: ['fsbackup'],
+  mimeTypes: ['*/*'],
+  uniformTypeIdentifiers: ['public.data'],
+);
+
 /// Platform file pickers. User-selected files remain importable when camera
 /// or photo library access is denied (UX 04).
 class PlatformFileImporter implements FileImporter {
@@ -44,16 +54,6 @@ class PlatformFileImporter implements FileImporter {
   }
 
   @override
-  Future<String?> pickBackupPath() async => (await openFile(
-    acceptedTypeGroups: const [
-      XTypeGroup(label: 'Finance backups', extensions: ['fsbackup']),
-    ],
-  ))?.path;
-
-  @override
-  Future<String?> chooseDirectory() => getDirectoryPath();
-
-  @override
-  Future<String?> chooseSaveLocation(String suggestedName) async =>
-      (await getSaveLocation(suggestedName: suggestedName))?.path;
+  Future<String?> pickBackupPath() async =>
+      (await openFile(acceptedTypeGroups: const [backupFileTypes]))?.path;
 }

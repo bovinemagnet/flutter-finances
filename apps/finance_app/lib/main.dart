@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:file_selector/file_selector.dart' as file_selector;
 import 'package:path_provider/path_provider.dart';
 
 import 'app/app_lock.dart';
@@ -19,6 +20,7 @@ import 'platform/adapters/background.dart';
 import 'platform/adapters/browser_sign_in.dart';
 import 'data/platform_key_store.dart';
 import 'data/workspace_gate.dart';
+import 'platform/adapters/file_exporter.dart';
 import 'platform/adapters/file_importer.dart';
 import 'platform/adapters/notifications.dart';
 import 'platform/adapters/pdfium_pdf_reader.dart';
@@ -50,6 +52,14 @@ Future<void> main() async {
       ),
     ),
     fileImporter: PlatformFileImporter(),
+    fileExporter: capabilities.isDesktop
+        ? DesktopFileExporter(
+            chooseSaveLocation: (name) async =>
+                (await file_selector.getSaveLocation(suggestedName: name))
+                    ?.path,
+            chooseDirectory: file_selector.getDirectoryPath,
+          )
+        : ShareFileExporter(temporaryDirectory: await getTemporaryDirectory()),
     shareInbox: capabilities.shareTarget
         ? PluginShareInbox()
         : EmptyShareInbox(),

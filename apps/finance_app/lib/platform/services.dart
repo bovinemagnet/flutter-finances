@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:finance_core/finance_core.dart' show CaptureSource;
@@ -47,8 +48,25 @@ abstract interface class FileImporter {
   Future<List<CapturedFile>> pickReceipts();
   Future<CapturedFile?> pickStatement();
   Future<String?> pickBackupPath();
-  Future<String?> chooseDirectory();
-  Future<String?> chooseSaveLocation(String suggestedName);
+}
+
+/// Whether the person kept what was exported.
+enum ExportOutcome { saved, cancelled }
+
+/// Hands files to the person to keep, however the platform lets them. A phone
+/// cannot open a save dialog, so the caller only says what to write.
+abstract interface class FileExporter {
+  /// Lets the person keep one file called [name], which [write] creates.
+  Future<ExportOutcome> exportFile(
+    String name,
+    Future<void> Function(File file) write,
+  );
+
+  /// Lets the person keep a folder called [name], which [write] fills.
+  Future<ExportOutcome> exportFolder(
+    String name,
+    Future<void> Function(Directory folder) write,
+  );
 }
 
 /// Content shared into the application from other apps.

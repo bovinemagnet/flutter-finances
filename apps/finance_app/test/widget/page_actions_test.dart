@@ -30,6 +30,7 @@ AppServices _servicesFor(Directory dir) {
     capabilities: base.capabilities,
     scanner: base.scanner,
     fileImporter: base.fileImporter,
+    fileExporter: base.fileExporter,
     shareInbox: base.shareInbox,
     notifications: base.notifications,
     textRecogniser: base.textRecogniser,
@@ -94,7 +95,9 @@ void main() {
     testWidgets('Add account opens the account editor', (tester) async {
       await pump(tester, const AccountsPage());
       expectClearOfShellButtons(tester, 'Add account');
-      await tester.tap(find.widgetWithText(FloatingActionButton, 'Add account'));
+      await tester.tap(
+        find.widgetWithText(FloatingActionButton, 'Add account'),
+      );
       await tester.pumpAndSettle();
       expect(find.byType(AccountEditor), findsOneWidget);
     });
@@ -146,7 +149,10 @@ void main() {
       await pump(tester, const SettingsPage());
       await scrollToEnd(tester);
       final last = tester.getRect(find.byType(ListTile).last);
-      expect(last.bottom, lessThanOrEqualTo(tester.getTopLeft(find.byTooltip('Add')).dy));
+      expect(
+        last.bottom,
+        lessThanOrEqualTo(tester.getTopLeft(find.byTooltip('Add')).dy),
+      );
     });
 
     testWidgets('a report', (tester) async {
@@ -164,13 +170,13 @@ void main() {
             ),
         ],
       );
-      await pump(
-        tester,
-        ReportView(report: report, onDrillThrough: (_) {}),
-      );
+      await pump(tester, ReportView(report: report, onDrillThrough: (_) {}));
       await scrollToEnd(tester);
       final last = tester.getRect(find.text('Category 29').last);
-      expect(last.bottom, lessThanOrEqualTo(tester.getTopLeft(find.byTooltip('Add')).dy));
+      expect(
+        last.bottom,
+        lessThanOrEqualTo(tester.getTopLeft(find.byTooltip('Add')).dy),
+      );
     });
   });
 

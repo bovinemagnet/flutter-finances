@@ -31,4 +31,5 @@ export 'src/planning/rounding.dart';
 export 'src/planning/savings_allocation.dart';
 export 'src/planning/scenario.dart';
 export 'src/planning/schedules.dart';
+export 'src/planning/year_summary.dart';
 export 'src/planning/subscriptions.dart';

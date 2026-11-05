@@ -12,6 +12,7 @@ AppServices testServices() => AppServices(
   capabilities: PlatformCapabilities.forPlatform(TargetPlatform.android),
   scanner: NoScanner(),
   fileImporter: NoFiles(),
+  fileExporter: NoExports(),
   shareInbox: NoShares(),
   notifications: NoNotifications(),
   textRecogniser: UnavailableTextRecogniser(),
@@ -26,10 +27,50 @@ class NoFiles implements FileImporter {
   Future<CapturedFile?> pickStatement() async => null;
   @override
   Future<String?> pickBackupPath() async => null;
+}
+
+/// Writes exports into [folder], as if the person had chosen it.
+class FolderExporter implements FileExporter {
+  FolderExporter(this.folder, {this.outcome = ExportOutcome.saved});
+  final Directory folder;
+  final ExportOutcome outcome;
+  final exported = <String>[];
+
   @override
-  Future<String?> chooseDirectory() async => null;
+  Future<ExportOutcome> exportFile(
+    String name,
+    Future<void> Function(File file) write,
+  ) async {
+    exported.add(name);
+    await write(File('${folder.path}/$name'));
+    return outcome;
+  }
+
   @override
-  Future<String?> chooseSaveLocation(String suggestedName) async => null;
+  Future<ExportOutcome> exportFolder(
+    String name,
+    Future<void> Function(Directory folder) write,
+  ) async {
+    exported.add(name);
+    final target = Directory('${folder.path}/$name')
+      ..createSync(recursive: true);
+    await write(target);
+    return outcome;
+  }
+}
+
+class NoExports implements FileExporter {
+  @override
+  Future<ExportOutcome> exportFile(
+    String name,
+    Future<void> Function(File file) write,
+  ) async => ExportOutcome.cancelled;
+
+  @override
+  Future<ExportOutcome> exportFolder(
+    String name,
+    Future<void> Function(Directory folder) write,
+  ) async => ExportOutcome.cancelled;
 }
 
 class NoScanner implements ReceiptScanner {

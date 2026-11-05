@@ -104,6 +104,7 @@ void main() {
           capabilities: base.capabilities,
           scanner: base.scanner,
           fileImporter: base.fileImporter,
+          fileExporter: base.fileExporter,
           shareInbox: base.shareInbox,
           notifications: base.notifications,
           textRecogniser: recogniser,

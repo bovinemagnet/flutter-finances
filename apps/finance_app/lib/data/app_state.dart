@@ -170,6 +170,24 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  /// Financial years with something in them, newest first, always including
+  /// the current one.
+  List<DateRange> get financialYears {
+    final current = DateRange.financialYearContaining(today());
+    var earliest = current.start.year;
+    for (final journal in ledger.journals) {
+      if (!journal.status.inPostedLedger) continue;
+      final start = DateRange.financialYearContaining(journal.effectiveDate)
+          .start
+          .year;
+      if (start < earliest) earliest = start;
+    }
+    return [
+      for (var y = current.start.year; y >= earliest; y--)
+        DateRange.financialYear(y),
+    ];
+  }
+
   /// How many current entries use each tag. Corrected entries and their
   /// reversals are history, so they do not count.
   Map<String, int> get tagCounts {
