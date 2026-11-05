@@ -232,6 +232,85 @@ void main() {
       },
     );
 
+    test(
+      'the projection holds the same journals as reading each one',
+      () async {
+        final plain = await store.postTransaction(
+          expense('10.00', payee: 'Grocer', notes: 'Weekly', tags: {'home'}),
+        );
+        final pending = await store.postTransaction(
+          expense('11.00', status: JournalStatus.pending, tags: {'b', 'a'}),
+        );
+        final draft = await store.postTransaction(
+          expense('12.00', status: JournalStatus.draft),
+        );
+        final gone = await store.postTransaction(
+          expense('13.00', status: JournalStatus.draft),
+        );
+        await store.deleteDraft(gone.id);
+        final corrected = await store.postTransaction(expense('14.00'));
+        final correction = await store.correctTransaction(
+          corrected.id,
+          expense('15.00', payee: 'Corrected'),
+        );
+        final refund = await store.postTransaction(
+          TransactionDraft(
+            type: TransactionType.refund,
+            accountId: 'bank',
+            amount: m('5.00'),
+            effectiveDate: d('2026-07-02'),
+            refundOf: plain.id,
+            splits: [Split('groceries', m('5.00'))],
+          ),
+        );
+        final moved = await store.postTransaction(
+          TransactionDraft(
+            type: TransactionType.transfer,
+            accountId: 'bank',
+            counterAccountId: 'card',
+            amount: m('20.00'),
+            effectiveDate: d('2026-07-03'),
+          ),
+        );
+        await store.annotateTransaction(pending.id, payee: 'Renamed');
+
+        final journals = store.projection().journals;
+        final ids = journals.map((j) => j.id).toList();
+        expect(ids, containsAll([plain.id, pending.id, draft.id, refund.id]));
+        expect(ids, containsAll([corrected.id, moved.id]));
+        expect(ids, contains(correction.replacement!.id));
+        expect(ids, contains(correction.reversal.id));
+        expect(ids, isNot(contains(gone.id)));
+        for (final journal in journals) {
+          final one = store.journal(journal.id)!;
+          expect(journal.type, one.type);
+          expect(journal.status, one.status);
+          expect(journal.effectiveDate, one.effectiveDate);
+          expect(journal.enteredAt, one.enteredAt);
+          expect(journal.enteredAt.isUtc, isTrue);
+          expect(journal.postings, one.postings, reason: 'in the same order');
+          expect(journal.accountId, one.accountId);
+          expect(journal.counterAccountId, one.counterAccountId);
+          expect(journal.amount, one.amount);
+          expect(journal.payee, one.payee);
+          expect(journal.notes, one.notes);
+          expect(journal.tags, one.tags);
+          expect(journal.refundOf, one.refundOf);
+          expect(journal.reversalOf, one.reversalOf);
+          expect(journal.replaces, one.replaces);
+        }
+        // Each of these is worth checking is really being carried across.
+        Journal find(String id) => journals.firstWhere((j) => j.id == id);
+        expect(find(plain.id).notes, 'Weekly');
+        expect(find(plain.id).tags, {'home'});
+        expect(find(pending.id).payee, 'Renamed');
+        expect(find(refund.id).refundOf, plain.id);
+        expect(find(moved.id).counterAccountId, 'card');
+        expect(find(correction.reversal.id).reversalOf, corrected.id);
+        expect(find(correction.replacement!.id).replaces, corrected.id);
+      },
+    );
+
     test('retagging changes all the journals, or none', () async {
       final a = await store.postTransaction(expense('10.00'));
       final b = await store.postTransaction(expense('20.00'));

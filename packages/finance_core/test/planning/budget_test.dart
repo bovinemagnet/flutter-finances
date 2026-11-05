@@ -549,6 +549,19 @@ void main() {
       ];
       final ledger = LedgerProjection(chart, journals);
       final index = CategoryActivityIndex.fromLedger(ledger);
+      expect(
+        identical(CategoryActivityIndex.fromLedger(ledger), index),
+        isTrue,
+      );
+      expect(
+        identical(
+          CategoryActivityIndex.fromLedger(
+            LedgerProjection(ledger.chart, ledger.journals),
+          ),
+          index,
+        ),
+        isFalse,
+      );
       for (final category in ['groceries', 'dining']) {
         for (final pending in [false, true]) {
           expect(

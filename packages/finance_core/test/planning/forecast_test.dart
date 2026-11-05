@@ -502,6 +502,45 @@ void main() {
       );
     }
 
+    test('gives the same answer when handed the budget already worked out', () {
+      final ledger = LedgerProjection(chart, workedExampleJournals());
+      final today = d('2026-07-03');
+      DiscretionaryEstimate run({BudgetPeriodEvaluation? evaluation}) =>
+          estimateDiscretionary(
+            plan: plan,
+            ledger: ledger,
+            today: today,
+            horizonEnd: d('2026-07-16'),
+            schedules: schedules,
+            minimumBuffer: m('500.00'),
+            accountDataAsOf: fresh,
+            budgetEvaluation: evaluation,
+          );
+      final worked = run();
+      final handed = run(
+        evaluation: BudgetEvaluator(
+          plan: plan,
+          ledger: ledger,
+        ).evaluateAt(today),
+      );
+      expect(worked.budgetLimit, isNotNull);
+      expect(handed.budgetLimit, worked.budgetLimit);
+      expect(handed.discretionaryRemaining, worked.discretionaryRemaining);
+      expect(handed.unpostedCommitments, worked.unpostedCommitments);
+
+      // It really is the one handed over that gets used.
+      final elsewhere = run(
+        evaluation: BudgetEvaluator(
+          plan: plan,
+          ledger: LedgerProjection(chart, const []),
+        ).evaluateAt(today),
+      );
+      expect(
+        elsewhere.discretionaryRemaining,
+        isNot(worked.discretionaryRemaining),
+      );
+    });
+
     test(r'the PRD worked example gives $600', () {
       final result = estimate(
         workedExampleJournals(),

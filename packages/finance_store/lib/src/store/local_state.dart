@@ -279,24 +279,46 @@ class LocalState {
         i,
         i + chunk > ids.length ? ids.length : i + chunk,
       );
-      final rows = db.select(
-        'SELECT journal_id, account_id, amount_minor FROM postings '
-        'WHERE journal_id IN (${List.filled(part.length, '?').join(',')}) '
-        'ORDER BY journal_id, seq',
-        part,
+      _addPostings(
+        result,
+        db.select(
+          'SELECT journal_id, account_id, amount_minor FROM postings '
+          'WHERE journal_id IN (${List.filled(part.length, '?').join(',')}) '
+          'ORDER BY journal_id, seq',
+          part,
+        ),
       );
-      for (final row in rows) {
-        result
-            .putIfAbsent(row['journal_id'] as String, () => [])
-            .add(
-              Posting(
-                row['account_id'] as String,
-                Money(row['amount_minor'] as int, currency),
-              ),
-            );
-      }
     }
     return result;
+  }
+
+  /// Every journal's postings, in their original order: one query, for when
+  /// nearly all of them are wanted. Deleted journals are included.
+  Map<String, List<Posting>> allPostings() {
+    final result = <String, List<Posting>>{};
+    _addPostings(
+      result,
+      db.select(
+        'SELECT journal_id, account_id, amount_minor FROM postings '
+        'ORDER BY journal_id, seq',
+      ),
+    );
+    return result;
+  }
+
+  /// [rows] holds journal_id, account_id and amount_minor in that order, with
+  /// each journal's postings together.
+  void _addPostings(Map<String, List<Posting>> result, ResultSet rows) {
+    String? journalId;
+    var postings = <Posting>[];
+    for (final row in rows.rows) {
+      final id = row[0] as String;
+      if (id != journalId) {
+        journalId = id;
+        postings = result[id] ??= [];
+      }
+      postings.add(Posting(row[1] as String, Money(row[2] as int, currency)));
+    }
   }
 
   Journal journalFromRow(Row row, List<Posting> postings) {
@@ -307,7 +329,7 @@ class LocalState {
       type: TransactionType.values.byName(row['type'] as String),
       status: JournalStatus.values.byName(row['status'] as String),
       effectiveDate: LocalDate.parse(row['effective_date'] as String),
-      enteredAt: DateTime.parse(row['entered_at'] as String).toUtc(),
+      enteredAt: parseStoredInstant(row['entered_at'] as String),
       postings: postings,
       accountId: row['account_id'] as String?,
       counterAccountId: row['counter_account_id'] as String?,
@@ -482,4 +504,57 @@ class LocalState {
   Map<String, int> _fieldRevisions(Object? text) => text == null
       ? const {}
       : (jsonDecode(text as String) as Map).cast<String, int>();
+}
+
+/// Reads an instant as the store writes it, `DateTime.toIso8601String` of a
+/// UTC time. Opening a workspace reads one for every entry, and
+/// `DateTime.parse` takes a regular expression to each, so this reads the
+/// digits directly and leaves anything unexpected to `DateTime.parse` (NFR 02).
+DateTime parseStoredInstant(String text) {
+  final micros = switch (text.length) {
+    24 => false,
+    27 => true,
+    _ => null,
+  };
+  if (micros != null &&
+      text.codeUnitAt(text.length - 1) == 0x5a && // Z
+      text.codeUnitAt(4) == 0x2d && // -
+      text.codeUnitAt(7) == 0x2d &&
+      text.codeUnitAt(10) == 0x54 && // T
+      text.codeUnitAt(13) == 0x3a && // :
+      text.codeUnitAt(16) == 0x3a &&
+      text.codeUnitAt(19) == 0x2e) {
+    final year = _storedDigits(text, 0, 4);
+    final month = _storedDigits(text, 5, 7);
+    final day = _storedDigits(text, 8, 10);
+    final hour = _storedDigits(text, 11, 13);
+    final minute = _storedDigits(text, 14, 16);
+    final second = _storedDigits(text, 17, 19);
+    final milli = _storedDigits(text, 20, 23);
+    final micro = micros ? _storedDigits(text, 23, 26) : 0;
+    // A field out of range rolls over here just as it does in DateTime.parse.
+    if (year >= 0 &&
+        month >= 0 &&
+        day >= 0 &&
+        hour >= 0 &&
+        minute >= 0 &&
+        second >= 0 &&
+        milli >= 0 &&
+        micro >= 0) {
+      return DateTime.utc(year, month, day, hour, minute, second, milli, micro);
+    }
+  }
+  return DateTime.parse(text).toUtc();
+}
+
+/// The ASCII digits of [text] from [start] up to [end] as a number, or -1 if
+/// any is not a digit.
+int _storedDigits(String text, int start, int end) {
+  var value = 0;
+  for (var i = start; i < end; i++) {
+    final digit = text.codeUnitAt(i) - 0x30;
+    if (digit < 0 || digit > 9) return -1;
+    value = value * 10 + digit;
+  }
+  return value;
 }
