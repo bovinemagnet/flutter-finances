@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:finance_core/finance_core.dart';
 import 'package:test/test.dart';
 
@@ -15,17 +17,23 @@ void main() {
   );
   final factory = JournalFactory(chart);
 
-  Journal paid(int minor, {String id = 'a', int day = 1, String? payee}) =>
-      factory.build(
-        TransactionDraft(
-          id: id,
-          type: TransactionType.reimbursableExpense,
-          accountId: 'bank',
-          amount: m(minor),
-          effectiveDate: LocalDate(2026, 7, day),
-          payee: payee,
-        ),
-      );
+  Journal paid(
+    int minor, {
+    String id = 'a',
+    int day = 1,
+    String? payee,
+    String? owedBy,
+  }) => factory.build(
+    TransactionDraft(
+      id: id,
+      type: TransactionType.reimbursableExpense,
+      accountId: 'bank',
+      amount: m(minor),
+      effectiveDate: LocalDate(2026, 7, day),
+      payee: payee,
+      owedBy: owedBy,
+    ),
+  );
 
   Journal repaid(int minor, {String? of, String id = 'r', int day = 20}) =>
       factory.build(
@@ -173,6 +181,36 @@ void main() {
       final result = owed(journals);
       expect(result.items.single.outstanding, m(2000));
       expect(result.total, receivable(journals));
+    });
+  });
+
+  group('who owes it', () {
+    test('is kept on the debt', () {
+      final result = owed([paid(5000, owedBy: 'Sam')]);
+      expect(result.items.single.journal.owedBy, 'Sam');
+    });
+
+    test('is optional', () {
+      expect(paid(5000).owedBy, isNull);
+    });
+
+    test('stays with a corrected debt', () {
+      final corrected = correctJournal(
+        paid(5000, owedBy: 'Sam'),
+        paid(6000, id: 'new', owedBy: 'Sam'),
+      );
+      expect(corrected.replacement!.owedBy, 'Sam');
+    });
+
+    test('survives an annotation of something else', () {
+      final debt = paid(5000, owedBy: 'Sam').copyWith(notes: 'tickets');
+      expect(debt.owedBy, 'Sam');
+    });
+
+    test('is not part of the journal the server checks', () {
+      final json = journalToJson(paid(5000, owedBy: 'Sam'));
+      expect(json.containsKey('owedBy'), isFalse);
+      expect(jsonEncode(json), isNot(contains('Sam')));
     });
   });
 

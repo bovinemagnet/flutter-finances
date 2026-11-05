@@ -56,6 +56,28 @@ void main() {
     );
     final journals = [split, transfer, salary, pending, ...corrected.journals];
 
+    test('says who owes a debt, sanitised like any other text', () {
+      final debt = JournalFactory(testChart).build(
+        TransactionDraft(
+          id: 'debt',
+          type: TransactionType.reimbursableExpense,
+          accountId: 'bank',
+          amount: m('40.00'),
+          effectiveDate: d('2026-07-06'),
+          owedBy: '=Sam',
+          enteredAt: DateTime.utc(2026, 7, 6),
+        ),
+      );
+      final rows = readCsv(exportTransactionsCsv([debt, salary], testChart))
+          .records
+          .map((r) => r.fields)
+          .toList();
+      final column = rows.first.indexOf('Owed by');
+      final debtRow = rows.firstWhere((r) => r.contains('debt'));
+      expect(debtRow[column], "'=Sam");
+      expect(rows.firstWhere((r) => r.contains('salary'))[column], '');
+    });
+
     test(
       'writes one row per category or account line, sanitising text only',
       () {
@@ -72,6 +94,7 @@ void main() {
           'Status',
           'Notes',
           'Tags',
+          'Owed by',
           'Journal ID',
         ]);
         expect(rows.sublist(1).map((r) => (r[0], r[1], r[3], r[4])).toList(), [

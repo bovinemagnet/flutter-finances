@@ -35,6 +35,7 @@ class TransactionDraft {
     this.refundOf,
     this.id,
     this.enteredAt,
+    this.owedBy,
   });
 
   final TransactionType type;
@@ -50,6 +51,9 @@ class TransactionDraft {
   final String? refundOf;
   final String? id;
   final DateTime? enteredAt;
+
+  /// Who owes this money back; see [Journal.owedBy].
+  final String? owedBy;
 }
 
 enum DraftError {
@@ -167,6 +171,7 @@ class JournalFactory {
       notes: draft.notes,
       tags: draft.tags,
       refundOf: draft.refundOf,
+      owedBy: draft.owedBy,
     );
   }
 

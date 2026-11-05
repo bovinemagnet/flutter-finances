@@ -38,6 +38,7 @@ class TransactionFormModel {
       ..notes = journal.notes ?? ''
       ..tags = {...journal.tags}
       ..refundOf = journal.refundOf
+      ..owedBy = journal.owedBy ?? ''
       ..editing = journal;
     final categoryPostings = journal.postings
         .where((p) => chart.hasCategory(p.ledgerAccountId))
@@ -83,7 +84,8 @@ class TransactionFormModel {
       ..notes = json['notes'] as String? ?? ''
       ..tags = {...(json['tags'] as List? ?? const []).cast<String>()}
       ..refundOf = json['refundOf'] as String?
-      ..paidForSomeone = json['paidForSomeone'] as bool? ?? false;
+      ..paidForSomeone = json['paidForSomeone'] as bool? ?? false
+      ..owedBy = json['owedBy'] as String? ?? '';
   }
 
   final Chart chart;
@@ -103,6 +105,9 @@ class TransactionFormModel {
 
   /// An expense someone will pay back: it is money owed, not spending.
   bool paidForSomeone = false;
+
+  /// Who will pay it back, when the person says.
+  String owedBy = '';
 
   bool get _isPaidForSomeone =>
       paidForSomeone && type == TransactionType.expense;
@@ -229,6 +234,7 @@ class TransactionFormModel {
     'tags': tags.toList()..sort(),
     'refundOf': refundOf,
     'paidForSomeone': paidForSomeone,
+    'owedBy': owedBy,
   };
 
   /// Builds the draft; call only when [errors] is empty.
@@ -254,6 +260,9 @@ class TransactionFormModel {
       notes: notes.trim().isEmpty ? null : notes.trim(),
       tags: tags,
       refundOf: type == TransactionType.refund ? refundOf : null,
+      owedBy: _isPaidForSomeone && owedBy.trim().isNotEmpty
+          ? owedBy.trim()
+          : null,
     );
   }
 }

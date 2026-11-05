@@ -14,14 +14,14 @@ class OwedScreen extends StatelessWidget {
     final state = AppScope.of(context);
     final result = await showDialog<_Repayment>(
       context: context,
-      builder: (_) => _RepaymentDialog(item: item),
+      builder: (_) => _RepaymentDialog(item: item, today: state.today()),
     );
     if (result == null) return;
     await state.recordRepayment(
       item,
       amount: result.amount,
       accountId: result.accountId,
-      date: state.today(),
+      date: result.date,
     );
   }
 
@@ -56,10 +56,14 @@ class OwedScreen extends StatelessWidget {
                     title: Text(
                       item.journal.payee ??
                           item.journal.notes ??
-                          'Paid for someone',
+                          'Paid for ${item.journal.owedBy ?? 'someone'}',
                     ),
                     subtitle: Text(
                       [
+                        if (item.journal.owedBy case final who?
+                            when item.journal.payee != null ||
+                                item.journal.notes != null)
+                          who,
                         formatDate(item.journal.effectiveDate),
                         if (item.repaid.isPositive)
                           '${formatMoney(item.repaid)} repaid',
@@ -84,14 +88,16 @@ class OwedScreen extends StatelessWidget {
 }
 
 class _Repayment {
-  const _Repayment(this.amount, this.accountId);
+  const _Repayment(this.amount, this.accountId, this.date);
   final Money amount;
   final String accountId;
+  final LocalDate date;
 }
 
 class _RepaymentDialog extends StatefulWidget {
-  const _RepaymentDialog({required this.item});
+  const _RepaymentDialog({required this.item, required this.today});
   final OwedItem item;
+  final LocalDate today;
 
   @override
   State<_RepaymentDialog> createState() => _RepaymentDialogState();
@@ -102,6 +108,7 @@ class _RepaymentDialogState extends State<_RepaymentDialog> {
     text: widget.item.outstanding.toDecimalString(),
   );
   late String _accountId = widget.item.journal.accountId!;
+  late LocalDate _date = widget.today;
 
   @override
   void dispose() {
@@ -129,6 +136,24 @@ class _RepaymentDialogState extends State<_RepaymentDialog> {
     return null;
   }
 
+  /// From the debt to today. A debt dated ahead of today can still be repaid
+  /// today, and the picker refuses a first date after its last.
+  Future<void> _pickDate() async {
+    DateTime at(LocalDate d) => DateTime(d.year, d.month, d.day);
+    final today = widget.today;
+    final from = widget.item.journal.effectiveDate;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: at(_date),
+      firstDate: at(from.compareTo(today) > 0 ? today : from),
+      lastDate: at(today),
+      helpText: 'Date you received it',
+    );
+    if (picked != null) {
+      setState(() => _date = LocalDate.fromDateTime(picked));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final accounts =
@@ -136,6 +161,7 @@ class _RepaymentDialogState extends State<_RepaymentDialog> {
           ..sort((a, b) => a.name.compareTo(b.name));
     final error = _error;
     return AlertDialog(
+      scrollable: true,
       title: const Text('Record a repayment'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -163,6 +189,15 @@ class _RepaymentDialogState extends State<_RepaymentDialog> {
             ],
             onChanged: (id) => setState(() => _accountId = id ?? _accountId),
           ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Date received'),
+            subtitle: Text(formatDate(_date)),
+            trailing: TextButton(
+              onPressed: _pickDate,
+              child: const Text('Change'),
+            ),
+          ),
         ],
       ),
       actions: [
@@ -174,7 +209,8 @@ class _RepaymentDialogState extends State<_RepaymentDialog> {
           onPressed: error != null
               ? null
               : () =>
-                    Navigator.of(context).pop(_Repayment(_parsed!, _accountId)),
+                    Navigator.of(context)
+                        .pop(_Repayment(_parsed!, _accountId, _date)),
           child: const Text('Record repayment'),
         ),
       ],

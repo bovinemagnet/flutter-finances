@@ -309,8 +309,41 @@ class FinanceStore {
     final journal = JournalFactory(_ctx.chart()).build(draft);
     return _ctx.write(() {
       _postJournal(journal);
+      _saveOwedBy(journal);
       return journal;
     });
+  }
+
+  /// Keeps [Journal.owedBy] in the entry's annotation, saved in the same
+  /// action as the entry so undo takes both.
+  void _saveOwedBy(Journal journal) =>
+      _writeOwedBy(journal.id, journal.owedBy, _savedWithEntry);
+
+  /// Describes a command saved straight after an entry as part of one action.
+  static const _savedWithEntry = 'Note who owes this';
+
+  void _writeOwedBy(String journalId, String? owedBy, String description) {
+    final ref = EntityRef(
+      journalAnnotationType,
+      journalAnnotationId(journalId),
+    );
+    final current = _ctx.state.json(ref);
+    if (owedBy == current?['owedBy']) return;
+    _update(
+      ref,
+      {...?current, 'journalId': journalId, 'owedBy': owedBy},
+      description,
+      allowCreate: true,
+    );
+  }
+
+  /// Sets or clears who owes a journal, as an action of its own. Its postings
+  /// are not touched, so no correction is needed.
+  Future<void> setOwedBy(String journalId, String? owedBy) async {
+    if (_rawJournal(journalId) == null) {
+      throw EntityNotFoundException(EntityRef(EntityTypes.journal, journalId));
+    }
+    _ctx.write(() => _writeOwedBy(journalId, owedBy, 'Change who owes this'));
   }
 
   /// Saves a finished reconciliation as one action: the [adjustment] when the
@@ -402,6 +435,7 @@ class FinanceStore {
               tags: replacement.tags,
               refundOf: replacement.refundOf,
               enteredAt: replacement.enteredAt,
+              owedBy: replacement.owedBy,
             ),
           );
     return _ctx.write(() => _correct(original, built));
@@ -425,6 +459,7 @@ class FinanceStore {
       ),
       description: replacement == null ? 'Void entry' : 'Correct entry',
     );
+    if (result.replacement case final r?) _saveOwedBy(r);
     return result;
   }
 
@@ -556,6 +591,7 @@ class FinanceStore {
         payee: annotation['payee'] as String?,
         notes: annotation['notes'] as String?,
         tags: (annotation['tags'] as List?)?.cast<String>().toSet(),
+        owedBy: annotation['owedBy'] as String?,
       );
 
   /// Journals newest first, filtered and paged (NFR 09).
@@ -1120,11 +1156,14 @@ class FinanceStore {
       'SELECT seq FROM outbox ORDER BY seq DESC LIMIT 1',
     );
     if (rows.isEmpty) return null;
-    final entry = _ctx.outbox.bySeq(rows.first['seq'] as int)!;
-    if (entry.status != OutboxStatus.pending ||
-        entry.attempts > 0 ||
-        !entry.undoable) {
-      return null;
+    var entry = _ctx.outbox.bySeq(rows.first['seq'] as int)!;
+    bool canUndo(OutboxEntry e) =>
+        e.status == OutboxStatus.pending && e.attempts == 0 && e.undoable;
+    if (!canUndo(entry)) return null;
+    if (entry.description == _savedWithEntry) {
+      final saved = _ctx.outbox.bySeq(entry.seq - 1);
+      if (saved == null || !canUndo(saved)) return null;
+      entry = saved;
     }
     return UndoableAction(
       commandId: entry.command.commandId,
@@ -1142,10 +1181,14 @@ class FinanceStore {
     if (action == null) return false;
     _ctx.write(() {
       final entry = _ctx.outbox.byCommandId(action.commandId)!;
-      for (final e in entry.before.entries.toList().reversed) {
-        _ctx.state.restore(e.key, e.value);
+      // Only a note of who owes it can follow the latest action's entry.
+      final note = _ctx.outbox.bySeq(entry.seq + 1);
+      for (final e in [?note, entry]) {
+        for (final b in e.before.entries.toList().reversed) {
+          _ctx.state.restore(b.key, b.value);
+        }
+        _ctx.outbox.delete(e.seq);
       }
-      _ctx.outbox.delete(entry.seq);
     });
     return true;
   }

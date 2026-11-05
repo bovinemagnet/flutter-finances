@@ -435,4 +435,177 @@ void main() {
     await state.post(proposal.draft!);
     expect(state.ledger.displayBalance('shares'), Money(1200000, aud));
   });
+
+  group('who owes a debt', () {
+    Future<Journal> debt({String? owedBy}) async {
+      await onboard();
+      return state.post(
+        TransactionDraft(
+          type: TransactionType.reimbursableExpense,
+          accountId: 'bank',
+          amount: Money(4000, aud),
+          effectiveDate: today,
+          payee: 'Concert',
+          owedBy: owedBy,
+        ),
+      );
+    }
+
+    TransactionDraft edited(
+      Journal journal, {
+      String? owedBy,
+      int minor = 4000,
+      String payee = 'Concert',
+      String account = 'bank',
+      LocalDate? date,
+      String? notes,
+      Set<String> tags = const {},
+      String? refundOf,
+      JournalStatus status = JournalStatus.posted,
+    }) => TransactionDraft(
+      type: journal.type,
+      accountId: account,
+      amount: Money(minor, aud),
+      effectiveDate: date ?? journal.effectiveDate,
+      payee: payee,
+      owedBy: owedBy,
+      notes: notes,
+      tags: tags,
+      refundOf: refundOf,
+      status: status,
+    );
+
+    for (final (what, change) in <(String, TransactionDraft Function(Journal))>[
+      ('amount', (j) => edited(j, owedBy: 'Sam', minor: 5000)),
+      ('account', (j) => edited(j, owedBy: 'Sam', account: 'card')),
+      ('date', (j) => edited(j, owedBy: 'Sam', date: LocalDate(2026, 10, 18))),
+      ('payee', (j) => edited(j, owedBy: 'Sam', payee: 'Dinner')),
+      ('notes', (j) => edited(j, owedBy: 'Sam', notes: 'Row F')),
+      ('tags', (j) => edited(j, owedBy: 'Sam', tags: {'holiday'})),
+      ('link', (j) => edited(j, owedBy: 'Sam', refundOf: 'other')),
+    ]) {
+      test('a new name and $what together are still a correction', () async {
+        final journal = await debt();
+        final result = await state.correct(journal.id, change(journal));
+        expect(result?.replacement?.owedBy, 'Sam');
+      });
+    }
+
+    test('a new name and status are not only a name', () async {
+      final journal = await debt();
+      await expectLater(
+        state.correct(
+          journal.id,
+          edited(journal, owedBy: 'Sam', status: JournalStatus.pending),
+        ),
+        completion(isNotNull),
+      );
+    });
+
+    test('adding a name does not reverse the entry', () async {
+      final journal = await debt();
+      final count = state.ledger.journals.length;
+      final result = await state.correct(
+        journal.id,
+        edited(journal, owedBy: 'Sam'),
+      );
+      expect(result, isNull);
+      expect(state.ledger.journals, hasLength(count));
+      final item = state.owed.items.single;
+      expect(item.journal.id, journal.id);
+      expect(item.journal.owedBy, 'Sam');
+    });
+
+    test('a name can be changed or taken off the same way', () async {
+      final journal = await debt(owedBy: 'Sam');
+      final count = state.ledger.journals.length;
+      await state.correct(journal.id, edited(journal, owedBy: 'Alex'));
+      expect(state.owed.items.single.journal.owedBy, 'Alex');
+      await state.correct(journal.id, edited(journal));
+      expect(state.owed.items.single.journal.owedBy, isNull);
+      expect(state.ledger.journals, hasLength(count));
+    });
+
+    test('changing a name can be undone', () async {
+      final journal = await debt(owedBy: 'Sam');
+      await state.correct(journal.id, edited(journal, owedBy: 'Alex'));
+      expect(await state.undo(), isTrue);
+      expect(state.owed.items.single.journal.owedBy, 'Sam');
+    });
+
+    test(
+      'changing the amount is still a correction, keeping the name',
+      () async {
+        final journal = await debt(owedBy: 'Sam');
+        final result = await state.correct(
+          journal.id,
+          edited(journal, owedBy: 'Sam', minor: 5000),
+        );
+        expect(result!.replacement, isNotNull);
+        final item = state.owed.items.single;
+        expect(item.journal.id, result.replacement!.id);
+        expect(item.journal.owedBy, 'Sam');
+        expect(item.outstanding, Money(5000, aud));
+      },
+    );
+
+    test('changing the payee and the name is still a correction', () async {
+      final journal = await debt();
+      final result = await state.correct(
+        journal.id,
+        edited(journal, owedBy: 'Sam', payee: 'Dinner'),
+      );
+      expect(result!.replacement!.owedBy, 'Sam');
+      expect(state.owed.items.single.journal.payee, 'Dinner');
+    });
+
+    test('saving with nothing changed behaves as it always has', () async {
+      final journal = await debt(owedBy: 'Sam');
+      final result = await state.correct(
+        journal.id,
+        edited(journal, owedBy: 'Sam'),
+      );
+      expect(result!.replacement!.owedBy, 'Sam');
+    });
+
+    test('a repayment stays with the debt when the name changes', () async {
+      final journal = await debt();
+      await state.recordRepayment(
+        state.owed.items.single,
+        amount: Money(1000, aud),
+        accountId: 'bank',
+        date: today,
+      );
+      await state.correct(journal.id, edited(journal, owedBy: 'Sam'));
+      final item = state.owed.items.single;
+      expect(item.outstanding, Money(3000, aud));
+      expect(item.journal.owedBy, 'Sam');
+    });
+
+    test('a pending debt keeps its name when saved again', () async {
+      await onboard();
+      final pending = await state.post(
+        TransactionDraft(
+          type: TransactionType.reimbursableExpense,
+          status: JournalStatus.pending,
+          accountId: 'bank',
+          amount: Money(4000, aud),
+          effectiveDate: today,
+          owedBy: 'Sam',
+        ),
+      );
+      await state.correct(
+        pending.id,
+        TransactionDraft(
+          type: TransactionType.reimbursableExpense,
+          status: JournalStatus.pending,
+          accountId: 'bank',
+          amount: Money(5000, aud),
+          effectiveDate: today,
+          owedBy: 'Alex',
+        ),
+      );
+      expect(state.store.journal(pending.id)!.owedBy, 'Alex');
+    });
+  });
 }
