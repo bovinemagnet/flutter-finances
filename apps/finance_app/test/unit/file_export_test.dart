@@ -127,6 +127,106 @@ void main() {
     });
   });
 
+  group('the copy Android keeps of a shared file', () {
+    late Directory copies;
+
+    setUp(() => copies = Directory('${temp.path}/share_plus'));
+
+    Future<bool> pluginCopies(String path) async {
+      await copies.create();
+      await File('${copies.path}/receipts.zip').writeAsString('receipts');
+      return true;
+    }
+
+    Future<void> waitUntilGone() async {
+      for (var i = 0; i < 200 && copies.existsSync(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+    }
+
+    Future<ExportOutcome> shareWith(ShareFileExporter exporter) =>
+        exporter.exportFile('a.csv', (f) => f.writeAsString('a'));
+
+    test('stays for now, since the other app may still be reading', () async {
+      final exporter = ShareFileExporter(
+        temporaryDirectory: temp,
+        share: pluginCopies,
+      );
+      await shareWith(exporter);
+      expect(copies.existsSync(), isTrue);
+    });
+
+    test('goes after a while', () async {
+      final exporter = ShareFileExporter(
+        temporaryDirectory: temp,
+        share: pluginCopies,
+        clearAfter: const Duration(milliseconds: 1),
+      );
+      await shareWith(exporter);
+      await waitUntilGone();
+      expect(copies.existsSync(), isFalse);
+    });
+
+    test('goes at once when nothing was shared', () async {
+      final exporter = ShareFileExporter(
+        temporaryDirectory: temp,
+        share: (path) async {
+          await pluginCopies(path);
+          return false;
+        },
+      );
+      await shareWith(exporter);
+      expect(copies.existsSync(), isFalse);
+    });
+
+    test('goes at once when sharing fails', () async {
+      final exporter = ShareFileExporter(
+        temporaryDirectory: temp,
+        share: (path) async {
+          await pluginCopies(path);
+          throw const FileSystemException('no sheet');
+        },
+      );
+      await expectLater(shareWith(exporter), throwsA(anything));
+      expect(copies.existsSync(), isFalse);
+    });
+
+    test('a later share is not cleared by the earlier timer', () async {
+      var shares = 0;
+      final exporter = ShareFileExporter(
+        temporaryDirectory: temp,
+        share: (path) async {
+          await pluginCopies(path);
+          shares++;
+          return true;
+        },
+        clearAfter: const Duration(milliseconds: 60),
+      );
+      await shareWith(exporter);
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      await exporter.exportFile('b.csv', (f) async {
+        // The earlier timer would have fired during this share.
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+        await f.writeAsString('b');
+        expect(copies.existsSync(), isTrue);
+      });
+      expect(shares, 2);
+    });
+
+    test('left by an earlier run is cleared on request', () async {
+      await pluginCopies('');
+      final exporter = ShareFileExporter(temporaryDirectory: temp);
+      await exporter.clearLeftovers();
+      expect(copies.existsSync(), isFalse);
+    });
+
+    test('clearing is fine when there is nothing there', () async {
+      final exporter = ShareFileExporter(temporaryDirectory: temp);
+      await exporter.clearLeftovers();
+      expect(temp.listSync(), isEmpty);
+    });
+  });
+
   group('on a desktop, through a dialog', () {
     test('saves a file where the person chose', () async {
       final target = '${temp.path}/chosen.csv';

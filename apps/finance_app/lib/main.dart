@@ -42,6 +42,19 @@ Future<void> main() async {
   final appearance = await Appearance.load(
     File('${support.path}/appearance.json'),
   );
+  final temporary = await getTemporaryDirectory();
+  final FileExporter fileExporter;
+  if (capabilities.isDesktop) {
+    fileExporter = DesktopFileExporter(
+      chooseSaveLocation: (name) async =>
+          (await file_selector.getSaveLocation(suggestedName: name))?.path,
+      chooseDirectory: file_selector.getDirectoryPath,
+    );
+  } else {
+    final sharing = ShareFileExporter(temporaryDirectory: temporary);
+    await sharing.clearLeftovers();
+    fileExporter = sharing;
+  }
   final services = AppServices(
     capabilities: capabilities,
     scanner: FallbackReceiptScanner(
@@ -52,14 +65,7 @@ Future<void> main() async {
       ),
     ),
     fileImporter: PlatformFileImporter(),
-    fileExporter: capabilities.isDesktop
-        ? DesktopFileExporter(
-            chooseSaveLocation: (name) async =>
-                (await file_selector.getSaveLocation(suggestedName: name))
-                    ?.path,
-            chooseDirectory: file_selector.getDirectoryPath,
-          )
-        : ShareFileExporter(temporaryDirectory: await getTemporaryDirectory()),
+    fileExporter: fileExporter,
     shareInbox: capabilities.shareTarget
         ? PluginShareInbox()
         : EmptyShareInbox(),
@@ -73,9 +79,7 @@ Future<void> main() async {
         : UnavailableTextRecogniser(),
     workspaceDirectory: workspace,
     authenticator: LocalDeviceAuthenticator(),
-    pdfReader: PdfiumPdfReader(
-      cacheDirectory: (await getTemporaryDirectory()).path,
-    ),
+    pdfReader: PdfiumPdfReader(cacheDirectory: temporary.path),
   );
   runApp(
     FinanceApp(
