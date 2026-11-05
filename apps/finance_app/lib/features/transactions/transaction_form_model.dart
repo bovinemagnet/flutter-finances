@@ -26,8 +26,10 @@ class TransactionFormModel {
     Journal journal, {
     required LocalDate today,
   }) {
+    final paidForSomeone = journal.type == TransactionType.reimbursableExpense;
     final form = TransactionFormModel(chart, today: today)
-      ..type = journal.type
+      ..type = paidForSomeone ? TransactionType.expense : journal.type
+      ..paidForSomeone = paidForSomeone
       ..accountId = journal.accountId
       ..counterAccountId = journal.counterAccountId
       ..amountText = journal.amount?.toDecimalString() ?? ''
@@ -80,7 +82,8 @@ class TransactionFormModel {
       ..payee = json['payee'] as String? ?? ''
       ..notes = json['notes'] as String? ?? ''
       ..tags = {...(json['tags'] as List? ?? const []).cast<String>()}
-      ..refundOf = json['refundOf'] as String?;
+      ..refundOf = json['refundOf'] as String?
+      ..paidForSomeone = json['paidForSomeone'] as bool? ?? false;
   }
 
   final Chart chart;
@@ -98,6 +101,12 @@ class TransactionFormModel {
   String? refundOf;
   JournalStatus status = JournalStatus.posted;
 
+  /// An expense someone will pay back: it is money owed, not spending.
+  bool paidForSomeone = false;
+
+  bool get _isPaidForSomeone =>
+      paidForSomeone && type == TransactionType.expense;
+
   /// Set when the draft comes from a receipt for a cash purchase (REC 06).
   bool requireCashConfirmation = false;
   bool cashAccountConfirmed = false;
@@ -108,9 +117,10 @@ class TransactionFormModel {
   bool get isTransfer => type == TransactionType.transfer;
 
   bool get needsCategory =>
-      type == TransactionType.expense ||
-      type == TransactionType.income ||
-      type == TransactionType.refund;
+      !_isPaidForSomeone &&
+      (type == TransactionType.expense ||
+          type == TransactionType.income ||
+          type == TransactionType.refund);
 
   CategoryKind get _categoryKind => type == TransactionType.income
       ? CategoryKind.income
@@ -218,6 +228,7 @@ class TransactionFormModel {
     'notes': notes,
     'tags': tags.toList()..sort(),
     'refundOf': refundOf,
+    'paidForSomeone': paidForSomeone,
   };
 
   /// Builds the draft; call only when [errors] is empty.
@@ -232,7 +243,7 @@ class TransactionFormModel {
         ? [for (final s in splits) Split(s.categoryId!, _splitAmount(s)!)]
         : [Split(categoryId!, total)];
     return TransactionDraft(
-      type: type,
+      type: _isPaidForSomeone ? TransactionType.reimbursableExpense : type,
       accountId: accountId!,
       counterAccountId: isTransfer ? counterAccountId : null,
       amount: total,

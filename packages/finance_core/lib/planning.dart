@@ -24,6 +24,7 @@ export 'src/planning/periods.dart';
 export 'src/planning/planning_reports.dart';
 export 'src/planning/recurrence.dart';
 export 'src/planning/reminders.dart';
+export 'src/planning/reimbursements.dart';
 export 'src/planning/report.dart';
 export 'src/planning/reservations.dart';
 export 'src/planning/rounding.dart';

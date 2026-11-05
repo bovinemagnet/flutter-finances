@@ -269,6 +269,23 @@ class _TransactionFormState extends State<TransactionForm>
                 }),
               ),
             ],
+            if (model.type == TransactionType.expense) ...[
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Someone will pay me back'),
+                subtitle: model.paidForSomeone
+                    ? const Text(
+                        'This will not count as your spending. It is added to '
+                        'what you are owed, until you record the repayment.',
+                      )
+                    : null,
+                value: model.paidForSomeone,
+                onChanged: editingTypeLocked
+                    ? null
+                    : (value) => setState(() => model.paidForSomeone = value),
+              ),
+              const SizedBox(height: 8),
+            ],
             if (model.needsCategory) ...[
               const SizedBox(height: 16),
               if (!model.splitMode)

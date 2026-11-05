@@ -147,6 +147,29 @@ class AppState extends ChangeNotifier {
     return dates;
   }
 
+  /// What other people owe, from the ledger.
+  OwedToMe get owed => owedToMe(ledger);
+
+  /// Records money received against something paid for someone else. It goes
+  /// back into [accountId] without counting as income.
+  Future<void> recordRepayment(
+    OwedItem item, {
+    required Money amount,
+    required String accountId,
+    required LocalDate date,
+  }) async {
+    await post(
+      TransactionDraft(
+        type: TransactionType.reimbursement,
+        accountId: accountId,
+        amount: amount,
+        effectiveDate: date,
+        payee: item.journal.payee,
+        refundOf: item.journal.id,
+      ),
+    );
+  }
+
   /// How many current entries use each tag. Corrected entries and their
   /// reversals are history, so they do not count.
   Map<String, int> get tagCounts {

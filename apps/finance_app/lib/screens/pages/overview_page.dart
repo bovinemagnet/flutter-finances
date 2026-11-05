@@ -1,6 +1,7 @@
 import 'package:finance_core/finance_core.dart';
 import 'package:flutter/material.dart';
 
+import '../../features/accounts/owed_screen.dart';
 import '../../app/app_scope.dart';
 import '../../app/page_insets.dart';
 import '../../app/section_label.dart';
@@ -330,6 +331,7 @@ class _YourMoney extends StatelessWidget {
     final palette = FinancePalette.of(context);
     final ledger = state.ledger;
     final toReview = state.unreviewedJournalIds.length;
+    final owed = state.owed;
     return OverviewSection(
       title: 'Your money',
       action: 'Accounts',
@@ -368,6 +370,15 @@ class _YourMoney extends StatelessWidget {
                 );
               },
             ),
+        if (owed.total.isPositive)
+          ListTile(
+            leading: const Icon(Icons.handshake_outlined),
+            title: Text('Owed to you ${formatMoney(owed.total)}'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute<void>(builder: (_) => const OwedScreen())),
+          ),
         if (toReview > 0)
           ListTile(
             leading: const Icon(Icons.rule_outlined),
