@@ -65,7 +65,12 @@ Future<void> saveCapturedReceipt(
   try {
     final receipt = await state.receipts.capture(files);
     final recogniser = services.textRecogniser;
-    if (!await recogniser.isAvailable()) {
+    final pdfReader = services.pdfReader;
+    if (!await state.receipts.canRead(
+      receipt.id,
+      recogniser,
+      pdfReader: pdfReader,
+    )) {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
@@ -80,7 +85,11 @@ Future<void> saveCapturedReceipt(
     messenger.showSnackBar(
       const SnackBar(content: Text('Receipt saved on this device')),
     );
-    final read = await state.receipts.extract(receipt.id, recogniser);
+    final read = await state.receipts.extract(
+      receipt.id,
+      recogniser,
+      pdfReader: pdfReader,
+    );
     // Reviewed or deleted while it was being read: that decision stands, and
     // the reading no longer matters.
     if (read.deletedAt != null ||

@@ -7,6 +7,7 @@ import 'package:finance_store/finance_store.dart' as store;
 
 import '../platform/image_metadata.dart';
 import '../platform/image_tools.dart';
+import '../platform/pdf_reader.dart';
 import '../platform/services.dart';
 import '../platform/text_recognition.dart';
 import 'app_state.dart';
@@ -28,6 +29,10 @@ abstract final class ReceiptEntityTypes {
   static const items = 'itemExtraction';
   static const warranty = 'warranty';
 }
+
+const _pdfContentType = 'application/pdf';
+const _pdfTextEngine = 'pdf-text';
+const _minPdfPageText = 20;
 
 /// What a device works out for itself by reading a receipt. If two devices read
 /// the same document, the first reading to reach the server is kept. Everything
@@ -268,25 +273,97 @@ class ReceiptService {
   /// leaves retry and manual entry available (REC 04).
   Future<Receipt> extract(
     String receiptId,
+    TextRecogniser recogniser, {
+    PdfReader? pdfReader,
+  }) => _extract(
+    receiptId,
+    () => _readDocuments(receiptId, recogniser, pdfReader),
+  );
+
+  /// Whether anything on this device can read the receipt. A PDF with text
+  /// needs no recognition engine, so this cannot say until it has looked.
+  Future<bool> canRead(
+    String receiptId,
+    TextRecogniser recogniser, {
+    PdfReader? pdfReader,
+  }) async =>
+      await recogniser.isAvailable() ||
+      (pdfReader != null &&
+          pagesFor(receiptId).any(
+            (page) =>
+                _store.vault.asset(page.sourceAssetId)?.contentType ==
+                _pdfContentType,
+          ));
+
+  /// Reads a PDF's own text where it has some, since that is exact, and sends
+  /// everything else through recognition.
+  Future<OcrResult> _readDocuments(
+    String receiptId,
     TextRecogniser recogniser,
-  ) => _extract(receiptId, () async {
+    PdfReader? pdfReader,
+  ) async {
+    final canRecognise = await recogniser.isAvailable();
+    final texts = <String>[];
     final images = <Uint8List>[];
+    var unreadPdf = false;
     final seen = <String>{};
     for (final page in pagesFor(receiptId)) {
       if (!seen.add(page.sourceAssetId)) continue;
       final record = _store.vault.asset(page.sourceAssetId);
-      if (record == null || record.contentType == 'application/pdf') {
+      if (record == null) continue;
+      if (record.contentType != _pdfContentType) {
+        if (canRecognise) images.add(await readPage(page));
         continue;
       }
-      images.add(await readPage(page));
+      if (pdfReader == null) {
+        unreadPdf = true;
+        continue;
+      }
+      final pdf = await _store.vault.readAsset(page.sourceAssetId);
+      final pageTexts = await pdfReader.pageText(
+        pdf,
+        maxPages: const ContentLimits().maxPagesPerReceipt,
+      );
+      for (final (index, text) in pageTexts.indexed) {
+        if (_hasOwnText(text)) {
+          texts.add(text);
+        } else if (canRecognise) {
+          images.add(await pdfReader.renderPage(pdf, index));
+        } else {
+          unreadPdf = true;
+        }
+      }
     }
-    if (images.isEmpty) {
-      throw const TextRecognitionException(
-        'Text is not read from PDF receipts on this device; enter the details',
+    final recognised = images.isEmpty
+        ? null
+        : await recogniser.recognise(images);
+    if (texts.isEmpty) {
+      if (recognised != null) return recognised;
+      throw TextRecognitionException(
+        unreadPdf && pdfReader == null
+            ? 'Text is not read from PDF receipts on this device; enter the details'
+            : unreadPdf
+            ? 'This PDF is a scan, and ${recogniser.unavailableMessage.toLowerCase()}; enter the details'
+            : '${recogniser.unavailableMessage}; enter the details',
       );
     }
-    return recogniser.recognise(images);
-  });
+    final own = OcrResult.fromText(
+      texts.join('\n'),
+      engine: _pdfTextEngine,
+      engineVersion: 'pdfium',
+    );
+    if (recognised == null) return own;
+    return OcrResult(
+      engine: '$_pdfTextEngine+${recognised.engine}',
+      engineVersion: recognised.engineVersion,
+      lines: [...own.lines, ...recognised.lines],
+    );
+  }
+
+  /// Enough to be the page's own text. A scan can still carry a stray page
+  /// number or stamp, which is no reason to skip recognising it.
+  bool _hasOwnText(String text) =>
+      text.replaceAll(RegExp(r'\s'), '').length >= _minPdfPageText;
 
   /// Parses text from the optional cloud extraction (AUTO 02). The text is
   /// untrusted: like on-device text it only fills proposals the user reviews.
@@ -639,18 +716,47 @@ class ReceiptService {
   /// [applySeparation] is called with the user's confirmation.
   Future<ReceiptSeparationProposal> suggestSeparation(
     String receiptId,
-    TextRecogniser recogniser,
-  ) async {
+    TextRecogniser recogniser, {
+    PdfReader? pdfReader,
+  }) async {
     final results = <OcrResult>[];
+    final canRecognise = await recogniser.isAvailable();
+    final none = OcrResult(engine: 'none', engineVersion: '0', lines: const []);
+    final pdfTexts = <String, List<String>>{};
     for (final page in pagesFor(receiptId)) {
       final record = _store.vault.asset(page.sourceAssetId);
-      if (record == null || record.contentType == 'application/pdf') {
-        results.add(
-          OcrResult(engine: 'none', engineVersion: '0', lines: const []),
+      if (record == null) {
+        results.add(none);
+      } else if (record.contentType != _pdfContentType) {
+        results.add(await recogniser.recognise([await readPage(page)]));
+      } else if (pdfReader == null) {
+        results.add(none);
+      } else {
+        final pdf = await _store.vault.readAsset(page.sourceAssetId);
+        final texts = pdfTexts[page.sourceAssetId] ??= await pdfReader.pageText(
+          pdf,
+          maxPages: const ContentLimits().maxPagesPerReceipt,
         );
-        continue;
+        final index = page.sourcePageIndex;
+        final text = index < texts.length ? texts[index] : '';
+        if (_hasOwnText(text)) {
+          results.add(
+            OcrResult.fromText(
+              text,
+              engine: _pdfTextEngine,
+              engineVersion: 'pdfium',
+            ),
+          );
+        } else if (canRecognise) {
+          results.add(
+            await recogniser.recognise([
+              await pdfReader.renderPage(pdf, index),
+            ]),
+          );
+        } else {
+          results.add(none);
+        }
       }
-      results.add(await recogniser.recognise([await readPage(page)]));
     }
     return proposeReceiptSeparation(
       results,

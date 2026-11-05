@@ -6,6 +6,7 @@ import 'package:finance_store/finance_store.dart';
 import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 
+import '../platform/pdf_reader.dart';
 import '../platform/text_recognition.dart';
 import 'app_state.dart';
 import 'app_sync_client.dart';
@@ -102,6 +103,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     this.retry = const RetryPolicy(),
     this.accessToken,
     this.recogniser,
+    this.pdfReader,
   }) : _http = httpClient ?? http.Client();
 
   final AppState state;
@@ -129,6 +131,9 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Reads forwarded receipt images once they are saved.
   final TextRecogniser? recogniser;
+
+  /// Reads the text of forwarded PDFs.
+  final PdfReader? pdfReader;
 
   /// Replaces the browser session, for tests and service accounts.
   final AccessTokenProvider? accessToken;
@@ -376,6 +381,7 @@ class SyncController extends ChangeNotifier with WidgetsBindingObserver {
     state: state,
     client: inboundMail,
     recogniser: recogniser,
+    pdfReader: pdfReader,
   );
 
   /// Consent to, and results of, optional cloud extraction (P1).

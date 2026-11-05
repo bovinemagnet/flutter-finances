@@ -14,7 +14,7 @@ A receipt enters the application through one of several routes. Whatever the rou
 | Import file | File picker for `jpg`, `jpeg`, `png`, `heic`, `heif` and `pdf` files, multiple selection allowed | All
 | Paste | `Ctrl+V` or the *Paste* chip on the Receipts page; an image on the clipboard is saved as `pasted.png`, otherwise copied files are read | All (shown when the paste capability is true)
 | Drag and drop | Dropping images or PDFs on the Receipts page; a "Drop to save as a receipt" overlay is shown | Desktop (the drag and drop capability)
-| Share target | Files shared from another application into the app | Android; iOS only once the share extension target is added
+| Share target | Files shared from another application into the app | Android and iOS (iOS needs the extension target; see the share extension section of xref:building-and-releasing.adoc[])
 | Email forwarding | Documents attached to emails sent to a private forwarding address are collected after a sync and saved with the source `CaptureSource.email`; see <<Email forwarding>> | All (needs sync and an available service)
 |===
 
@@ -78,6 +78,7 @@ After saving, `saveCapturedReceipt` asks the configured `TextRecogniser` whether
 | Engine | Used when | Notes
 
 | `MlKitTextRecogniser` | Android and iOS | ML Kit Text Recognition v2, Latin script; reported as engine `mlkit-text-v2`
+| `PdfiumPdfReader` | PDFs, on all platforms | Implements `PdfReader` using PDFium. Reads the PDF's own text; reported as engine `pdf-text`
 | `TesseractTextRecogniser` | Always on desktop | Checks for itself whether `tesseract` is installed with English data; runs the `tesseract` command line with `-l eng --psm 4`; reported as engine `tesseract` with its version string
 | `UnavailableTextRecogniser` | Mobile, when on-device OCR is not available | Receipts are kept and the fields are entered by hand
 |===
@@ -86,7 +87,7 @@ On desktop, `PlatformCapabilities.detect` runs `tesseract --list-langs` at start
 
 Both engines produce an `OcrResult`, which the shared parser in `finance_core` turns into suggested fields. Extraction behaves as follows:
 
-* PDF receipts are not read on the device. If a receipt has only PDF pages, extraction fails with "Text is not read from PDF receipts on this device; enter the details".
+* PDF receipts are read on the device. `ReceiptService.extract` reads a PDF's own text page by page, up to 10 pages. A page with fewer than 20 non-space characters counts as having no text of its own, so it is drawn as an image (200 dots per inch, longest edge at most 2,500 pixels) and sent through the text recogniser above. A PDF with text therefore needs no recognition engine, while a scanned PDF needs one. The engine is recorded as `pdf-text`, or `pdf-text+<engine>` when a receipt mixes the two. A PDF that is damaged or password protected, or a scan on a device with no engine, moves to "Could not be read" and is kept for entering by hand. Reading only fills proposals for review.
 * Any exception during extraction moves the receipt to the "Could not be read" state. The document is kept, and retry and manual entry remain available (REC 04).
 * A review or a deletion made while a receipt is being read stands. The result of that reading is dropped when it finishes, rather than overwriting the person's decision or bringing a deleted receipt back.
 * If the application stops before or during reading, the Receipts page shows "Not finished being read" for a receipt caught part-way through, and the review screen offers *Try again* on the device that holds the original.
@@ -126,7 +127,7 @@ Inline images under 20 KB are ignored, as they are usually logos or signatures.
 
 After each successful sync, the device collects the documents that are waiting. Each one goes through the ordinary capture path with the source `CaptureSource.email`, so it is validated and saved in the vault like any other receipt. The device acknowledges a document only once the receipt is durably saved locally, and the server then deletes its copy. Collecting the same document again does not create a second receipt. Once collected, the receipt is shared with the workspace like any other receipt.
 
-Images go through text recognition as described in <<Reading the text>>. Recognition runs alongside collection and does not hold it up. A forwarded PDF is marked as unreadable, so it appears under "Could not be read" and offers entering the details by hand, just as a PDF imported directly does.
+Images go through text recognition as described in <<Reading the text>>. Recognition runs alongside collection and does not hold it up. Forwarded PDFs are read as described in <<Reading the text>>, and appear under "Could not be read" only if that fails, in which case the details can be entered by hand, just as for a PDF imported directly.
 
 A download has up to five minutes, because an attachment can be 20 MB on a slow connection.
 
@@ -186,5 +187,5 @@ Settings has "Export receipts" (EXP 01). It writes every receipt's original sour
 
 == Not yet implemented
 
-* The iOS share extension target (see xref:building-and-releasing.adoc[]).
-* Reading text from PDF receipts on the device.
+* Showing the PDF page itself on the review screen, which shows an icon for now.
+* Trying the iOS share extension on a physical iPhone with a signed build.

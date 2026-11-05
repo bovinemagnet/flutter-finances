@@ -7,6 +7,7 @@ import 'package:finance_app/data/app_state.dart';
 import 'package:finance_app/data/receipt_service.dart';
 import 'package:finance_app/data/reminders.dart';
 import 'package:finance_app/platform/image_tools.dart';
+import 'package:finance_app/platform/pdf_reader.dart';
 import 'package:finance_app/platform/services.dart';
 import 'package:finance_app/platform/text_recognition.dart';
 import 'package:finance_core/finance_core.dart';
@@ -15,6 +16,8 @@ import 'package:finance_store/finance_store.dart' as store show VaultAssetKind;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:intl/date_symbol_data_local.dart';
+
+import '../support/pdf_fixtures.dart';
 
 const _fastKdf = Argon2idParameters(
   memoryKiB: 64,
@@ -52,6 +55,28 @@ class _HeldRecogniser implements TextRecogniser {
       engine: 'fake',
       engineVersion: '1',
     );
+  }
+}
+
+/// A PDF engine that answers from a list of pages, without opening anything.
+class _FakePdfReader implements PdfReader {
+  _FakePdfReader(this.pages, {this.fails = false});
+  final List<String> pages;
+  final bool fails;
+  final rendered = <int>[];
+  int? askedForPages;
+
+  @override
+  Future<List<String>> pageText(Uint8List pdf, {required int maxPages}) async {
+    if (fails) throw const PdfReadException('This PDF could not be read');
+    askedForPages = maxPages;
+    return pages;
+  }
+
+  @override
+  Future<Uint8List> renderPage(Uint8List pdf, int pageIndex) async {
+    rendered.add(pageIndex);
+    return Uint8List.fromList([pageIndex]);
   }
 }
 
@@ -137,6 +162,175 @@ void main() {
       ),
       isNotNull,
     );
+  });
+
+  group('reading a PDF', () {
+    final blank = _FakeRecogniser(null);
+    final scanText = _FakeRecogniser(_receiptText);
+    Uint8List pdf({int pages = 1}) => textPdf([
+      for (var i = 0; i < pages; i++) ['page ${i + 1}'],
+    ]);
+
+    Future<Receipt> saved({int pages = 1}) => state.receipts.capture([
+      CapturedFile(pdf(pages: pages), source: CaptureSource.fileImport),
+    ]);
+
+    test('with text, is read without any recognition engine', () async {
+      final receipt = await saved();
+      final reader = _FakePdfReader([_receiptText]);
+      final read = await state.receipts.extract(
+        receipt.id,
+        blank,
+        pdfReader: reader,
+      );
+      expect(read.extractionState, ExtractionState.needsReview);
+      final extraction = state.receipts.extractionFor(read)!;
+      expect(extraction.suggested.total, Money(1350, aud));
+      expect(extraction.suggested.merchant, contains('FRESH GROCER'));
+      expect(extraction.ocr.engine, 'pdf-text');
+      expect(reader.rendered, isEmpty);
+    });
+
+    test('asks for no more pages than a receipt may have', () async {
+      final receipt = await saved();
+      final reader = _FakePdfReader([_receiptText]);
+      await state.receipts.extract(receipt.id, blank, pdfReader: reader);
+      expect(reader.askedForPages, const ContentLimits().maxPagesPerReceipt);
+    });
+
+    test('when scanned, its pages go through recognition', () async {
+      final receipt = await saved();
+      final reader = _FakePdfReader(['  \n ']);
+      final read = await state.receipts.extract(
+        receipt.id,
+        scanText,
+        pdfReader: reader,
+      );
+      expect(reader.rendered, [0]);
+      expect(read.extractionState, ExtractionState.needsReview);
+      expect(
+        state.receipts.extractionFor(read)!.suggested.total,
+        Money(1350, aud),
+      );
+    });
+
+    test('when only part is scanned, only that part is drawn', () async {
+      final receipt = await saved(pages: 2);
+      final reader = _FakePdfReader([_receiptText, '']);
+      final read = await state.receipts.extract(
+        receipt.id,
+        _FakeRecogniser('Thank you for shopping'),
+        pdfReader: reader,
+      );
+      expect(reader.rendered, [1]);
+      final text = state.receipts.extractionFor(read)!.ocr.text;
+      expect(text, contains('FRESH GROCER'));
+      expect(text, contains('Thank you for shopping'));
+    });
+
+    test('a few stray characters do not count as text', () async {
+      final receipt = await saved();
+      final reader = _FakePdfReader(['p. 1']);
+      await state.receipts.extract(receipt.id, scanText, pdfReader: reader);
+      expect(reader.rendered, [0]);
+    });
+
+    test(
+      'when scanned with no engine, it is kept for entering by hand',
+      () async {
+        final receipt = await saved();
+        final read = await state.receipts.extract(
+          receipt.id,
+          blank,
+          pdfReader: _FakePdfReader(['']),
+        );
+        expect(read.extractionState, ExtractionState.extractionFailed);
+        expect(state.receipts.pagesFor(receipt.id), hasLength(1));
+      },
+    );
+
+    test('when damaged, it is kept for entering by hand', () async {
+      final receipt = await saved();
+      final read = await state.receipts.extract(
+        receipt.id,
+        scanText,
+        pdfReader: _FakePdfReader([], fails: true),
+      );
+      expect(read.extractionState, ExtractionState.extractionFailed);
+      expect(state.receipts.pagesFor(receipt.id), hasLength(1));
+    });
+
+    test('with no PDF engine, it is kept as before', () async {
+      final receipt = await saved();
+      final read = await state.receipts.extract(receipt.id, scanText);
+      expect(read.extractionState, ExtractionState.extractionFailed);
+    });
+
+    test('alongside a photo, both are read', () async {
+      final receipt = await state.receipts.capture([
+        CapturedFile(pdf(), source: CaptureSource.fileImport),
+        CapturedFile(photo(), source: CaptureSource.fileImport),
+      ]);
+      final read = await state.receipts.extract(
+        receipt.id,
+        _FakeRecogniser('Thank you for shopping'),
+        pdfReader: _FakePdfReader([_receiptText]),
+      );
+      final text = state.receipts.extractionFor(read)!.ocr.text;
+      expect(text, contains('FRESH GROCER'));
+      expect(text, contains('Thank you for shopping'));
+    });
+
+    test('reading never posts anything', () async {
+      final receipt = await saved();
+      await state.receipts.extract(
+        receipt.id,
+        blank,
+        pdfReader: _FakePdfReader([_receiptText]),
+      );
+      expect(state.ledger.journals, isEmpty);
+    });
+
+    group('can be read', () {
+      test('with text and no recognition engine', () async {
+        final receipt = await saved();
+        expect(
+          await state.receipts.canRead(
+            receipt.id,
+            blank,
+            pdfReader: _FakePdfReader([]),
+          ),
+          isTrue,
+        );
+      });
+
+      test('a photo needs a recognition engine', () async {
+        final receipt = await state.receipts.capture([
+          CapturedFile(photo(), source: CaptureSource.fileImport),
+        ]);
+        expect(
+          await state.receipts.canRead(
+            receipt.id,
+            blank,
+            pdfReader: _FakePdfReader([]),
+          ),
+          isFalse,
+        );
+      });
+    });
+
+    test('separating pages reads the text of each page', () async {
+      final receipt = await saved(pages: 2);
+      final proposal = await state.receipts.suggestSeparation(
+        receipt.id,
+        blank,
+        pdfReader: _FakePdfReader([
+          _receiptText,
+          _receiptText.replaceAll('FRESH GROCER', 'CORNER STORE'),
+        ]),
+      );
+      expect(proposal.groups, hasLength(2));
+    });
   });
 
   group('reading a receipt again', () {

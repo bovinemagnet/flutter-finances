@@ -21,6 +21,7 @@ import 'data/platform_key_store.dart';
 import 'data/workspace_gate.dart';
 import 'platform/adapters/file_importer.dart';
 import 'platform/adapters/notifications.dart';
+import 'platform/adapters/pdfium_pdf_reader.dart';
 import 'platform/adapters/scanners.dart';
 import 'platform/adapters/share_inbox.dart';
 import 'platform/capabilities.dart';
@@ -62,6 +63,9 @@ Future<void> main() async {
         : UnavailableTextRecogniser(),
     workspaceDirectory: workspace,
     authenticator: LocalDeviceAuthenticator(),
+    pdfReader: PdfiumPdfReader(
+      cacheDirectory: (await getTemporaryDirectory()).path,
+    ),
   );
   runApp(
     FinanceApp(
@@ -107,6 +111,7 @@ class _FinanceAppState extends State<FinanceApp> {
       platform: Platform.operatingSystem,
       deviceName: Platform.localHostname,
       recogniser: widget.services.textRecogniser,
+      pdfReader: widget.services.pdfReader,
     );
   }
 

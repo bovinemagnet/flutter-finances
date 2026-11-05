@@ -7,6 +7,7 @@ import '../data/sync_controller.dart';
 import '../platform/capabilities.dart';
 import 'app_lock.dart';
 import 'appearance.dart';
+import '../platform/pdf_reader.dart';
 import '../platform/services.dart';
 import '../platform/text_recognition.dart';
 
@@ -21,6 +22,7 @@ class AppServices {
     required this.textRecogniser,
     required this.workspaceDirectory,
     required this.authenticator,
+    this.pdfReader,
   });
 
   final PlatformCapabilities capabilities;
@@ -31,6 +33,9 @@ class AppServices {
   final TextRecogniser textRecogniser;
   final Directory workspaceDirectory;
   final DeviceAuthenticator authenticator;
+
+  /// Reads the text of PDF receipts, where the platform has an engine.
+  final PdfReader? pdfReader;
 }
 
 /// Makes [AppState] and [AppServices] available below the root, rebuilding

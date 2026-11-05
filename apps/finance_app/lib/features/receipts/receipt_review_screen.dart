@@ -153,6 +153,13 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
     final recogniser = AppScope.servicesOf(context).textRecogniser;
     _recognitionAvailable ??= recogniser.isAvailable();
 
+    // Editing works on images, so a PDF page has nothing to offer here.
+    final imagePages = [
+      for (final page in pages)
+        if (state.store.vault.asset(page.sourceAssetId)?.contentType
+            case final type? when type != 'application/pdf')
+          page,
+    ];
     final preview = _PagePreview(pages: pages, read: service.readPage);
     final form = ListView(
       padding: const EdgeInsets.all(16),
@@ -234,19 +241,19 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
                   }
                 },
               ),
-            if (pages.isNotEmpty)
+            if (imagePages.isNotEmpty)
               OutlinedButton.icon(
                 icon: const Icon(Icons.auto_fix_high_outlined),
                 label: const Text('Improve readability'),
                 onPressed: () async {
-                  final page = pages.length == 1
-                      ? pages.single
+                  final page = imagePages.length == 1
+                      ? imagePages.single
                       : await showDialog<ReceiptPage>(
                           context: context,
                           builder: (context) => SimpleDialog(
                             title: const Text('Which page?'),
                             children: [
-                              for (final p in pages)
+                              for (final p in imagePages)
                                 SimpleDialogOption(
                                   onPressed: () => Navigator.of(context).pop(p),
                                   child: Text('Page ${p.pageNumber}'),
@@ -255,11 +262,6 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
                           ),
                         );
                   if (page == null || !context.mounted) return;
-                  final record = state.store.vault.asset(page.sourceAssetId);
-                  if (record == null ||
-                      record.contentType == 'application/pdf') {
-                    return;
-                  }
                   final bytes = await state.store.vault.readAsset(
                     page.sourceAssetId,
                   );
@@ -279,10 +281,15 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
                 icon: const Icon(Icons.auto_awesome_outlined),
                 label: const Text('Suggest how to split'),
                 onPressed: () async {
-                  final recogniser = AppScope.servicesOf(context)
-                      .textRecogniser;
+                  final services = AppScope.servicesOf(context);
+                  final recogniser = services.textRecogniser;
+                  final pdfReader = services.pdfReader;
                   final messenger = ScaffoldMessenger.of(context);
-                  if (!await recogniser.isAvailable()) {
+                  if (!await service.canRead(
+                    receipt.id,
+                    recogniser,
+                    pdfReader: pdfReader,
+                  )) {
                     messenger.showSnackBar(
                       const SnackBar(
                         content: Text(
@@ -296,6 +303,7 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
                   final proposal = await service.suggestSeparation(
                     receipt.id,
                     recogniser,
+                    pdfReader: pdfReader,
                   );
                   if (!context.mounted) return;
                   if (proposal.isSingleReceipt) {
@@ -643,7 +651,9 @@ class _ReviewedField<T> extends StatelessWidget {
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                    'Check the $label: ${field.reasons.map((r) => uncertaintyText[r]).join(', ')}',
+                    field.reasons.isEmpty
+                        ? 'Check the $label'
+                        : 'Check the $label: ${field.reasons.map((r) => uncertaintyText[r]).join(', ')}',
                   ),
                 ),
               ],
@@ -676,8 +686,12 @@ class _ReadAgainCard extends StatelessWidget {
       ),
       trailing: TextButton(
         onPressed: () async {
-          await AppScope.of(context).receipts
-              .extract(receiptId, AppScope.servicesOf(context).textRecogniser);
+          final services = AppScope.servicesOf(context);
+          await AppScope.of(context).receipts.extract(
+            receiptId,
+            services.textRecogniser,
+            pdfReader: services.pdfReader,
+          );
           onRead();
         },
         child: const Text('Try again'),

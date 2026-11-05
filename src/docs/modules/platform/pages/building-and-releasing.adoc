@@ -95,9 +95,12 @@ Sharing a file into the app on iOS needs a Share Extension target that shares an
 
 The handoff uses the App Group. When the user shares a receipt photo or PDF, `ShareViewController` (a subclass of `RSIShareViewController`) copies the files into the App Group container and opens the app through its `ShareMedia-<bundle id>` URL scheme. The app reads them through `PluginShareInbox`, where they become unconfirmed receipt captures. Nothing is posted without the user's review.
 
+The extension has been run on the iOS simulator: sharing a PDF from the Files app and from its PDF viewer showed "Finance App" in the share sheet, opened the app and created a receipt read for review. It has not been run on a physical iPhone or with a signed build, where the App Group and provisioning profiles matter. The target is not committed to `Runner.xcodeproj`, so a local build needs the script to be run first, and running it changes the app's bundle id to `com.paulsnow.finance.app`.
+
 == Known gaps before a release
 
 * *iOS distribution.* `release.yml` builds and signs the App Store IPA, but the `ios` job has not yet run on GitHub Actions and is unverified until the first tagged release. Uploading the IPA to TestFlight is a manual step, using Transporter or `xcrun altool`.
+* *PDFium download.* Reading PDFs uses PDFium, whose binaries are downloaded while building: from `bblanchon/pdfium-binaries` on Android, Linux and Windows, and as an XCFramework from `espresso3389/pdfium-xcframework` on iOS and macOS. A build therefore needs network access to those sources. The `pdfium_dart` package does not check the Android, Linux and Windows download against a checksum.
 * *Store submission and updates.* Store submission and an update mechanism are not defined. A release is a draft GitHub release that a person publishes.
 * *Platform verification.* The `Build` workflow (`build.yml`) passes on GitHub Actions for Android, iOS (unsigned, with the share extension embedded), macOS, Windows and Linux, and `CI` passes. The built apps have not been run and verified on those systems in this workflow, and the signed `release.yml` jobs remain unverified until the first tagged release.
 

@@ -9,6 +9,7 @@ import 'package:finance_app/data/inbound_mail_service.dart';
 import 'package:finance_app/data/oidc.dart';
 import 'package:finance_app/data/receipt_service.dart';
 import 'package:finance_app/data/sync_controller.dart';
+import 'package:finance_app/platform/pdf_reader.dart';
 import 'package:finance_app/platform/services.dart';
 import 'package:finance_app/platform/text_recognition.dart';
 import 'package:finance_core/finance_core.dart';
@@ -49,6 +50,16 @@ class _Recogniser implements TextRecogniser {
       engineVersion: '1',
     );
   }
+}
+
+class _TextPdfReader implements PdfReader {
+  @override
+  Future<List<String>> pageText(Uint8List pdf, {required int maxPages}) async =>
+      ['FRESH GROCER PTY LTD\nTOTAL 13.50'];
+
+  @override
+  Future<Uint8List> renderPage(Uint8List pdf, int pageIndex) =>
+      throw UnimplementedError();
 }
 
 /// Holds inbox requests until [gate] completes.
@@ -464,6 +475,32 @@ void main() {
           ExtractionState.extractionFailed,
     );
     expect(recogniser.calls, 0);
+  });
+
+  test('a forwarded PDF with text is read, even with no engine', () async {
+    await start();
+    deliver();
+    final service = InboundMailService(
+      state: state,
+      client: controller.inboundMail,
+      recogniser: UnavailableTextRecogniser(),
+      pdfReader: _TextPdfReader(),
+    );
+    await service.collect();
+    final receipt = state.receipts.receipts().single;
+    await eventually(
+      () =>
+          state.receipts.receipt(receipt.id)!.extractionState ==
+          ExtractionState.needsReview,
+    );
+    expect(
+      state.receipts
+          .extractionFor(state.receipts.receipt(receipt.id)!)!
+          .suggested
+          .total,
+      Money(1350, Currency.aud),
+    );
+    expect(state.ledger.journals, isEmpty);
   });
 
   test('a recognition failure keeps the receipt', () async {

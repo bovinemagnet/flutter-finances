@@ -4,6 +4,7 @@ import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
 import 'package:flutter/foundation.dart';
 
+import '../platform/pdf_reader.dart';
 import '../platform/services.dart';
 import '../platform/text_recognition.dart';
 import 'app_state.dart';
@@ -27,6 +28,7 @@ class InboundMailService {
     required this.state,
     required this.client,
     this.recogniser,
+    this.pdfReader,
     @visibleForTesting ReceiptCapture? capture,
   }) : _capture = capture ?? state.receipts.capture;
 
@@ -43,9 +45,11 @@ class InboundMailService {
   final AppState state;
   final InboundMailClient client;
 
-  /// Reads images once saved. PDFs cannot be read yet, and asking marks them
-  /// for entering by hand, as it does for a PDF imported directly.
+  /// Reads images, and scanned pages of PDFs, once saved.
   final TextRecogniser? recogniser;
+
+  /// Reads the text of PDFs. Without one, a PDF is marked for entering by hand.
+  final PdfReader? pdfReader;
 
   final ReceiptCapture _capture;
   final _failedCaptures = <String, int>{};
@@ -169,9 +173,19 @@ class InboundMailService {
 
   Future<void> _read(Receipt receipt) async {
     try {
-      final recogniser = this.recogniser;
-      if (recogniser == null || !await recogniser.isAvailable()) return;
-      await state.receipts.extract(receipt.id, recogniser);
+      final recogniser = this.recogniser ?? UnavailableTextRecogniser();
+      if (!await state.receipts.canRead(
+        receipt.id,
+        recogniser,
+        pdfReader: pdfReader,
+      )) {
+        return;
+      }
+      await state.receipts.extract(
+        receipt.id,
+        recogniser,
+        pdfReader: pdfReader,
+      );
     } catch (_) {
       // The receipt is safe; it can be read again or entered by hand.
     }
