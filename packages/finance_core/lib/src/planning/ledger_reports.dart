@@ -92,6 +92,7 @@ Report _spendingBy(
   required bool includesUnsyncedChanges,
   required Iterable<(String key, String label, int minor)> Function(Journal)
   keysOf,
+  String? note,
 }) {
   final totals = <String, int>{};
   final labels = <String, String>{};
@@ -114,6 +115,7 @@ Report _spendingBy(
     keyLabel: keyLabel,
     range: range,
     includesUnsyncedChanges: includesUnsyncedChanges,
+    note: note,
     columns: const [ReportColumn('spending', 'Spending')],
     rows: [
       for (final key in keys)
@@ -179,6 +181,48 @@ Report spendingByPayee(
       return touched
           ? [(payee, payee.isEmpty ? 'No payee' : payee, minor)]
           : const [];
+    },
+  );
+}
+
+/// Net spending per tag, largest first. An entry counts in full under each of
+/// its tags, so the rows can add up to more than was spent. A refund reduces
+/// its own tags and those of the purchase it refunds. A corrected entry counts
+/// once, as its replacement.
+Report spendingByTag(
+  LedgerProjection ledger,
+  DateRange range, {
+  bool includesUnsyncedChanges = false,
+}) {
+  final chart = ledger.chart;
+  final byId = {for (final j in ledger.journals) j.id: j};
+  return _spendingBy(
+    ledger,
+    range,
+    title: 'Spending by tag',
+    keyLabel: 'Tag',
+    includesUnsyncedChanges: includesUnsyncedChanges,
+    note:
+        'An entry with more than one tag counts under each, so these can add '
+        'up to more than you spent.',
+    keysOf: (journal) {
+      if (journal.status != JournalStatus.posted ||
+          journal.type == TransactionType.reversal) {
+        return const [];
+      }
+      var minor = 0;
+      var touched = false;
+      for (final p in journal.postings) {
+        if (chart.kindOf(p.ledgerAccountId) == LedgerKind.expense) {
+          minor += p.amount.minor;
+          touched = true;
+        }
+      }
+      if (!touched) return const [];
+      return [
+        for (final tag in {...journal.tags, ...?byId[journal.refundOf]?.tags})
+          (tag, tag, minor),
+      ];
     },
   );
 }

@@ -99,6 +99,7 @@ Future<void> openTransactionEditor(
         body: TransactionForm(
           model: model,
           onInterrupted: (m) => state.saveEntryDraft(m.toDraftJson()),
+          tagSuggestions: state.knownTags,
           refundCandidates:
               (state.ledger.journals
                       .where(

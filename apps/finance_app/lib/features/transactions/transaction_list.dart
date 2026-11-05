@@ -208,6 +208,7 @@ class _TransactionListState extends State<TransactionList> {
         if (journal.status == JournalStatus.reversed) const _Tag('Corrected'),
         if (!item.reviewed) const _Tag('To review', attention: true),
         if (item.unsynced) const _Tag('Not synced'),
+        for (final tag in journal.tags.toList()..sort()) _Tag(tag),
       ],
     );
   }

@@ -8,6 +8,7 @@ import '../../app/app_scope.dart';
 import '../../app/appearance.dart';
 import '../../features/imports/import_screen.dart';
 import '../../features/settings/rules_screen.dart';
+import '../../features/settings/tags_screen.dart';
 import '../../format/formatters.dart';
 
 /// Data, security, planning preferences and device information.
@@ -256,6 +257,14 @@ class SettingsPage extends StatelessWidget {
           leading: const Icon(Icons.upload_file),
           title: const Text('Import a bank statement (CSV)'),
           onTap: () => _import(context),
+        ),
+        ListTile(
+          leading: const Icon(Icons.sell_outlined),
+          title: const Text('Tags'),
+          subtitle: const Text('Rename or merge the tags on your entries'),
+          onTap: () =>
+              Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const TagsScreen())),
         ),
         ListTile(
           leading: const Icon(Icons.rule),

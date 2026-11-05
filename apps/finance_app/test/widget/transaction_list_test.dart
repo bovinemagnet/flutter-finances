@@ -42,6 +42,36 @@ void main() {
     return log;
   }
 
+  testWidgets('rows show the entry\'s tags', (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TransactionList(
+            items: [
+              TransactionListItem(
+                journal: world.journals[1].copyWith(tags: {'kids', 'holiday'}),
+                accountName: 'Everyday',
+                categoryLabel: 'Food',
+                reviewed: true,
+                hasReceipt: false,
+                unsynced: false,
+              ),
+            ],
+            categories: world.chart.categories.toList(),
+            onOpen: (_) {},
+            onMarkReviewed: (_) {},
+            onCategorise: (_, _) {},
+          ),
+        ),
+      ),
+    );
+    expect(find.text('holiday'), findsOneWidget);
+    expect(find.text('kids'), findsOneWidget);
+  });
+
   testWidgets('phone rows show status in text and a visible review button', (
     tester,
   ) async {
