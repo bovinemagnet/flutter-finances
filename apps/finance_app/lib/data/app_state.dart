@@ -147,6 +147,89 @@ class AppState extends ChangeNotifier {
     return dates;
   }
 
+  /// What other people owe, from the ledger.
+  OwedToMe get owed => owedToMe(ledger);
+
+  /// Records money received against something paid for someone else. It goes
+  /// back into [accountId] without counting as income.
+  Future<void> recordRepayment(
+    OwedItem item, {
+    required Money amount,
+    required String accountId,
+    required LocalDate date,
+  }) async {
+    await post(
+      TransactionDraft(
+        type: TransactionType.reimbursement,
+        accountId: accountId,
+        amount: amount,
+        effectiveDate: date,
+        payee: item.journal.payee,
+        refundOf: item.journal.id,
+      ),
+    );
+  }
+
+  /// Financial years with something in them, newest first, always including
+  /// the current one.
+  List<DateRange> get financialYears {
+    final current = DateRange.financialYearContaining(today());
+    var earliest = current.start.year;
+    for (final journal in ledger.journals) {
+      if (!journal.status.inPostedLedger) continue;
+      final start = DateRange.financialYearContaining(journal.effectiveDate)
+          .start
+          .year;
+      if (start < earliest) earliest = start;
+    }
+    return [
+      for (var y = current.start.year; y >= earliest; y--)
+        DateRange.financialYear(y),
+    ];
+  }
+
+  /// How many current entries use each tag. Corrected entries and their
+  /// reversals are history, so they do not count.
+  Map<String, int> get tagCounts {
+    final counts = <String, int>{};
+    for (final journal in ledger.journals) {
+      if (journal.status == JournalStatus.reversed ||
+          journal.type == TransactionType.reversal) {
+        continue;
+      }
+      for (final tag in journal.tags) {
+        counts[tag] = (counts[tag] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
+
+  /// Every tag in use, most used first.
+  List<String> get knownTags {
+    final counts = tagCounts;
+    return counts.keys.toList()..sort((a, b) {
+      final byUse = counts[b]!.compareTo(counts[a]!);
+      return byUse != 0 ? byUse : a.compareTo(b);
+    });
+  }
+
+  /// Renames a tag on every entry that has it, merging it into [to] when that
+  /// tag exists. Only tags change, so balances and history stay as they are.
+  Future<void> renameTag(String from, String to) async {
+    final name = normaliseTag(to);
+    if (name.isEmpty || name == from) return;
+    await store.retagTransactions({
+      for (final journal in ledger.journals)
+        if (journal.tags.contains(from))
+          journal.id: {
+            for (final tag in journal.tags)
+              if (tag != from) tag,
+            name,
+          },
+    });
+    refresh();
+  }
+
   /// Posted and pending entries the user has not reviewed yet (Journey C).
   Set<String> get unreviewedJournalIds {
     final reviewed = reviewedJournalIds;

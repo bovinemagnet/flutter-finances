@@ -201,6 +201,8 @@ List<UnusualTransaction> detectUnusualTransactions({
 /// The date-ordered purchases of one merchant or category, with a window
 /// over those dated in `[from, before)` whose amounts are kept sorted.
 class _History {
+  static const _bulkLoad = 64;
+
   final List<Journal> _all = [];
   final List<int> sortedAmounts = [];
   var _start = 0;
@@ -215,9 +217,21 @@ class _History {
 
   /// Moves the window forward; [from] and [before] never decrease.
   void moveTo(LocalDate from, LocalDate before) {
+    final first = _end;
     while (_end < _all.length && _all[_end].effectiveDate < before) {
-      final amount = _all[_end++].amount!.minor;
-      sortedAmounts.insert(_lowerBound(amount), amount);
+      _end++;
+    }
+    // A long history arrives at once on the first move, and sorting it once is
+    // far cheaper than inserting each amount in turn.
+    if (_end - first > _bulkLoad) {
+      sortedAmounts
+        ..addAll([for (var i = first; i < _end; i++) _all[i].amount!.minor])
+        ..sort();
+    } else {
+      for (var i = first; i < _end; i++) {
+        final amount = _all[i].amount!.minor;
+        sortedAmounts.insert(_lowerBound(amount), amount);
+      }
     }
     while (_start < _end && _all[_start].effectiveDate < from) {
       sortedAmounts.removeAt(_lowerBound(_all[_start++].amount!.minor));

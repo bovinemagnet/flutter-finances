@@ -24,6 +24,7 @@ Ledger reports use the posted ledger (posted and reversed journals plus their re
 
 | `incomeVsExpenses` | Income, Expenses, Net | One row per calendar month of the range. Income postings are negated so earnings are positive.
 | `spendingByCategory` | Spending | Net spending per expense category, refunds reducing it, largest first (ties broken by key).
+| `spendingByTag` | Spending | Net spending per tag, largest first. See <<spending-by-tag>>.
 | `spendingByPayee` | Spending | Net spending per merchant, largest first. Entries without a payee share one row labelled `No payee`.
 | `accountBalances` | Balance | Each account's balance as a user reads it, all time or as of a date, with liabilities shown as positive amounts owed.
 | `netWorthHistory` | Net worth | A point at the end of each calendar month of the range (the range end for a partial last month), using the net-worth definition in xref:domain:net-worth.adoc[Net worth], including the reimbursement receivable.
@@ -32,6 +33,19 @@ Ledger reports use the posted ledger (posted and reversed journals plus their re
 | `budgetVsActual` | Planned, Rollover, Adjustments, Actual, Pending, Remaining | One evaluated budget period, including unbudgeted spending.
 | `goalProgressReport` | Target, Allocated, Moved, Reserved, Funding gap | One row per goal; see xref:domain:goals-and-reservations.adoc[Goals and reservations].
 |===
+
+[[spending-by-tag]]
+=== Spending by tag
+
+The "Spending by tag" report shows net spending per tag, largest first, and each row opens the entries behind it. An entry counts in full under each of its tags, so a purchase with two tags appears in two rows and the rows can add up to more than was spent. The report says so.
+
+* A refund reduces its own tags and the tags of the purchase it refunds, found through `refundOf`.
+* A corrected entry counts once, as its replacement.
+* Transfers, income, pending entries and money paid for someone else (a reimbursable expense) do not count.
+
+=== Owed to you
+
+The `owedToMe` calculation in `finance_core` reports money that other people owe the user (FIN 06). The total is always the ledger's own balance of `system:reimbursement-receivable` and never a separate figure. Each debt is a reimbursable expense, and repayments are reimbursements linked to it through `refundOf`; a repayment still counts if its debt is later corrected. Money received that matches no debt is shown separately. The Overview page shows "Owed to you" with the total when it is above zero, and opens a screen listing each debt, oldest first. See xref:domain:ledger.adoc#owed-to-you[Owed to you] for how the entries are recorded.
 
 Receipt coverage and the missing-receipt insight consider only posted purchases, meaning expense and reimbursable-expense journals that have not been reversed.
 

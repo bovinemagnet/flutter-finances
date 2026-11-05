@@ -479,6 +479,35 @@ class FinanceStore {
     );
   }
 
+  /// Replaces the tags of several journals as one action, so a rename either
+  /// reaches all of them or none. Postings are not touched.
+  Future<void> retagTransactions(Map<String, Set<String>> tagsByJournal) async {
+    _ctx.write(() {
+      for (final MapEntry(key: journalId, value: tags)
+          in tagsByJournal.entries) {
+        if (_rawJournal(journalId) == null) {
+          throw EntityNotFoundException(
+            EntityRef(EntityTypes.journal, journalId),
+          );
+        }
+        final ref = EntityRef(
+          journalAnnotationType,
+          journalAnnotationId(journalId),
+        );
+        _update(
+          ref,
+          {
+            ...?_ctx.state.json(ref),
+            'journalId': journalId,
+            'tags': tags.toList()..sort(),
+          },
+          'Rename tag',
+          allowCreate: true,
+        );
+      }
+    });
+  }
+
   Journal? _rawJournal(String id) {
     final rows = _ctx.db.select(
       'SELECT * FROM journals WHERE id = ? AND deleted = 0',
@@ -518,16 +547,16 @@ class FinanceStore {
     }
     return [
       for (final j in journals)
-        if (annotations[j.id] case final a?)
-          j.copyWith(
-            payee: a['payee'] as String?,
-            notes: a['notes'] as String?,
-            tags: (a['tags'] as List?)?.cast<String>().toSet(),
-          )
-        else
-          j,
+        if (annotations[j.id] case final a?) _withAnnotation(j, a) else j,
     ];
   }
+
+  Journal _withAnnotation(Journal journal, Map<String, Object?> annotation) =>
+      journal.copyWith(
+        payee: annotation['payee'] as String?,
+        notes: annotation['notes'] as String?,
+        tags: (annotation['tags'] as List?)?.cast<String>().toSet(),
+      );
 
   /// Journals newest first, filtered and paged (NFR 09).
   List<Journal> journals({
@@ -578,9 +607,27 @@ class FinanceStore {
   LedgerProjection projection() {
     final rows = _ctx.db.select('SELECT * FROM journals WHERE deleted = 0');
     final postings = _ctx.state.postingsFor(rows.map((r) => r['id'] as String));
+    // One query for all of them, since most workspaces have few or none.
+    final annotations = <String, Map<String, Object?>>{};
+    for (final r in _ctx.db.select(
+      'SELECT json FROM entities WHERE entity_type = ? AND deleted = 0',
+      [journalAnnotationType],
+    )) {
+      final annotation = (jsonDecode(r['json'] as String) as Map)
+          .cast<String, Object?>();
+      if (annotation['journalId'] case final String id) {
+        annotations[id] = annotation;
+      }
+    }
     return LedgerProjection(_ctx.chart(), [
       for (final r in rows)
-        _ctx.state.journalFromRow(r, postings[r['id']] ?? const []),
+        if (annotations[r['id']] case final annotation?)
+          _withAnnotation(
+            _ctx.state.journalFromRow(r, postings[r['id']] ?? const []),
+            annotation,
+          )
+        else
+          _ctx.state.journalFromRow(r, postings[r['id']] ?? const []),
     ]);
   }
 

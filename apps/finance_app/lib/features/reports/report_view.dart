@@ -67,6 +67,10 @@ class ReportView extends StatelessWidget {
             avatar: Icon(Icons.cloud_off_outlined, size: 18),
             label: Text('Includes changes not yet synced'),
           ),
+        if (report.note != null && report.rows.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(report.note!, style: Theme.of(context).textTheme.bodySmall),
+        ],
       ],
     );
     return ListView(

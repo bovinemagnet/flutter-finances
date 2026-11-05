@@ -38,6 +38,6 @@ As implemented:
 == Consequences
 
 * Flutter does not guarantee that a particular scanner, database encryption, key store or notification plugin works across every target. A platform capability matrix is maintained (see xref:platform:capabilities.adoc[]) and native dependencies must be validated before committing to launch versions.
-* Platform conditionals are kept out of finance code behind interfaces: `ReceiptScanner`, `TextRecogniser`, `SecureKeyStore`, `FileImporter`, `ShareInbox`, `Notifications` and `BackgroundScheduler`.
+* Platform conditionals are kept out of finance code behind interfaces: `ReceiptScanner`, `TextRecogniser`, `SecureKeyStore`, `FileImporter`, `FileExporter`, `ShareInbox`, `Notifications` and `BackgroundScheduler`.
 * A decision prototype is a delivery prerequisite. It must prove an offline receipt capture, database encryption and key retrieval, a PDF import, share target handoff on both mobile systems, a two-device conflict, and signed builds on the five operating system families, plus a screen reader check of a basic workflow.
 * Dart and Java implement the finance rules separately and are held to the same behaviour by shared fixtures (see xref:architecture:shared-fixtures.adoc[]).

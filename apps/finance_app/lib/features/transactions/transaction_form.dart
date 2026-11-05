@@ -17,6 +17,7 @@ class TransactionForm extends StatefulWidget {
     this.onCancel,
     this.refundCandidates = const [],
     this.onInterrupted,
+    this.tagSuggestions = const [],
   });
 
   final TransactionFormModel model;
@@ -28,6 +29,10 @@ class TransactionForm extends StatefulWidget {
 
   /// Called when the app is sent to the background with unsaved input.
   final ValueChanged<TransactionFormModel>? onInterrupted;
+
+  /// Tags already in use, most used first, so the same tag is not typed two
+  /// slightly different ways.
+  final List<String> tagSuggestions;
 
   @override
   State<TransactionForm> createState() => _TransactionFormState();
@@ -70,7 +75,15 @@ class _TransactionFormState extends State<TransactionForm>
     super.dispose();
   }
 
+  void _addTag(String text) {
+    final tag = normaliseTag(text);
+    if (tag.isNotEmpty) model.tags.add(tag);
+    _tagController.clear();
+  }
+
   Future<void> _save() async {
+    // A tag still being typed is what the person wants, not something to lose.
+    _addTag(_tagController.text);
     setState(() => _showErrors = true);
     if (model.errors.isNotEmpty || _saving) return;
     setState(() => _saving = true);
@@ -79,6 +92,28 @@ class _TransactionFormState extends State<TransactionForm>
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  List<Widget> _tagSuggestionChips() {
+    final typed = normaliseTag(_tagController.text);
+    final matches = widget.tagSuggestions
+        .where((tag) => !model.tags.contains(tag) && tag.contains(typed))
+        .take(8);
+    if (matches.isEmpty) return const [];
+    return [
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          for (final tag in matches)
+            ActionChip(
+              label: Text(tag),
+              onPressed: () => setState(() => _addTag(tag)),
+            ),
+        ],
+      ),
+    ];
   }
 
   Future<void> _pickDate() async {
@@ -234,6 +269,23 @@ class _TransactionFormState extends State<TransactionForm>
                 }),
               ),
             ],
+            if (model.type == TransactionType.expense) ...[
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Someone will pay me back'),
+                subtitle: model.paidForSomeone
+                    ? const Text(
+                        'This will not count as your spending. It is added to '
+                        'what you are owed, until you record the repayment.',
+                      )
+                    : null,
+                value: model.paidForSomeone,
+                onChanged: editingTypeLocked
+                    ? null
+                    : (value) => setState(() => model.paidForSomeone = value),
+              ),
+              const SizedBox(height: 8),
+            ],
             if (model.needsCategory) ...[
               const SizedBox(height: 16),
               if (!model.splitMode)
@@ -327,15 +379,13 @@ class _TransactionFormState extends State<TransactionForm>
                       labelText: 'Add tag',
                       hintText: 'holiday, reimbursable',
                     ),
-                    onSubmitted: (v) => setState(() {
-                      final tag = v.trim().toLowerCase();
-                      if (tag.isNotEmpty) model.tags.add(tag);
-                      _tagController.clear();
-                    }),
+                    onChanged: (_) => setState(() {}),
+                    onSubmitted: (v) => setState(() => _addTag(v)),
                   ),
                 ),
               ],
             ),
+            ..._tagSuggestionChips(),
             const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,

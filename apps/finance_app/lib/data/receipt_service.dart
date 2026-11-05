@@ -650,14 +650,24 @@ class ReceiptService {
   /// Writes every receipt's original files into [directory] with a
   /// `manifest.json` describing fields, links and SHA-256 hashes (EXP 01).
   /// Originals only on the server are listed as not exported.
-  Future<int> exportOriginals(Directory directory) async {
+  Future<int> exportOriginals(Directory directory) async =>
+      (await exportOriginalsWithin(directory)).written;
+
+  /// [exportOriginals], limited to the receipts that belong to [year] when it
+  /// is given, and saying how many files are only on the server.
+  Future<({int written, int onServerOnly})> exportOriginalsWithin(
+    Directory directory, {
+    DateRange? year,
+  }) async {
     await directory.create(recursive: true);
     final entries = <Map<String, Object?>>[];
     var written = 0;
+    var onServerOnly = 0;
     for (final receipt in receipts()) {
       final extraction = extractionFor(receipt);
       final fields =
           extraction?.suggested.merge(receipt.confirmed) ?? receipt.confirmed;
+      if (year != null && !_belongsTo(receipt, fields, year)) continue;
       final files = <Map<String, Object?>>[];
       for (final asset in _store.vault.assetsFor(
         ReceiptEntityTypes.receipt,
@@ -677,6 +687,7 @@ class ReceiptService {
             'sha256': asset.sha256,
             'note': 'stored only on the server',
           });
+          onServerOnly++;
           continue;
         }
         await File('${directory.path}/$name')
@@ -708,7 +719,25 @@ class ReceiptService {
         'receipts': entries,
       }),
     );
-    return written;
+    return (written: written, onServerOnly: onServerOnly);
+  }
+
+  /// A receipt belongs to the year of the entries it is attached to. One not
+  /// attached to anything goes by its own date, or when it was captured.
+  bool _belongsTo(Receipt receipt, ReceiptFields fields, DateRange year) {
+    final linked = linksFor(receipt.id);
+    if (linked.isNotEmpty) {
+      final dates = {
+        for (final j in state.ledger.journals) j.id: j.effectiveDate,
+      };
+      return linked.any((link) {
+        final date = dates[link.journalId];
+        return date != null && year.contains(date);
+      });
+    }
+    return year.contains(
+      fields.date ?? LocalDate.fromDateTime(receipt.capturedAt.toLocal()),
+    );
   }
 
   /// Reads each image page on its own and proposes where separate receipts

@@ -17,6 +17,7 @@ class AppServices {
     required this.capabilities,
     required this.scanner,
     required this.fileImporter,
+    required this.fileExporter,
     required this.shareInbox,
     required this.notifications,
     required this.textRecogniser,
@@ -28,6 +29,7 @@ class AppServices {
   final PlatformCapabilities capabilities;
   final ReceiptScanner scanner;
   final FileImporter fileImporter;
+  final FileExporter fileExporter;
   final ShareInbox shareInbox;
   final Notifications notifications;
   final TextRecogniser textRecogniser;

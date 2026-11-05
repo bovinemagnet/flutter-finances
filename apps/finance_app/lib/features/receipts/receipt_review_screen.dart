@@ -8,6 +8,7 @@ import '../../app/app_scope.dart';
 import '../../app/breakpoints.dart';
 import '../../data/app_state.dart';
 import '../../format/formatters.dart';
+import '../../platform/pdf_reader.dart';
 import '../../platform/image_tools.dart';
 import 'image_edit_screen.dart';
 
@@ -160,7 +161,11 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
             case final type? when type != 'application/pdf')
           page,
     ];
-    final preview = _PagePreview(pages: pages, read: service.readPage);
+    final preview = _PagePreview(
+      pages: pages,
+      read: service.readPage,
+      pdfReader: AppScope.servicesOf(context).pdfReader,
+    );
     final form = ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -701,9 +706,14 @@ class _ReadAgainCard extends StatelessWidget {
 }
 
 class _PagePreview extends StatelessWidget {
-  const _PagePreview({required this.pages, required this.read});
+  const _PagePreview({
+    required this.pages,
+    required this.read,
+    required this.pdfReader,
+  });
   final List<ReceiptPage> pages;
   final Future<Uint8List> Function(ReceiptPage page) read;
+  final PdfReader? pdfReader;
 
   @override
   Widget build(BuildContext context) {
@@ -731,43 +741,96 @@ class _PagePreview extends StatelessWidget {
                   bytes.length > 4 &&
                   String.fromCharCodes(bytes.sublist(0, 4)) == '%PDF';
               if (isPdf) {
-                return Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.picture_as_pdf_outlined, size: 64),
-                      Text('PDF receipt, page ${page.pageNumber}'),
-                    ],
-                  ),
+                return _PdfPagePreview(
+                  key: ValueKey(page.id),
+                  page: page,
+                  pdf: bytes,
+                  reader: pdfReader,
                 );
               }
-              return InteractiveViewer(
-                maxScale: 6,
-                child: Semantics(
-                  label:
-                      'Receipt image, page ${page.pageNumber}. The fields beside it can be edited.',
-                  image: true,
-                  child: Image.memory(
-                    bytes,
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, _, _) => const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Text(
-                          'This image cannot be shown on this device. '
-                          'Your original is still saved.',
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              );
+              return _PageImage(page: page, bytes: bytes);
             },
           ),
       ],
     );
   }
+}
+
+/// One page drawn as an image, to check the fields beside it against.
+class _PageImage extends StatelessWidget {
+  const _PageImage({required this.page, required this.bytes});
+  final ReceiptPage page;
+  final Uint8List bytes;
+
+  @override
+  Widget build(BuildContext context) => InteractiveViewer(
+    maxScale: 6,
+    child: Semantics(
+      label:
+          'Receipt image, page ${page.pageNumber}. The fields beside it can be edited.',
+      image: true,
+      child: Image.memory(
+        bytes,
+        fit: BoxFit.contain,
+        errorBuilder: (context, _, _) => const Center(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'This image cannot be shown on this device. '
+              'Your original is still saved.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// A page of a PDF. Drawing one is slow, so it happens once however often the
+/// screen rebuilds. The receipt is still safe if it cannot be drawn.
+class _PdfPagePreview extends StatefulWidget {
+  const _PdfPagePreview({
+    super.key,
+    required this.page,
+    required this.pdf,
+    required this.reader,
+  });
+  final ReceiptPage page;
+  final Uint8List pdf;
+  final PdfReader? reader;
+
+  @override
+  State<_PdfPagePreview> createState() => _PdfPagePreviewState();
+}
+
+class _PdfPagePreviewState extends State<_PdfPagePreview> {
+  late final Future<Uint8List>? _drawn = widget.reader?.renderPage(
+    widget.pdf,
+    widget.page.sourcePageIndex,
+  );
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<Uint8List>(
+    future: _drawn,
+    builder: (context, snapshot) {
+      if (snapshot.hasData) {
+        return _PageImage(page: widget.page, bytes: snapshot.data!);
+      }
+      if (_drawn != null && !snapshot.hasError) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.picture_as_pdf_outlined, size: 64),
+            Text('PDF receipt, page ${widget.page.pageNumber}'),
+          ],
+        ),
+      );
+    },
+  );
 }
 
 const _reconciliationText = {

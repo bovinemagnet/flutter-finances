@@ -68,8 +68,26 @@ The `RestorePreview` carries the manifest, the issues, expected and actual count
 
 The store's `stageRestore` produces a `RestorePreview` (a separate class from the core one of the same name) with expected and restored counts, checksum failures, missing and unavailable assets, unbalanced journals, pending commands and the accepted cursor. The restored workspace is staged beside the current one with a new workspace id and device id, starts local only, and nothing touches the target until it is activated. `canActivate` requires a compatible schema, no checksum failures, no missing assets, no unbalanced journals and matching counts.
 
+== Delivering files [[delivering-files]]
+
+Backups, the CSV export, the receipts export and the financial year pack all leave the app through a `FileExporter` (`apps/finance_app/lib/platform`). iOS and Android do not offer the save and folder dialogs that `file_selector` provides on desktop ("Choose a save location" is unsupported on both, and "Choose a directory" on iOS), so on a phone these exports previously did not work. There are two implementations.
+
+* `DesktopFileExporter` uses a save dialog for a file and a folder dialog for a folder. If the chosen folder already exists, the export is written to a new one named with `-2` and so on, and nothing is written over.
+* `ShareFileExporter` uses the share sheet. A folder is shared as one zip file. The temporary copy holds unencrypted receipts, so it is always deleted once the share finishes. On Android the `share_plus` plugin also keeps its own copy in the app's cache until the next share.
+
+A backup is recorded as made (and the reminder cleared) only once the person has kept it, and a failure is shown rather than ignored.
+
+Restoring a backup on iOS did not work before, because the file picker refuses a filter that has no type identifier. On phones the filter now offers all files, and the restore checks what was chosen. This has been run on the iOS simulator and on an Android emulator release build: a backup was made and restored on each, including a backup made on iOS and restored on Android.
+
 == In the application
 
 * *Backup reminders (DATA 02).* Data kept only on the device can be recovered only from a backup the user made, so for a local-only workspace the Overview page shows a reminder with a "Back up" action. It appears when the data has never been backed up and at least 10 changes were made, when the last backup is 30 or more days old and there are newer changes, or when 200 or more changes have been made since the last backup. Preferences and entry drafts are not counted. A synced workspace shows no reminder. `AppState.recordBackup` records the time and change count that the reminder compares against, and the backup action in settings calls it after `exportBackup`, so making a backup clears the reminder until new data changes or 30 days pass.
 * *Storage report and freeing space (NFR 10).* Settings shows how much space the device uses: receipts, readable copies, previews and the database, and how much of that is not yet backed up to the server and is never removed. When local copies of receipts that are confirmed on the server exist, "Free" removes the least recently used ones. Previews and unsynced files are never removed.
+* *Financial year pack.* Settings, "Financial year pack" asks for a July to June year, listed newest first from the year of the earliest entry to the current year, and produces a folder such as `finance-FY2025-26`:
+** `transactions.csv`: that year's entries, in the same format as the transaction export.
+** `summary.csv`: the columns `Section`, `Item` and `Amount`, holding income, expenses and net totals, spending by category, spending by tag, and what was owed to the person at the end of the year. The figures come from the same reports the app shows, and names are sanitised against spreadsheet formulas.
+** `receipts/`: the original files and a `manifest.json`, in the same format as the receipts export.
+** `README.txt`.
++
+A receipt belongs to the year of the entries it is attached to. A receipt attached to nothing goes by its own date, and otherwise by when it was captured. Files held only on the server are listed in the manifest but not copied, and the app says how many. The pack is a record of what was entered. It is not tax advice and does not work out what can be claimed, because tax return preparation is outside the product's scope.
 * *Receipt export (EXP 01).* "Export receipts" writes the original files and a `manifest.json`; see xref:platform:receipt-capture.adoc[]. It is not a backup and is not restorable.

@@ -1,13 +1,14 @@
-import 'dart:io';
-
 import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
 import 'package:flutter/material.dart';
 
+import '../../platform/services.dart';
 import '../../app/app_scope.dart';
 import '../../app/appearance.dart';
 import '../../features/imports/import_screen.dart';
+import '../../data/year_pack.dart';
 import '../../features/settings/rules_screen.dart';
+import '../../features/settings/tags_screen.dart';
 import '../../format/formatters.dart';
 
 /// Data, security, planning preferences and device information.
@@ -75,12 +76,12 @@ class SettingsPage extends StatelessWidget {
           'Keep it safe: without it the backup cannot be opened.',
     );
     if (secret == null) return;
-    final path = await services.fileImporter.chooseSaveLocation(
-      'finances-${state.today()}.fsbackup',
-    );
-    if (path == null) return;
     try {
-      await exportBackup(state.store, File(path), recoverySecret: secret);
+      final outcome = await services.fileExporter.exportFile(
+        'finances-${state.today()}.fsbackup',
+        (file) => exportBackup(state.store, file, recoverySecret: secret),
+      );
+      if (outcome == ExportOutcome.cancelled) return;
       await state.recordBackup();
       messenger.showSnackBar(
         const SnackBar(content: Text('Encrypted backup saved')),
@@ -94,30 +95,81 @@ class SettingsPage extends StatelessWidget {
     final state = AppScope.of(context);
     final services = AppScope.servicesOf(context);
     final messenger = ScaffoldMessenger.of(context);
-    final path = await services.fileImporter.chooseSaveLocation(
-      'transactions-${state.today()}.csv',
-    );
-    if (path == null) return;
-    await File(
-      path,
-    ).writeAsString(exportTransactionsCsv(state.ledger.journals, state.chart));
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Transactions exported')),
-    );
+    try {
+      final outcome = await services.fileExporter.exportFile(
+        'transactions-${state.today()}.csv',
+        (file) => file.writeAsString(
+          exportTransactionsCsv(state.ledger.journals, state.chart),
+        ),
+      );
+      if (outcome == ExportOutcome.cancelled) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Transactions exported')),
+      );
+    } on Exception catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Export failed: $e')));
+    }
   }
 
   Future<void> _exportReceipts(BuildContext context) async {
     final state = AppScope.of(context);
     final services = AppScope.servicesOf(context);
     final messenger = ScaffoldMessenger.of(context);
-    final path = await services.fileImporter.chooseDirectory();
-    if (path == null) return;
-    final count = await state.receipts.exportOriginals(
-      Directory('$path/receipts-${state.today()}'),
+    var count = 0;
+    try {
+      final outcome = await services.fileExporter.exportFolder(
+        'receipts-${state.today()}',
+        (folder) async => count = await state.receipts.exportOriginals(folder),
+      );
+      if (outcome == ExportOutcome.cancelled) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Exported $count receipt files with a manifest'),
+        ),
+      );
+    } on Exception catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Export failed: $e')));
+    }
+  }
+
+  Future<void> _exportYearPack(BuildContext context) async {
+    final state = AppScope.of(context);
+    final services = AppScope.servicesOf(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final year = await showDialog<DateRange>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Which financial year?'),
+        children: [
+          for (final year in state.financialYears)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(year),
+              child: Text(year.label),
+            ),
+        ],
+      ),
     );
-    messenger.showSnackBar(
-      SnackBar(content: Text('Exported $count receipt files with a manifest')),
-    );
+    if (year == null) return;
+    YearPackResult? result;
+    try {
+      final outcome = await services.fileExporter.exportFolder(
+        yearPackName(year),
+        (folder) async => result = await writeYearPack(state, folder, year),
+      );
+      if (outcome == ExportOutcome.cancelled) return;
+      final missing = result!.onServerOnly;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Saved the ${year.label} pack with ${result!.receiptFiles} receipt '
+            'files.${missing == 0 ? '' : ' $missing more are not on this '
+                      'device, so are listed but not included.'}',
+          ),
+        ),
+      );
+    } on Exception catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Export failed: $e')));
+    }
   }
 
   Future<void> _freeSpace(BuildContext context, int bytes) async {
@@ -258,6 +310,14 @@ class SettingsPage extends StatelessWidget {
           onTap: () => _import(context),
         ),
         ListTile(
+          leading: const Icon(Icons.sell_outlined),
+          title: const Text('Tags'),
+          subtitle: const Text('Rename or merge the tags on your entries'),
+          onTap: () =>
+              Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const TagsScreen())),
+        ),
+        ListTile(
           leading: const Icon(Icons.rule),
           title: const Text('Categorisation rules'),
           onTap: () =>
@@ -279,6 +339,15 @@ class SettingsPage extends StatelessWidget {
                 : 'Includes receipts and every entry, with checksums.',
           ),
           onTap: () => _backup(context),
+        ),
+        ListTile(
+          leading: const Icon(Icons.event_note_outlined),
+          title: const Text('Financial year pack'),
+          subtitle: const Text(
+            'Transactions, totals and receipts for one July to June year. '
+            'A record, not tax advice.',
+          ),
+          onTap: () => _exportYearPack(context),
         ),
         ListTile(
           leading: const Icon(Icons.folder_zip_outlined),

@@ -54,6 +54,10 @@ class Posting {
   String toString() => '$ledgerAccountId ${amount.toDecimalString()}';
 }
 
+/// A tag as it is stored: tags that differ only in case or spacing are the
+/// same tag.
+String normaliseTag(String tag) => tag.trim().toLowerCase();
+
 @immutable
 class Journal {
   Journal({

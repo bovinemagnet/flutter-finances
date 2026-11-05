@@ -181,11 +181,14 @@ A document of several receipts, such as a multi-page PDF or a scan with several 
 
 A receipt date such as 03/04 is ambiguous. In settings, "Receipt dates like 03/04" chooses whether it is read day first ("3 April", the default) or month first ("4 March"). The choice is passed to the parser as the `DateConvention` and applies to receipts read afterwards (OCR 04). The other reading is still kept as an alternative for the user to choose.
 
+== PDF preview
+
+For a PDF receipt, the review screen draws the actual page. The page is rendered once, however often the screen rebuilds. If the page cannot be drawn, or no PDF engine is available on the device, the screen shows an icon instead.
+
 == Exporting receipts
 
-Settings has "Export receipts" (EXP 01). It writes every receipt's original source files, unchanged, to a folder, named `<receiptId>-<n>` with an extension from the content type, and a `manifest.json` (`format` `finance.receipts`, `formatVersion` 1). For each receipt the manifest holds the capture time, the confirmed or suggested merchant, date, total and tax, the currency, the linked journal ids, and for each file its name, SHA-256 and content type. A file whose bytes are held only on the server is listed with no file name and the note "stored only on the server". Readable derivatives are not exported.
+Settings has "Export receipts" (EXP 01). It writes every receipt's original source files, unchanged, to a folder, named `<receiptId>-<n>` with an extension from the content type, and a `manifest.json` (`format` `finance.receipts`, `formatVersion` 1). For each receipt the manifest holds the capture time, the confirmed or suggested merchant, date, total and tax, the currency, the linked journal ids, and for each file its name, SHA-256 and content type. A file whose bytes are held only on the server is listed with no file name and the note "stored only on the server". Readable derivatives are not exported. How the folder is delivered depends on the device; see xref:domain:exports-and-backups.adoc#delivering-files[Delivering files].
 
 == Not yet implemented
 
-* Showing the PDF page itself on the review screen, which shows an icon for now.
 * Trying the iOS share extension on a physical iPhone with a signed build.

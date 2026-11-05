@@ -212,6 +212,48 @@ void main() {
       );
     });
 
+    test(
+      'the projection shows annotations, as a single journal does',
+      () async {
+        final j = await store.postTransaction(
+          expense('10.00', payee: 'Corner Grocer'),
+        );
+        final untouched = await store.postTransaction(expense('20.00'));
+        await store.annotateTransaction(
+          j.id,
+          payee: 'Corner Shop',
+          tags: {'holiday'},
+        );
+        final journals = {for (final x in store.projection().journals) x.id: x};
+        expect(journals[j.id]!.payee, 'Corner Shop');
+        expect(journals[j.id]!.tags, {'holiday'});
+        expect(journals[j.id]!.postings, j.postings);
+        expect(journals[untouched.id]!.tags, isEmpty);
+      },
+    );
+
+    test('retagging changes all the journals, or none', () async {
+      final a = await store.postTransaction(expense('10.00'));
+      final b = await store.postTransaction(expense('20.00'));
+      final before = store.pendingCommandCount;
+      await store.retagTransactions({
+        a.id: {'holiday'},
+        b.id: {'holiday', 'kids'},
+      });
+      expect(store.journal(a.id)!.tags, {'holiday'});
+      expect(store.journal(b.id)!.tags, {'holiday', 'kids'});
+      expect(store.pendingCommandCount, before + 2);
+      await expectLater(
+        store.retagTransactions({
+          a.id: {'work'},
+          'no-such-journal': {'work'},
+        }),
+        throwsA(isA<EntityNotFoundException>()),
+      );
+      expect(store.journal(a.id)!.tags, {'holiday'});
+      expect(store.pendingCommandCount, before + 2);
+    });
+
     test('annotations change metadata without touching postings', () async {
       final j = await store.postTransaction(expense('9.00', payee: 'Cafe'));
       await store.annotateTransaction(

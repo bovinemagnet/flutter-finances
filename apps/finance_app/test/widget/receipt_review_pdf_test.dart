@@ -27,6 +27,40 @@ class _Reader implements PdfReader {
       throw UnimplementedError();
 }
 
+/// Draws any page as a small image, and remembers which it was asked for.
+class _DrawingReader implements PdfReader {
+  _DrawingReader({this.fails = false});
+  final bool fails;
+  final drawn = <int>[];
+
+  @override
+  Future<List<String>> pageText(Uint8List pdf, {required int maxPages}) async =>
+      const [];
+
+  @override
+  Future<Uint8List> renderPage(Uint8List pdf, int pageIndex) async {
+    drawn.add(pageIndex);
+    if (fails) throw const PdfReadException('This PDF could not be read');
+    return Uint8List.fromList(img.encodePng(img.Image(width: 40, height: 60)));
+  }
+}
+
+AppServices _withPdfReader(PdfReader? reader) {
+  final base = testServices();
+  return AppServices(
+    capabilities: base.capabilities,
+    scanner: base.scanner,
+    fileImporter: base.fileImporter,
+    fileExporter: base.fileExporter,
+    shareInbox: base.shareInbox,
+    notifications: base.notifications,
+    textRecogniser: base.textRecogniser,
+    workspaceDirectory: base.workspaceDirectory,
+    authenticator: base.authenticator,
+    pdfReader: reader,
+  );
+}
+
 void main() {
   setUpAll(() => initializeDateFormatting('en_AU'));
   late Directory dir;
@@ -38,7 +72,11 @@ void main() {
     await dir.delete(recursive: true);
   });
 
-  Future<String> open(WidgetTester tester, CapturedFile file) async {
+  Future<String> open(
+    WidgetTester tester,
+    CapturedFile file, {
+    PdfReader? previewReader,
+  }) async {
     late String receiptId;
     await tester.runAsync(() async {
       final store = await FinanceStore.create(
@@ -67,7 +105,7 @@ void main() {
     await tester.pumpWidget(
       AppScope(
         state: state,
-        services: testServices(),
+        services: _withPdfReader(previewReader),
         child: MaterialApp(home: ReceiptReviewScreen(receiptId: receiptId)),
       ),
     );
@@ -81,6 +119,72 @@ void main() {
     ]),
     source: CaptureSource.fileImport,
   );
+
+  group('the PDF page', () {
+    Future<void> settle(WidgetTester tester) async {
+      await tester.runAsync(() => Future<void>.delayed(Durations.long2));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('is shown for checking against', (tester) async {
+      final reader = _DrawingReader();
+      await open(tester, pdf(), previewReader: reader);
+      await settle(tester);
+      expect(reader.drawn, [0]);
+      expect(find.byType(Image), findsOneWidget);
+      expect(find.text('PDF receipt, page 1'), findsNothing);
+      expect(
+        find.bySemanticsLabel(RegExp('Receipt image, page 1')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('draws each page of a longer PDF', (tester) async {
+      final reader = _DrawingReader();
+      await open(
+        tester,
+        CapturedFile(
+          textPdf([
+            ['one'],
+            ['two'],
+          ]),
+          source: CaptureSource.fileImport,
+        ),
+        previewReader: reader,
+      );
+      await settle(tester);
+      expect(reader.drawn.first, 0);
+      await tester.drag(find.byType(PageView), const Offset(-500, 0));
+      await settle(tester);
+      expect(reader.drawn, contains(1));
+    });
+
+    testWidgets('is drawn once, however often the screen rebuilds', (
+      tester,
+    ) async {
+      final reader = _DrawingReader();
+      await open(tester, pdf(), previewReader: reader);
+      await settle(tester);
+      await tester.runAsync(() async => state.refresh());
+      await settle(tester);
+      expect(reader.drawn, [0]);
+    });
+
+    testWidgets('falls back to an icon when it cannot be drawn', (
+      tester,
+    ) async {
+      await open(tester, pdf(), previewReader: _DrawingReader(fails: true));
+      await settle(tester);
+      expect(find.text('PDF receipt, page 1'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('falls back to an icon with no PDF engine', (tester) async {
+      await open(tester, pdf());
+      await settle(tester);
+      expect(find.text('PDF receipt, page 1'), findsOneWidget);
+    });
+  });
 
   testWidgets('a PDF shows what was read for checking', (tester) async {
     await open(tester, pdf());

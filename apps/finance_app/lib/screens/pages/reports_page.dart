@@ -8,6 +8,7 @@ enum ReportKind {
   incomeVsExpenses('Income and expenses'),
   byCategory('Spending by category'),
   byPayee('Spending by merchant'),
+  byTag('Spending by tag'),
   budgetVsActual('Budget and actual'),
   balances('Account balances'),
   netWorth('Net worth history'),
@@ -83,6 +84,11 @@ class _ReportsPageState extends State<ReportsPage> {
         includesUnsyncedChanges: unsynced,
       ),
       ReportKind.byPayee => spendingByPayee(
+        ledger,
+        range,
+        includesUnsyncedChanges: unsynced,
+      ),
+      ReportKind.byTag => spendingByTag(
         ledger,
         range,
         includesUnsyncedChanges: unsynced,

@@ -2,6 +2,7 @@ import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
 import 'package:flutter/material.dart';
 
+import '../../app/app_scope.dart';
 import '../../app/theme.dart';
 import '../../data/bank_feed_service.dart';
 import '../../data/sync_controller.dart';
@@ -157,6 +158,7 @@ class _BankFeedsScreenState extends State<BankFeedsScreen> {
           ),
           body: TransactionForm(
             model: form,
+            tagSuggestions: AppScope.of(context).knownTags,
             onCancel: () => Navigator.of(context).pop(false),
             onSave: (draft) async {
               final navigator = Navigator.of(context);

@@ -18,6 +18,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:intl/date_symbol_data_local.dart';
 
+import '../support/test_services.dart' show NoExports;
+
 const _fastKdf = Argon2idParameters(
   memoryKiB: 64,
   iterations: 1,
@@ -31,10 +33,6 @@ class _NoFiles implements FileImporter {
   Future<CapturedFile?> pickStatement() async => null;
   @override
   Future<String?> pickBackupPath() async => null;
-  @override
-  Future<String?> chooseDirectory() async => null;
-  @override
-  Future<String?> chooseSaveLocation(String suggestedName) async => null;
 }
 
 class _NoScanner implements ReceiptScanner {
@@ -78,6 +76,7 @@ void main() {
           ),
           scanner: _NoScanner(),
           fileImporter: _NoFiles(),
+          fileExporter: NoExports(),
           shareInbox: EmptyShareInboxForTests(),
           notifications: _NoNotifications(),
           textRecogniser: UnavailableTextRecogniser(),

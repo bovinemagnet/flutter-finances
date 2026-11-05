@@ -53,6 +53,7 @@ class Report {
     this.range,
     this.asOf,
     this.includesUnsyncedChanges = false,
+    this.note,
   }) : columns = List.unmodifiable(columns),
        rows = List.unmodifiable(rows);
 
@@ -68,6 +69,9 @@ class Report {
   /// Whether the figures include local changes not yet synchronised
   /// (REP 04).
   final bool includesUnsyncedChanges;
+
+  /// Something to keep in mind when reading the figures.
+  final String? note;
 
   ReportRow? row(String key) {
     for (final row in rows) {
