@@ -45,7 +45,7 @@ The "Spending by tag" report shows net spending per tag, largest first, and each
 
 === Owed to you
 
-The `owedToMe` calculation in `finance_core` reports money that other people owe the user (FIN 06). The total is always the ledger's own balance of `system:reimbursement-receivable` and never a separate figure. Each debt is a reimbursable expense, and repayments are reimbursements linked to it through `refundOf`; a repayment still counts if its debt is later corrected. Money received that matches no debt is shown separately. The Overview page shows "Owed to you" with the total when it is above zero, and opens a screen listing each debt, oldest first. See xref:domain:ledger.adoc#owed-to-you[Owed to you] for how the entries are recorded.
+The `owedToMe` calculation in `finance_core` reports money that other people owe the user (FIN 06). The total is always the ledger's own balance of `system:reimbursement-receivable` and never a separate figure. Each debt is a reimbursable expense, and repayments are reimbursements linked to it through `refundOf`; a repayment still counts if its debt is later corrected. Money received that matches no debt is shown separately. The Overview page shows "Owed to you" with the total when it is above zero, and opens a screen listing each debt, oldest first. Each debt shows who owes it when a name was noted, and a debt with no payee or notes is titled "Paid for <name>". Names can be found through transaction search. See xref:domain:ledger.adoc#owed-to-you[Owed to you] for how the entries are recorded.
 
 Receipt coverage and the missing-receipt insight consider only posted purchases, meaning expense and reimbursable-expense journals that have not been reversed.
 
