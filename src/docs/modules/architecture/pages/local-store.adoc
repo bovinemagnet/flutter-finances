@@ -98,7 +98,7 @@ Everything that is not an account, category or journal (budget plans, recurring 
 
 A user action calls `StoreContext.record`, inside `write`, which applies the command to the local tables and appends it to the `outbox` table in the same transaction. Either both are committed or neither. See the sequence in xref:architecture:overview.adoc#_data_flow[Data flow].
 
-The outbox (`src/store/outbox.dart`) keeps commands in their original order with a unique `command_id` for their whole life, so a retry is always idempotent. Each row also holds the `undo_json` image of the affected entities (which powers undo until a command has been sent), the number of send `attempts`, the last error and the server's result. An entry has one of these statuses:
+The outbox (`src/store/outbox.dart`) keeps commands in their original order with a unique `command_id` for their whole life, so a retry is always idempotent. Each row also holds the `undo_json` image of the affected entities (which powers undo until a command has been sent; an action can be several commands saved together, such as an entry, the note of who owes it, and the review mark carried over when a reviewed entry is corrected, and undo reverses them as one), the number of send `attempts`, the last error and the server's result. The Undo button shown after saving an entry acts only on that action: if a later change has come first, or the action has started sending, it reverses nothing and says it can no longer be undone. An entry has one of these statuses:
 
 [cols="1,3",options="header"]
 |===

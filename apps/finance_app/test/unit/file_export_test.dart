@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
@@ -218,6 +219,59 @@ void main() {
       final exporter = ShareFileExporter(temporaryDirectory: temp);
       await exporter.clearLeftovers();
       expect(copies.existsSync(), isFalse);
+    });
+
+    test('a working folder left by a run that was killed is cleared', () async {
+      final working = Completer<Directory>();
+      // A share that never returns, as when the app dies with the sheet open.
+      unawaited(
+        ShareFileExporter(
+          temporaryDirectory: temp,
+          share: (path) {
+            working.complete(File(path).parent);
+            return Completer<bool>().future;
+          },
+        ).exportFile('a.csv', (f) => f.writeAsString('private')),
+      );
+      final left = await working.future;
+      expect(left.existsSync(), isTrue);
+
+      await ShareFileExporter(temporaryDirectory: temp).clearLeftovers();
+
+      expect(left.existsSync(), isFalse);
+    });
+
+    test('finishing one share leaves another export in progress', () async {
+      final writing = Completer<void>();
+      final finishWriting = Completer<void>();
+      final exporter = ShareFileExporter(
+        temporaryDirectory: temp,
+        share: (path) async => false,
+      );
+      final slow = exporter.exportFile('slow.csv', (f) async {
+        await f.writeAsString('half');
+        writing.complete();
+        await finishWriting.future;
+        await f.writeAsString('half and the rest');
+      });
+      await writing.future;
+
+      await exporter.exportFile('quick.csv', (f) => f.writeAsString('quick'));
+      finishWriting.complete();
+
+      expect(await slow, ExportOutcome.cancelled);
+    });
+
+    test('clearing leaves what other parts of the app cache', () async {
+      final other = await Directory('${temp.path}/image_cache').create();
+      final file = await File('${temp.path}/export.txt').writeAsString('x');
+      final similar = await Directory('${temp.path}/exports').create();
+
+      await ShareFileExporter(temporaryDirectory: temp).clearLeftovers();
+
+      expect(other.existsSync(), isTrue);
+      expect(file.existsSync(), isTrue);
+      expect(similar.existsSync(), isTrue);
     });
 
     test('clearing is fine when there is nothing there', () async {

@@ -48,7 +48,8 @@ class DesktopFileExporter implements FileExporter {
 /// Saves through the share sheet, the only way a phone offers: iOS and Android
 /// have no save dialog an app can open, and iOS has no folder dialog. A folder
 /// is shared as one zip. The temporary copy holds unencrypted receipts, so it is
-/// always deleted afterwards.
+/// deleted afterwards, or by [clearLeftovers] at the next start if the app was
+/// killed during the share.
 ///
 /// On Android the share plugin keeps a copy of its own in the cache, which it
 /// only clears on the next share. The app that received the file may not have
@@ -67,7 +68,27 @@ class ShareFileExporter implements FileExporter {
   final Duration clearAfter;
   Timer? _clearing;
 
+  /// Starts every working folder's name, so one left behind can be recognised.
+  static const _workingPrefix = 'finance-export-';
+
+  /// For start-up, when no export can be running: another export's working
+  /// folder must not be taken from under it.
   Future<void> clearLeftovers() async {
+    await _clearPluginCopy();
+    try {
+      if (!temporaryDirectory.existsSync()) return;
+      for (final entry in temporaryDirectory.listSync()) {
+        if (entry is Directory &&
+            entry.path.split('/').last.startsWith(_workingPrefix)) {
+          await entry.delete(recursive: true);
+        }
+      }
+    } on FileSystemException {
+      // As below: this is tried again at the next start.
+    }
+  }
+
+  Future<void> _clearPluginCopy() async {
     final copies = Directory('${temporaryDirectory.path}/share_plus');
     try {
       if (copies.existsSync()) await copies.delete(recursive: true);
@@ -99,7 +120,7 @@ class ShareFileExporter implements FileExporter {
   ) async {
     _clearing?.cancel();
     await temporaryDirectory.create(recursive: true);
-    final working = await temporaryDirectory.createTemp('export');
+    final working = await temporaryDirectory.createTemp(_workingPrefix);
     var shared = false;
     try {
       final path = await prepare(working);
@@ -108,9 +129,9 @@ class ShareFileExporter implements FileExporter {
     } finally {
       if (working.existsSync()) await working.delete(recursive: true);
       if (shared) {
-        _clearing = Timer(clearAfter, clearLeftovers);
+        _clearing = Timer(clearAfter, _clearPluginCopy);
       } else {
-        await clearLeftovers();
+        await _clearPluginCopy();
       }
     }
   }

@@ -133,6 +133,48 @@ void main() {
     expect(state.store.journal(journal.id), isNull);
   });
 
+  group('undoing a particular action', () {
+    TransactionDraft expense(int minor) => TransactionDraft(
+      type: TransactionType.expense,
+      accountId: 'bank',
+      amount: Money(minor, aud),
+      effectiveDate: today,
+      splits: [Split(categoryId('Groceries'), Money(minor, aud))],
+    );
+
+    test('undoes it while it is still the latest', () async {
+      await onboard();
+      final journal = await state.post(expense(500));
+      final action = state.store.lastUndoableAction!;
+      expect(await state.undoAction(action), isTrue);
+      expect(state.store.journal(journal.id), isNull);
+    });
+
+    test('never reverses a later action in its place', () async {
+      await onboard();
+      final journal = await state.post(expense(500));
+      final action = state.store.lastUndoableAction!;
+      await state.markReviewed([journal.id]);
+      expect(await state.undoAction(action), isFalse);
+      expect(state.store.journal(journal.id), isNotNull);
+      expect(state.reviewedJournalIds, contains(journal.id));
+    });
+
+    test('takes back a correction of a reviewed entry whole', () async {
+      await onboard();
+      final journal = await state.post(expense(500));
+      await state.markReviewed([journal.id]);
+      final result = await state.correct(journal.id, expense(700));
+      final action = state.store.lastUndoableAction!;
+      expect(action.type, CommandType.journalCorrect);
+      expect(await state.undoAction(action), isTrue);
+      expect(state.store.journal(journal.id)!.status, JournalStatus.posted);
+      expect(state.store.journal(result!.replacement!.id), isNull);
+      expect(state.reviewedJournalIds, contains(journal.id));
+      expect(state.reviewedJournalIds, isNot(contains(result.replacement!.id)));
+    });
+  });
+
   test('derived planning views come from persisted entities', () async {
     await onboard();
     expect(state.budgetEvaluation(), isNotNull);

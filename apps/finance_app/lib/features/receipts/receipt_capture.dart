@@ -2,6 +2,7 @@ import 'package:finance_core/finance_core.dart' show ExtractionState;
 import 'package:finance_store/finance_store.dart';
 import 'package:flutter/material.dart';
 
+import '../../app/action_snack_bar.dart';
 import '../../app/app_scope.dart';
 import '../../data/receipt_service.dart';
 import '../../platform/services.dart';
@@ -25,21 +26,18 @@ Future<void> scanReceipt(BuildContext context) async {
       case CaptureFailure.cancelled:
         return;
       case CaptureFailure.permissionDenied:
-        messenger.showSnackBar(
-          SnackBar(
-            content: const Text(
-              'Camera access was not allowed. You can still import a photo or PDF.',
-            ),
-            action: SnackBarAction(
-              label: 'Import',
-              onPressed: () async {
-                final files = await services.fileImporter.pickReceipts();
-                if (context.mounted && files.isNotEmpty) {
-                  await saveCapturedReceipt(context, files);
-                }
-              },
-            ),
+        showActionSnackBar(
+          messenger,
+          content: const Text(
+            'Camera access was not allowed. You can still import a photo or PDF.',
           ),
+          label: 'Import',
+          onPressed: () async {
+            final files = await services.fileImporter.pickReceipts();
+            if (context.mounted && files.isNotEmpty) {
+              await saveCapturedReceipt(context, files);
+            }
+          },
         );
       case CaptureFailure.unavailable:
       case CaptureFailure.failed:

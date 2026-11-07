@@ -584,6 +584,60 @@ void main() {
       await store.undoLastAction();
       expect(store.account('bank')!.name, 'Everyday');
     });
+
+    group('with something saved alongside it', () {
+      const type = 'transactionReview';
+      const id = '6f1d4c0e-6a54-4b9f-9d6e-0a3d3a1c7b11';
+      Future<void> saveAlongside() => store.upsertEntity(type, id, {
+        'id': id,
+        'reviewed': true,
+      }, withLastAction: true);
+
+      test('counts as one action', () async {
+        final j = await store.postTransaction(expense('5.00'));
+        await saveAlongside();
+        expect(store.lastUndoableAction!.entity, EntityRef('journal', j.id));
+      });
+
+      test('undoes both', () async {
+        final before = store.pendingCommandCount;
+        final j = await store.postTransaction(expense('5.00'));
+        await saveAlongside();
+        expect(await store.undoLastAction(), isTrue);
+        expect(store.journal(j.id), isNull);
+        expect(store.entity(type, id), isNull);
+        expect(store.pendingCommandCount, before);
+      });
+
+      test('undoes a correction that also noted who owes it', () async {
+        final j = await store.postTransaction(expense('5.00'));
+        final c = await store.correctTransaction(
+          j.id,
+          TransactionDraft(
+            type: TransactionType.reimbursableExpense,
+            accountId: 'bank',
+            amount: m('6.00'),
+            effectiveDate: d('2026-07-01'),
+            owedBy: 'Sam',
+          ),
+        );
+        await saveAlongside();
+        expect(await store.undoLastAction(), isTrue);
+        expect(store.journal(j.id)!.status, JournalStatus.posted);
+        expect(store.journal(c.replacement!.id), isNull);
+        expect(store.entity(type, id), isNull);
+      });
+
+      test('cannot be undone once the action has been sent', () async {
+        final j = await store.postTransaction(expense('5.00'));
+        final sent = store.pendingCommands().last.seq;
+        await saveAlongside();
+        store.context.outbox.recordAttempt([sent]);
+        expect(store.lastUndoableAction, isNull);
+        expect(await store.undoLastAction(), isFalse);
+        expect(store.journal(j.id), isNotNull);
+      });
+    });
   });
 
   test('saves survive reopening (acknowledged after commit)', () async {
