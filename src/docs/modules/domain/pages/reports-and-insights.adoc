@@ -30,8 +30,8 @@ Ledger reports use the posted ledger (posted and reversed journals plus their re
 | `netWorthHistory` | Net worth | A point at the end of each calendar month of the range (the range end for a partial last month), using the net-worth definition in xref:domain:net-worth.adoc[Net worth], including the reimbursement receivable.
 | `cashFlow` | Amount | For a chosen set of accounts: money in, money out, transfers between the accounts and net. A journal whose postings to the set net to zero is an internal transfer; otherwise its net effect crosses the boundary.
 | `receiptCoverage` | Entries (count), Amount | Posted purchases with and without a receipt.
-| `budgetVsActual` | Planned, Rollover, Adjustments, Actual, Pending, Remaining | One evaluated budget period, including unbudgeted spending.
-| `goalProgressReport` | Target, Allocated, Moved, Reserved, Funding gap | One row per goal; see xref:domain:goals-and-reservations.adoc[Goals and reservations].
+| `budgetVsActual` | Planned, Rollover, Adjustments, Actual, Pending, Remaining | One evaluated budget period, including unbudgeted spending. The Reports page does not apply its Period choice to it.
+| `goalProgressReport` | Target, Allocated, Moved, Reserved, Funding gap | One row per goal, as the goals stand now, so the Period choice does not affect it. Offered as "Goals" on the Reports page; see xref:domain:goals-and-reservations.adoc[Goals and reservations].
 |===
 
 [[spending-by-tag]]
@@ -50,6 +50,14 @@ The `owedToMe` calculation in `finance_core` reports money that other people owe
 Receipt coverage and the missing-receipt insight consider only posted purchases, meaning expense and reimbursable-expense journals that have not been reversed.
 
 The cash-flow report distinguishes transfers within the included account set from flows crossing its boundary, so moving money between two of the chosen accounts never counts as income or spending.
+
+=== Exporting a report
+
+The Reports page has an "Export CSV" button (EXP 01). It writes the report on screen with the same rows and figures as its table, using `exportReportAsCsv` in `finance_core`, and delivers the file through the `FileExporter`. The button is disabled when there is nothing to export. Text that starts with a spreadsheet formula prefix is sanitised; see xref:domain:exports-and-backups.adoc[Exports and backups].
+
+`reportExportName` names the file after the report and its period, for example `spending-by-category-2026-07-01-to-2027-06-30.csv`. A point-in-time report uses its as-at date, and a report with no date uses today's date. When the report includes unsynced changes (REP 04) the name ends `-includes-unsynced`, so that is still known once the file has left the app.
+
+In device-only mode the Reports page does not mark a report as including unsynced changes, because nothing is waiting to sync. Only a synced workspace with unsynced changes is marked.
 
 == Insights
 

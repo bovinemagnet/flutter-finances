@@ -152,6 +152,81 @@ void main() {
     });
   });
 
+  group('a whole report as CSV (EXP 01)', () {
+    Report report({
+      DateRange? range,
+      LocalDate? asOf,
+      bool unsynced = false,
+      String title = 'Spending by category',
+    }) => Report(
+      title: title,
+      keyLabel: 'Category',
+      range: range,
+      asOf: asOf,
+      includesUnsyncedChanges: unsynced,
+      columns: const [
+        ReportColumn('spent', 'Spent'),
+        ReportColumn('budget', 'Budget'),
+        ReportColumn('entries', 'Entries', kind: ReportValueKind.count),
+      ],
+      rows: [
+        ReportRow(
+          key: 'a',
+          label: 'Groceries',
+          amounts: {'spent': m('12.50'), 'budget': m('-1.00')},
+          counts: {'entries': 3},
+        ),
+        ReportRow(key: 'b', label: '=cmd', amounts: {'spent': m('0.00')}),
+      ],
+    );
+
+    test('has the key and every column, as the table shows them', () {
+      expect(
+        exportReportAsCsv(report()),
+        'Category,Spent,Budget,Entries\r\n'
+        'Groceries,12.50,-1.00,3\r\n'
+        '\'=cmd,0.00,,0\r\n',
+      );
+    });
+
+    test('is named after the report and its period', () {
+      expect(
+        reportExportName(
+          report(range: DateRange(d('2026-07-01'), d('2027-06-30'))),
+          today: d('2026-11-07'),
+        ),
+        'spending-by-category-2026-07-01-to-2027-06-30.csv',
+      );
+    });
+
+    test('is named with the date a point-in-time report is as at', () {
+      expect(
+        reportExportName(
+          report(asOf: d('2026-06-30'), title: 'Account balances'),
+          today: d('2026-11-07'),
+        ),
+        'account-balances-2026-06-30.csv',
+      );
+    });
+
+    test('is named with today when the report has no date', () {
+      expect(
+        reportExportName(report(title: 'Goals'), today: d('2026-11-07')),
+        'goals-2026-11-07.csv',
+      );
+    });
+
+    test('says in its name when it includes unsynced changes', () {
+      expect(
+        reportExportName(
+          report(title: 'Goals', unsynced: true),
+          today: d('2026-11-07'),
+        ),
+        'goals-2026-11-07-includes-unsynced.csv',
+      );
+    });
+  });
+
   group('archive manifest (DATA 01)', () {
     final journal = expense('j1', '63.25', '2026-07-01', payee: 'Grocer');
     final dataBytes = utf8.encode(jsonEncode([journalToJson(journal)]));

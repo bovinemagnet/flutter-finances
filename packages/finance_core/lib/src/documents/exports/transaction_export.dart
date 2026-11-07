@@ -3,6 +3,7 @@ import 'package:meta/meta.dart';
 import '../../ledger/accounts.dart';
 import '../../ledger/journal.dart';
 import '../../money/money.dart';
+import '../../planning/report.dart';
 import '../../time/local_date.dart';
 import 'csv_writer.dart';
 
@@ -158,3 +159,34 @@ String exportReportCsv(List<String> headers, Iterable<List<Object?>> rows) =>
             },
         ],
     ]);
+
+/// Exports [report] with the same rows and figures as its table.
+String exportReportAsCsv(Report report) => exportReportCsv(
+  [report.keyLabel, for (final column in report.columns) column.label],
+  [
+    for (final row in report.rows)
+      [
+        row.label,
+        for (final column in report.columns)
+          switch (column.kind) {
+            ReportValueKind.money => row.amounts[column.key],
+            ReportValueKind.count => row.counts[column.key] ?? 0,
+          },
+      ],
+  ],
+);
+
+/// A file name saying which report this is, for when, and whether it includes
+/// unsynced changes (REP 04), so that stays known once the file leaves the app.
+String reportExportName(Report report, {required LocalDate today}) {
+  final title = report.title
+      .toLowerCase()
+      .replaceAll(RegExp('[^a-z0-9]+'), '-')
+      .replaceAll(RegExp(r'^-|-$'), '');
+  final range = report.range;
+  final date = range != null
+      ? '${range.start}-to-${range.end}'
+      : '${report.asOf ?? today}';
+  final unsynced = report.includesUnsyncedChanges ? '-includes-unsynced' : '';
+  return '$title-$date$unsynced.csv';
+}
