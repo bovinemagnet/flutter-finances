@@ -112,9 +112,20 @@ class RulesScreen extends StatelessWidget {
     final undo = await state.applyRules(preview);
     showActionSnackBar(
       messenger,
-      content: Text('Changed ${undo.length} entries'),
+      content: Text('Changed ${undo.entries.length} entries'),
       label: 'Undo',
-      onPressed: () => state.undoRules(undo),
+      onPressed: () async {
+        final leftAlone = await state.undoRules(undo);
+        if (leftAlone == 0) return;
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              '$leftAlone of ${undo.entries.length} entries had changed, '
+              'so they were left as they are',
+            ),
+          ),
+        );
+      },
     );
   }
 

@@ -63,3 +63,5 @@ An entry already in the rule's category is neither a change nor a skip.
 == Undo
 
 `undoRuleApplication` reverses an application from its record, again through corrections for posted entries and in place for pending ones. It restores the previous category and the previous category source. An entry that has changed since the rules ran (it is missing, already reversed, or no longer in the applied category) is not touched and is reported in `conflicts` for the person to resolve.
+
+`undoRuleApplication` and the app's Undo (`AppState.undoRules`) both decide this with `changedSinceRules`, so they share one definition of "changed since the rules ran". The app also leaves a split entry it cannot move back as it is, and still undoes the other entries. The Rules screen then says how many entries were left, for example "1 of 3 entries had changed, so they were left as they are".
