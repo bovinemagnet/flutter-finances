@@ -91,7 +91,9 @@ class CategorisationRule {
   bool matches(RuleSubject subject) {
     if (!enabled) return false;
     if (merchant != null) {
-      final wanted = normaliseMerchant(merchant!).split(' ');
+      final normalised = normaliseMerchant(merchant!);
+      if (normalised.isEmpty) return false;
+      final wanted = normalised.split(' ');
       final words = normaliseMerchant(subject.merchant ?? '')
           .split(' ')
           .toSet();
