@@ -6,6 +6,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:file_selector/file_selector.dart' as file_selector;
 import 'package:path_provider/path_provider.dart';
 
+import 'app/action_snack_bar.dart';
 import 'app/app_lock.dart';
 import 'app/app_scope.dart';
 import 'app/appearance.dart';
@@ -107,6 +108,7 @@ class FinanceApp extends StatefulWidget {
 }
 
 class _FinanceAppState extends State<FinanceApp> {
+  final _actionSnackBars = ActionSnackBarObserver();
   AppState? _state;
   SyncController? _sync;
 
@@ -181,6 +183,7 @@ class _FinanceAppState extends State<FinanceApp> {
         Locale('en', 'US'),
       ],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      navigatorObservers: [_actionSnackBars],
       home: _state == null
           ? StartupScreen(
               gate: widget.gate,

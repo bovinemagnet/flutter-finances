@@ -4,6 +4,15 @@ import 'package:flutter/material.dart';
 import '../../app/action_snack_bar.dart';
 import '../../app/app_scope.dart';
 
+/// Says how many entries Undo left as they are, out of [total] it looked at.
+String rulesLeftAloneMessage(int leftAlone, int total) {
+  final entries = total == 1 ? 'entry' : 'entries';
+  final outcome = leftAlone == 1
+      ? 'it was left as it is'
+      : 'they were left as they are';
+  return '$leftAlone of $total $entries had changed, so $outcome';
+}
+
 /// Categorisation rules (AUTO 01). Rules apply only after a preview, never
 /// override a category the user chose, and can be undone as a group.
 class RulesScreen extends StatelessWidget {
@@ -23,6 +32,7 @@ class RulesScreen extends StatelessWidget {
             children: [
               TextField(
                 controller: merchant,
+                onChanged: (_) => setState(() {}),
                 decoration: const InputDecoration(
                   labelText: 'When the merchant contains',
                 ),
@@ -46,7 +56,8 @@ class RulesScreen extends StatelessWidget {
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: merchant.text.trim().isEmpty && categoryId == null
+              onPressed:
+                  normaliseMerchant(merchant.text).isEmpty || categoryId == null
                   ? null
                   : () => Navigator.of(context).pop(
                       CategorisationRule(
@@ -120,8 +131,7 @@ class RulesScreen extends StatelessWidget {
         messenger.showSnackBar(
           SnackBar(
             content: Text(
-              '$leftAlone of ${undo.entries.length} entries had changed, '
-              'so they were left as they are',
+              rulesLeftAloneMessage(leftAlone, undo.entries.length),
             ),
           ),
         );
