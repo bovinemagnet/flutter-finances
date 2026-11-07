@@ -320,7 +320,7 @@ class FinanceStore {
       _writeOwedBy(journal.id, journal.owedBy, _savedWithEntry);
 
   /// Describes a command saved straight after an entry as part of one action.
-  static const _savedWithEntry = 'Note who owes this';
+  static const _savedWithEntry = 'Saved with the entry';
 
   void _writeOwedBy(String journalId, String? owedBy, String description) {
     final ref = EntityRef(
@@ -765,11 +765,13 @@ class FinanceStore {
     String id,
     Map<String, Object?> json, {
     Set<String>? changedFields,
+    bool withLastAction = false,
   }) async {
     if (type == EntityTypes.journal) {
       throw ArgumentError('Use postTransaction for journals');
     }
     final ref = EntityRef(type, id);
+    final description = withLastAction ? _savedWithEntry : 'Save $type';
     _ctx.write(() {
       final current = _ctx.state.snapshot(ref);
       if (current != null && current.deleted) {
@@ -779,9 +781,9 @@ class FinanceStore {
         _ctx.validators[type]?.call({...?current?.json, ...json});
         _record(ref, CommandType.entityUpsert, {
           'fields': {for (final f in changedFields) f: json[f]},
-        }, 'Save $type');
+        }, description);
       } else {
-        _update(ref, json, 'Save $type', allowCreate: true);
+        _update(ref, json, description, allowCreate: true);
       }
     });
     return entity(type, id) ??
@@ -1160,7 +1162,7 @@ class FinanceStore {
     bool canUndo(OutboxEntry e) =>
         e.status == OutboxStatus.pending && e.attempts == 0 && e.undoable;
     if (!canUndo(entry)) return null;
-    if (entry.description == _savedWithEntry) {
+    while (entry.description == _savedWithEntry) {
       final saved = _ctx.outbox.bySeq(entry.seq - 1);
       if (saved == null || !canUndo(saved)) return null;
       entry = saved;
@@ -1181,9 +1183,13 @@ class FinanceStore {
     if (action == null) return false;
     _ctx.write(() {
       final entry = _ctx.outbox.byCommandId(action.commandId)!;
-      // Only a note of who owes it can follow the latest action's entry.
-      final note = _ctx.outbox.bySeq(entry.seq + 1);
-      for (final e in [?note, entry]) {
+      // Only what was saved with it can follow the latest action's entry.
+      final rows = _ctx.db.select(
+        'SELECT seq FROM outbox WHERE seq >= ? ORDER BY seq DESC',
+        [entry.seq],
+      );
+      for (final row in rows) {
+        final e = _ctx.outbox.bySeq(row['seq'] as int)!;
         for (final b in e.before.entries.toList().reversed) {
           _ctx.state.restore(b.key, b.value);
         }

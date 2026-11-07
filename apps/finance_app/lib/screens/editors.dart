@@ -1,6 +1,8 @@
 import 'package:finance_core/finance_core.dart';
+import 'package:finance_store/finance_store.dart' show UndoableAction;
 import 'package:flutter/material.dart';
 
+import '../app/action_snack_bar.dart';
 import '../app/app_scope.dart';
 import '../features/transactions/transaction_form.dart';
 import '../features/transactions/transaction_form_model.dart';
@@ -57,6 +59,7 @@ Future<void> openTransactionEditor(
               journal,
               today: state.today(),
             ));
+  UndoableAction? savedAction;
   final done = await Navigator.of(context).push<bool>(
     MaterialPageRoute(
       builder: (context) => Scaffold(
@@ -121,18 +124,30 @@ Future<void> openTransactionEditor(
             } else {
               await state.correct(journal.id, draft);
             }
+            savedAction = state.store.lastUndoableAction;
             if (context.mounted) Navigator.of(context).pop(true);
           },
         ),
       ),
     ),
   );
-  if (done == true) {
-    messenger.showSnackBar(
-      SnackBar(
-        content: const Text('Saved on this device'),
-        action: SnackBarAction(label: 'Undo', onPressed: state.undo),
-      ),
-    );
+  if (done != true) return;
+  const message = Text('Saved on this device');
+  final action = savedAction;
+  if (action == null) {
+    messenger.showSnackBar(const SnackBar(content: message));
+    return;
   }
+  showActionSnackBar(
+    messenger,
+    content: message,
+    label: 'Undo',
+    onPressed: () async {
+      if (!await state.undoAction(action)) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('This can no longer be undone')),
+        );
+      }
+    },
+  );
 }

@@ -29,7 +29,7 @@ void main() {
     await dir.delete(recursive: true);
   });
 
-  Future<void> pumpHost(WidgetTester tester) async {
+  Future<void> pumpHost(WidgetTester tester, {Journal? journal}) async {
     tester.view.physicalSize = const Size(600, 1600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -42,7 +42,8 @@ void main() {
             builder: (context) => Scaffold(
               body: Center(
                 child: FilledButton(
-                  onPressed: () => openTransactionEditor(context),
+                  onPressed: () =>
+                      openTransactionEditor(context, journal: journal),
                   child: const Text('New'),
                 ),
               ),
@@ -121,5 +122,77 @@ void main() {
     });
     await tester.pumpAndSettle();
     expect(find.text('12.50'), findsOneWidget);
+  });
+
+  group('after saving a change', () {
+    late Journal journal;
+
+    Future<void> saveAChange(WidgetTester tester) async {
+      await tester.runAsync(() async {
+        final store = await FinanceStore.create(
+          dir,
+          keyProtection: KeyProtection.password('secret', kdf: _fastKdf),
+        );
+        await store.createAccount(
+          const Account(
+            id: 'bank',
+            name: 'Everyday',
+            type: AccountType.transaction,
+          ),
+        );
+        await store.createCategory(
+          const Category(
+            id: 'shopping',
+            name: 'Shopping',
+            kind: CategoryKind.expense,
+          ),
+        );
+        state = AppState(store, today: () => LocalDate(2026, 10, 19));
+        journal = await state.post(
+          TransactionDraft(
+            type: TransactionType.expense,
+            accountId: 'bank',
+            amount: Money(10000, Currency.aud),
+            effectiveDate: LocalDate(2026, 10, 1),
+            splits: [Split('shopping', Money(10000, Currency.aud))],
+          ),
+        );
+      });
+      await pumpHost(tester, journal: journal);
+      await tester.tap(find.text('New'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.widgetWithText(TextField, 'Amount'), '12.50');
+      await tester.tap(find.text('Save changes'));
+      await tester.pumpAndSettle();
+      expect(find.text('Saved on this device'), findsOneWidget);
+    }
+
+    testWidgets('the offer to undo goes away by itself', (tester) async {
+      await saveAChange(tester);
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      expect(find.text('Undo'), findsNothing);
+    });
+
+    testWidgets('Undo reverses the change it was shown for', (tester) async {
+      await saveAChange(tester);
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(state.store.journal(journal.id)!.status, JournalStatus.posted);
+      expect(find.text('This can no longer be undone'), findsNothing);
+    });
+
+    testWidgets('Undo says so when a later change has come first', (
+      tester,
+    ) async {
+      await saveAChange(tester);
+      final head = state.store.journals().last;
+      await state.markReviewed([head.id]);
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(find.text('This can no longer be undone'), findsOneWidget);
+      expect(state.reviewedJournalIds, contains(head.id));
+      expect(state.store.journal(journal.id)!.status, JournalStatus.reversed);
+    });
   });
 }

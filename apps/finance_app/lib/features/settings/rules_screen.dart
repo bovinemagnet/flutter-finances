@@ -1,6 +1,7 @@
 import 'package:finance_core/finance_core.dart';
 import 'package:flutter/material.dart';
 
+import '../../app/action_snack_bar.dart';
 import '../../app/app_scope.dart';
 
 /// Categorisation rules (AUTO 01). Rules apply only after a preview, never
@@ -109,14 +110,11 @@ class RulesScreen extends StatelessWidget {
     );
     if (confirmed != true) return;
     final undo = await state.applyRules(preview);
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('Changed ${undo.length} entries'),
-        action: SnackBarAction(
-          label: 'Undo',
-          onPressed: () => state.undoRules(undo),
-        ),
-      ),
+    showActionSnackBar(
+      messenger,
+      content: Text('Changed ${undo.length} entries'),
+      label: 'Undo',
+      onPressed: () => state.undoRules(undo),
     );
   }
 

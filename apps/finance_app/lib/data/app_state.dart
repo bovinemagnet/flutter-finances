@@ -66,8 +66,13 @@ class AppState extends ChangeNotifier {
           if (!record.deleted) decode(record.json),
       ];
 
-  Future<void> _put(String type, String id, Map<String, Object?> json) async {
-    await store.upsertEntity(type, id, json);
+  Future<void> _put(
+    String type,
+    String id,
+    Map<String, Object?> json, {
+    bool withLastAction = false,
+  }) async {
+    await store.upsertEntity(type, id, json, withLastAction: withLastAction);
   }
 
   BudgetPlan? get budgetPlan {
@@ -292,7 +297,7 @@ class AppState extends ChangeNotifier {
     }
     final result = await store.correctTransaction(journalId, draft);
     if (reviewedJournalIds.contains(journalId) && result.replacement != null) {
-      await _setReviewed(result.replacement!.id, true);
+      await _setReviewed(result.replacement!.id, true, withLastAction: true);
     }
     refresh();
     return result;
@@ -314,8 +319,9 @@ class AppState extends ChangeNotifier {
 
   Future<void> _mergeReview(
     String journalId,
-    Map<String, Object?> fields,
-  ) async {
+    Map<String, Object?> fields, {
+    bool withLastAction = false,
+  }) async {
     final id = ownedEntityId(AppEntityTypes.transactionReview, journalId);
     final existing = store.entity(AppEntityTypes.transactionReview, id);
     await _put(AppEntityTypes.transactionReview, id, {
@@ -323,11 +329,16 @@ class AppState extends ChangeNotifier {
       'id': id,
       'journalId': journalId,
       ...fields,
-    });
+    }, withLastAction: withLastAction);
   }
 
-  Future<void> _setReviewed(String journalId, bool reviewed) =>
-      _mergeReview(journalId, {'reviewed': reviewed});
+  Future<void> _setReviewed(
+    String journalId,
+    bool reviewed, {
+    bool withLastAction = false,
+  }) => _mergeReview(journalId, {
+    'reviewed': reviewed,
+  }, withLastAction: withLastAction);
 
   Future<void> markReviewed(List<String> journalIds) async {
     for (final id in journalIds) {
@@ -685,6 +696,13 @@ class AppState extends ChangeNotifier {
     final undone = await store.undoLastAction();
     refresh();
     return undone;
+  }
+
+  /// Undoes [action] only while it is still the latest, so that a later change
+  /// is never reversed in its place.
+  Future<bool> undoAction(UndoableAction action) async {
+    if (store.lastUndoableAction?.commandId != action.commandId) return false;
+    return undo();
   }
 
   // Accounts and setup ----------------------------------------------------
