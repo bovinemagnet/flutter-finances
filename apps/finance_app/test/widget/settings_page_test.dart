@@ -9,7 +9,7 @@ import 'package:finance_app/platform/text_recognition.dart';
 import 'package:finance_app/screens/pages/settings_page.dart';
 import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Split;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
@@ -144,6 +144,11 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    Future<void> confirmExport(WidgetTester tester) async {
+      await tester.tap(find.widgetWithText(FilledButton, 'Export'));
+      await settle(tester);
+    }
+
     testWidgets('a year pack is chosen, written and reported', (tester) async {
       final exporter = FolderExporter(out);
       await pump(
@@ -168,9 +173,138 @@ void main() {
         services: (dir) => _servicesFor(dir, fileExporter: exporter),
       );
       await openAndTap(tester, 'Export transactions (CSV)');
-      await settle(tester);
+      await confirmExport(tester);
       expect(exporter.exported.single, endsWith('.csv'));
       expect(find.text('Transactions exported'), findsOneWidget);
+    });
+
+    testWidgets('choosing not to export writes nothing', (tester) async {
+      final exporter = FolderExporter(out);
+      await pump(
+        tester,
+        null,
+        services: (dir) => _servicesFor(dir, fileExporter: exporter),
+      );
+      await openAndTap(tester, 'Export transactions (CSV)');
+      await tester.tap(find.text('Cancel'));
+      await settle(tester);
+      expect(exporter.exported, isEmpty);
+    });
+
+    group('choosing what to export', () {
+      final today = LocalDate(2026, 10, 20);
+
+      Future<FolderExporter> pumpWithEntries(WidgetTester tester) async {
+        final exporter = FolderExporter(out);
+        await pump(
+          tester,
+          null,
+          services: (dir) => _servicesFor(dir, fileExporter: exporter),
+        );
+        await tester.runAsync(() async {
+          for (final id in ['everyday', 'savings']) {
+            await state.store.createAccount(
+              Account(id: id, name: id, type: AccountType.transaction),
+            );
+          }
+          await state.store.createCategory(
+            const Category(
+              id: 'shopping',
+              name: 'Shopping',
+              kind: CategoryKind.expense,
+            ),
+          );
+          Future<void> entry(
+            String payee,
+            String account,
+            LocalDate date, {
+            JournalStatus status = JournalStatus.posted,
+          }) => state.post(
+            TransactionDraft(
+              type: TransactionType.expense,
+              accountId: account,
+              amount: Money(900, Currency.aud),
+              effectiveDate: date,
+              payee: payee,
+              status: status,
+              splits: [Split('shopping', Money(900, Currency.aud))],
+            ),
+          );
+          await entry('In October', 'everyday', LocalDate(2026, 10, 1));
+          await entry('Last year', 'everyday', LocalDate(2025, 3, 1));
+          await entry('Other account', 'savings', LocalDate(2026, 10, 2));
+          await entry(
+            'Not settled',
+            'everyday',
+            LocalDate(2026, 10, 3),
+            status: JournalStatus.pending,
+          );
+        });
+        return exporter;
+      }
+
+      String written(FolderExporter exporter) =>
+          File('${out.path}/${exporter.exported.single}').readAsStringSync();
+
+      Future<void> choose(
+        WidgetTester tester,
+        String current,
+        String choice,
+      ) async {
+        await tester.tap(find.text(current));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(choice).last);
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('everything settled by default', (tester) async {
+        final exporter = await pumpWithEntries(tester);
+        await openAndTap(tester, 'Export transactions (CSV)');
+        await confirmExport(tester);
+
+        final csv = written(exporter);
+        expect(csv, contains('In October'));
+        expect(csv, contains('Last year'));
+        expect(csv, contains('Other account'));
+        expect(csv, isNot(contains('Not settled')));
+        expect(exporter.exported.single, 'transactions-$today.csv');
+      });
+
+      testWidgets('only a chosen period', (tester) async {
+        final exporter = await pumpWithEntries(tester);
+        await openAndTap(tester, 'Export transactions (CSV)');
+        await choose(tester, 'All time', 'This month');
+        await confirmExport(tester);
+
+        final csv = written(exporter);
+        expect(csv, contains('In October'));
+        expect(csv, isNot(contains('Last year')));
+        expect(
+          exporter.exported.single,
+          'transactions-2026-10-01-to-2026-10-31.csv',
+        );
+      });
+
+      testWidgets('only a chosen account', (tester) async {
+        final exporter = await pumpWithEntries(tester);
+        await openAndTap(tester, 'Export transactions (CSV)');
+        await choose(tester, 'All accounts', 'savings');
+        await confirmExport(tester);
+
+        final csv = written(exporter);
+        expect(csv, contains('Other account'));
+        expect(csv, isNot(contains('In October')));
+      });
+
+      testWidgets('pending entries when asked', (tester) async {
+        final exporter = await pumpWithEntries(tester);
+        await openAndTap(tester, 'Export transactions (CSV)');
+        await tester.tap(find.text('Include pending entries'));
+        await tester.pumpAndSettle();
+        await confirmExport(tester);
+
+        expect(written(exporter), contains('Not settled'));
+      });
     });
 
     testWidgets('receipts go through the exporter', (tester) async {
@@ -196,7 +330,7 @@ void main() {
         ),
       );
       await openAndTap(tester, 'Export transactions (CSV)');
-      await settle(tester);
+      await confirmExport(tester);
       expect(find.text('Transactions exported'), findsNothing);
     });
 
@@ -207,7 +341,7 @@ void main() {
         services: (dir) => _servicesFor(dir, fileExporter: _FailingExporter()),
       );
       await openAndTap(tester, 'Export transactions (CSV)');
-      await settle(tester);
+      await confirmExport(tester);
       expect(find.textContaining('Export failed'), findsOneWidget);
     });
   });

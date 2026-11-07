@@ -10,6 +10,7 @@ import '../../data/year_pack.dart';
 import '../../features/settings/rules_screen.dart';
 import '../../features/settings/tags_screen.dart';
 import '../../format/formatters.dart';
+import 'reports_page.dart';
 
 /// Data, security, planning preferences and device information.
 class SettingsPage extends StatelessWidget {
@@ -95,11 +96,23 @@ class SettingsPage extends StatelessWidget {
     final state = AppScope.of(context);
     final services = AppScope.servicesOf(context);
     final messenger = ScaffoldMessenger.of(context);
+    final filter = await showDialog<TransactionExportFilter>(
+      context: context,
+      builder: (_) =>
+          _TransactionExportDialog(chart: state.chart, today: state.today()),
+    );
+    if (filter == null) return;
     try {
       final outcome = await services.fileExporter.exportFile(
-        'transactions-${state.today()}.csv',
+        filter.from == null
+            ? 'transactions-${state.today()}.csv'
+            : 'transactions-${filter.from}-to-${filter.to}.csv',
         (file) => file.writeAsString(
-          exportTransactionsCsv(state.ledger.journals, state.chart),
+          exportTransactionsCsv(
+            state.ledger.journals,
+            state.chart,
+            filter: filter,
+          ),
         ),
       );
       if (outcome == ExportOutcome.cancelled) return;
@@ -499,4 +512,85 @@ String _size(int bytes) {
   }
   if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
   return '$bytes bytes';
+}
+
+/// Chooses which entries go in a transaction export (EXP 01).
+class _TransactionExportDialog extends StatefulWidget {
+  const _TransactionExportDialog({required this.chart, required this.today});
+
+  final Chart chart;
+  final LocalDate today;
+
+  @override
+  State<_TransactionExportDialog> createState() =>
+      _TransactionExportDialogState();
+}
+
+class _TransactionExportDialogState extends State<_TransactionExportDialog> {
+  RangeChoice? _period;
+  String? _accountId;
+  var _includePending = false;
+
+  TransactionExportFilter get _filter {
+    final range = _period?.dateRange(widget.today);
+    return TransactionExportFilter(
+      from: range?.start,
+      to: range?.end,
+      accountIds: {?_accountId},
+      includePending: _includePending,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      scrollable: true,
+      title: const Text('Export transactions'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DropdownButtonFormField<RangeChoice?>(
+            isExpanded: true,
+            initialValue: _period,
+            decoration: const InputDecoration(labelText: 'Period'),
+            items: [
+              const DropdownMenuItem(child: Text('All time')),
+              for (final r in RangeChoice.values)
+                DropdownMenuItem(value: r, child: Text(r.label)),
+            ],
+            onChanged: (r) => setState(() => _period = r),
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String?>(
+            isExpanded: true,
+            initialValue: _accountId,
+            decoration: const InputDecoration(labelText: 'Account'),
+            items: [
+              const DropdownMenuItem(child: Text('All accounts')),
+              for (final a in widget.chart.accounts)
+                DropdownMenuItem(value: a.id, child: Text(a.name)),
+            ],
+            onChanged: (id) => setState(() => _accountId = id),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Include pending entries'),
+            value: _includePending,
+            onChanged: (v) => setState(() => _includePending = v),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_filter),
+          child: const Text('Export'),
+        ),
+      ],
+    );
+  }
 }

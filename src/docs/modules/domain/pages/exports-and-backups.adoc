@@ -21,6 +21,8 @@ Spreadsheet applications treat a cell that starts with certain characters as a f
 * Rows are ordered by effective date, entered time and id.
 * `TransactionExportFilter` selects a date range, accounts, whether to include pending entries and whether to include corrections. By default only posted entries are exported; corrected originals and their reversals cancel out and are left out unless corrections are requested.
 
+In Settings, "Export transactions (CSV)" opens a dialog to choose a period (all time by default, or the same periods as Reports), an account (all by default) and whether to include pending entries (off by default). The defaults export the same entries as before. A chosen period appears in the file name, for example `transactions-2026-10-01-to-2026-10-31.csv`; otherwise the name uses today's date.
+
 `exportReportCsv` exports report rows. Money becomes a plain decimal, numbers, dates and booleans are written as they are, null is empty, and anything else is sanitised.
 
 == Archive manifest
