@@ -289,6 +289,14 @@ class RuleUndoResult {
   final List<String> conflicts;
 }
 
+/// Whether the entry has changed since the rules ran: it is missing, already
+/// reversed, or no longer in the applied category. Such an entry is left for
+/// the person, not undone.
+bool changedSinceRules(RuleUndoEntry entry, Journal? current, Chart chart) =>
+    current == null ||
+    current.status == JournalStatus.reversed ||
+    !_categories(current, chart).contains(entry.newCategoryId);
+
 /// Reverses an application recorded in [undo], again through corrections
 /// for posted entries. Entries edited since are reported as conflicts.
 RuleUndoResult undoRuleApplication(
@@ -304,9 +312,7 @@ RuleUndoResult undoRuleApplication(
   final conflicts = <String>[];
   for (final entry in undo.entries) {
     final current = byId[entry.newJournalId];
-    if (current == null ||
-        current.status == JournalStatus.reversed ||
-        !_categories(current, chart).contains(entry.newCategoryId)) {
+    if (current == null || changedSinceRules(entry, current, chart)) {
       conflicts.add(entry.newJournalId);
       continue;
     }

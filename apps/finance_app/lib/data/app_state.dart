@@ -435,29 +435,56 @@ class AppState extends ChangeNotifier {
     categorySources: categorySources,
   );
 
-  /// Applies confirmed rule changes as ordinary corrections and returns the
-  /// reverse changes, so the whole application can be undone.
-  Future<List<(String, String)>> applyRules(
-    RuleApplicationPreview preview,
-  ) async {
-    final undo = <(String, String)>[];
+  /// Applies confirmed rule changes as ordinary corrections and returns what
+  /// [undoRules] needs to reverse the whole application.
+  Future<RuleUndoRecord> applyRules(RuleApplicationPreview preview) async {
+    final sources = categorySources;
+    final entries = <RuleUndoEntry>[];
     for (final change in preview.changes) {
       final id = await _recategorise(
         change.journalId,
         change.toCategoryId,
         source: CategorySource.rule,
       );
-      if (id != null) undo.add((id, change.fromCategoryId));
+      if (id == null) continue;
+      entries.add(
+        RuleUndoEntry(
+          originalJournalId: change.journalId,
+          newJournalId: id,
+          previousCategoryId: change.fromCategoryId,
+          newCategoryId: change.toCategoryId,
+          previousSource: sources[change.journalId] ?? CategorySource.none,
+          ruleId: change.ruleId,
+          inPlace: id == change.journalId,
+        ),
+      );
     }
     refresh();
-    return undo;
+    return RuleUndoRecord(
+      id: newId(),
+      appliedAt: DateTime.now(),
+      entries: entries,
+    );
   }
 
-  Future<void> undoRules(List<(String, String)> undo) async {
-    for (final (journalId, categoryId) in undo) {
-      await _recategorise(journalId, categoryId, source: CategorySource.none);
+  /// Reverses [undo] and returns how many entries were left as they are
+  /// because they have changed since the rules ran.
+  Future<int> undoRules(RuleUndoRecord undo) async {
+    var leftAlone = 0;
+    for (final entry in undo.entries) {
+      if (changedSinceRules(entry, store.journal(entry.newJournalId), chart)) {
+        leftAlone++;
+        continue;
+      }
+      final id = await _recategorise(
+        entry.newJournalId,
+        entry.previousCategoryId,
+        source: entry.previousSource,
+      );
+      if (id == null) leftAlone++;
     }
     refresh();
+    return leftAlone;
   }
 
   Map<String, Object?> get _preferences =>

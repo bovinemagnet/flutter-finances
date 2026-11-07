@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:finance_app/data/app_state.dart';
 import 'package:finance_app/features/accounts/account_editor.dart';
 import 'package:finance_app/features/onboarding/onboarding_model.dart';
+import 'package:finance_app/features/transactions/transaction_form_model.dart';
 import 'package:finance_core/finance_core.dart';
 import 'package:finance_store/finance_store.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -331,6 +332,167 @@ void main() {
       );
     },
   );
+
+  group('undoing rules when an entry has changed since they ran', () {
+    final from = LocalDate(2026, 10, 1);
+
+    Money net(String category) =>
+        state.ledger.categoryNet(categoryId(category), from, today);
+
+    Future<Journal> buy(
+      String payee, {
+      JournalStatus status = JournalStatus.posted,
+    }) => state.post(
+      TransactionDraft(
+        type: TransactionType.expense,
+        accountId: 'bank',
+        amount: Money(900, aud),
+        effectiveDate: today,
+        payee: payee,
+        status: status,
+        splits: [Split(categoryId('Shopping'), Money(900, aud))],
+      ),
+    );
+
+    Future<RuleUndoRecord> applyCafeRule() async {
+      await state.saveRule(
+        CategorisationRule(
+          id: 'r1',
+          name: 'Cafes',
+          categoryId: categoryId('Dining out'),
+          merchant: 'corner cafe',
+        ),
+      );
+      return state.applyRules(state.previewRules());
+    }
+
+    Future<void> moveTo(String journalId, String category) async {
+      final journal = state.store.journal(journalId)!;
+      final form =
+          TransactionFormModel.fromJournal(state.chart, journal, today: today)
+            ..categoryId = categoryId(category)
+            ..status = journal.status;
+      await state.correct(journalId, form.toDraft());
+    }
+
+    String categoryOf(String journalId) => TransactionFormModel.fromJournal(
+      state.chart,
+      state.store.journal(journalId)!,
+      today: today,
+    ).categoryId!;
+
+    setUp(onboard);
+
+    test('leaves a posted entry moved to another category', () async {
+      await buy('Corner Cafe');
+      final undo = await applyCafeRule();
+      await moveTo(undo.entries.single.newJournalId, 'Groceries');
+
+      expect(await state.undoRules(undo), 1);
+
+      expect(net('Groceries'), Money(900, aud));
+      expect(net('Shopping'), Money.zero(aud));
+    });
+
+    test('leaves a posted entry that was deleted', () async {
+      await buy('Corner Cafe');
+      final undo = await applyCafeRule();
+      await state.correct(undo.entries.single.newJournalId, null);
+
+      expect(await state.undoRules(undo), 1);
+
+      expect(net('Shopping'), Money.zero(aud));
+    });
+
+    test('leaves a pending entry moved to another category', () async {
+      await buy('Corner Cafe', status: JournalStatus.pending);
+      final undo = await applyCafeRule();
+      final id = undo.entries.single.newJournalId;
+      await moveTo(id, 'Groceries');
+
+      expect(await state.undoRules(undo), 1);
+
+      expect(categoryOf(id), categoryId('Groceries'));
+    });
+
+    test('leaves a pending entry that was split', () async {
+      await buy('Corner Cafe', status: JournalStatus.pending);
+      final undo = await applyCafeRule();
+      final id = undo.entries.single.newJournalId;
+      await state.correct(
+        id,
+        TransactionDraft(
+          type: TransactionType.expense,
+          accountId: 'bank',
+          amount: Money(900, aud),
+          effectiveDate: today,
+          payee: 'Corner Cafe',
+          status: JournalStatus.pending,
+          splits: [
+            Split(categoryId('Dining out'), Money(400, aud)),
+            Split(categoryId('Groceries'), Money(500, aud)),
+          ],
+        ),
+      );
+
+      expect(await state.undoRules(undo), 1);
+    });
+
+    test('still undoes the others, wherever the changed one is', () async {
+      await buy('Corner Cafe');
+      await buy('Corner Cafe Annex');
+      await buy('Corner Cafe Kiosk');
+      final undo = await applyCafeRule();
+      await moveTo(undo.entries.first.newJournalId, 'Groceries');
+
+      expect(await state.undoRules(undo), 1);
+
+      expect(net('Groceries'), Money(900, aud));
+      expect(net('Shopping'), Money(1800, aud));
+      expect(net('Dining out'), Money.zero(aud));
+    });
+
+    test('reports nothing left when no entry has changed', () async {
+      await buy('Corner Cafe');
+      final undo = await applyCafeRule();
+
+      expect(await state.undoRules(undo), 0);
+
+      expect(net('Shopping'), Money(900, aud));
+    });
+
+    test('undoing twice changes nothing the second time', () async {
+      await buy('Corner Cafe', status: JournalStatus.pending);
+      final undo = await applyCafeRule();
+      final id = undo.entries.single.newJournalId;
+
+      expect(await state.undoRules(undo), 0);
+      expect(await state.undoRules(undo), 1);
+
+      expect(categoryOf(id), categoryId('Shopping'));
+    });
+
+    test('gives back how the category had been chosen', () async {
+      final bought = await buy('Corner Cafe', status: JournalStatus.pending);
+      await applyCafeRule();
+      expect(state.categorySources[bought.id], CategorySource.rule);
+
+      await state.deleteRule('r1');
+      await state.saveRule(
+        CategorisationRule(
+          id: 'r2',
+          name: 'Cafes again',
+          categoryId: categoryId('Groceries'),
+          merchant: 'corner cafe',
+        ),
+      );
+      final undo = await state.applyRules(state.previewRules());
+      expect(await state.undoRules(undo), 0);
+
+      expect(categoryOf(bought.id), categoryId('Dining out'));
+      expect(state.categorySources[bought.id], CategorySource.rule);
+    });
+  });
 
   test(
     'a what-if scenario changes the projection but never the ledger',
