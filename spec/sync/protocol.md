@@ -760,3 +760,10 @@ said at the end of a reconciliation, a positive `balanceMinor` on a card or loan
 meaning an amount owed. It is shown beside the calculated balance and nothing in
 the ledger reads it. `accountId` makes it hidden from members who cannot see a
 private account.
+
+Loan categories: `{"id", "accountId", "interestCategoryIds", "feeCategoryIds"}`,
+saved at `ownedEntityId('loanCategories', accountId)`. The two lists of category
+ids say which categories hold a loan's interest and its fees when its principal,
+interest and fees are shown apart. They change only how that breakdown is
+grouped, never a journal or a balance. `accountId` makes it hidden from members
+who cannot see a private account.

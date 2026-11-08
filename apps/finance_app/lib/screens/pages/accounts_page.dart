@@ -6,6 +6,7 @@ import '../../app/page_insets.dart';
 import '../../data/app_state.dart';
 import '../../features/accounts/account_editor.dart';
 import '../../features/accounts/holdings_screen.dart';
+import '../../features/accounts/loan_breakdown_screen.dart';
 import '../../features/plan/debt_payoff_screen.dart';
 import '../../format/formatters.dart';
 
@@ -116,6 +117,12 @@ class AccountsPage extends StatelessWidget {
                           builder: (_) => HoldingsScreen(accountId: account.id),
                         ),
                       ),
+                      'loan' => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              LoanBreakdownScreen(accountId: account.id),
+                        ),
+                      ),
                       _ => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) =>
@@ -134,6 +141,11 @@ class AccountsPage extends StatelessWidget {
                         const PopupMenuItem(
                           value: 'holdings',
                           child: Text('Holdings'),
+                        ),
+                      if (account.type == AccountType.loan)
+                        const PopupMenuItem(
+                          value: 'loan',
+                          child: Text('Principal and interest'),
                         ),
                     ],
                   ),

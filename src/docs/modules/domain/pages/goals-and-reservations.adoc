@@ -61,7 +61,7 @@ Reservations also affect other calculations: the cash forecast subtracts confirm
 
 == Loans: principal, interest and fees
 
-`summariseLoan` separates a loan account's activity in a date range into principal, interest and fees (BUD 06). Only posted-ledger journals dated within the range are considered, and the account must be of type loan or an `ArgumentError` is thrown.
+`summariseLoan` separates a loan account's activity in a date range into principal, interest, fees and other charges (BUD 06). Only posted-ledger journals dated within the range are considered, and the account must be of type loan or an `ArgumentError` is thrown.
 
 [cols="1,3",options="header"]
 |===
@@ -70,10 +70,13 @@ Reservations also affect other calculations: the cash forecast subtracts confirm
 | `principalRepaid` | Postings to the loan from journals that touch only owned accounts (transfers and their reversals). It is a cash commitment that reduces the liability and is never an expense.
 | `interest` | Postings to the supplied interest categories in journals charged to the loan. It is an expense.
 | `fees` | Postings to the supplied fee categories in journals charged to the loan. It is an expense.
+| `otherCharges` | Postings to any other category in journals charged to the loan, so that nothing charged to the loan goes unshown when its category was not chosen as interest or fees. Postings to system accounts, such as the opening balance, are not charges.
 | `outstanding` | The loan's balance as a user reads it at the end of the range
 |===
 
 Each figure comes with the journal ids behind it. A loan principal can be a budget allocation target (a `loanPrincipal` allocation, whose posted figure is the principal repaid), so it can sit in a group such as Savings without being reclassified as consumption. The code does not itself classify principal into a group; the group is chosen on the allocation. Credit cards cannot be a debt-reduction target: their purchases were already counted as spending, so a card repayment is never counted twice.
+
+In the app, a loan's menu on the Accounts page offers *Principal and interest*. It shows what is owed at the end of the chosen period (today, when the period runs past today), the principal repaid, interest and fees, and other charges when there are any. The person chooses one category for the loan's interest and one for its fees; a category chosen for one is not offered for the other. Until they choose, everything charged to the loan shows as other charges. The choice is kept for each loan as a `loanCategories` entity at `ownedEntityId('loanCategories', accountId)` and changes only how the breakdown is grouped, never a journal or a balance. The starter category *Fees and interest* holds both, so someone who wants them apart needs a second category.
 
 == See also
 
