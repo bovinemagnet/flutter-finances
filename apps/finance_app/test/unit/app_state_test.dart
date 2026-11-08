@@ -597,6 +597,68 @@ void main() {
     expect(comparison.avalanche.payoffDates[card.id], isNotNull);
   });
 
+  group('loan breakdown (BUD 06)', () {
+    Future<void> addLoan(String id) => state.saveAccount(
+      AccountEdit(
+        Account(id: id, name: 'Car loan $id', type: AccountType.loan),
+        Money(2000000, aud),
+        LocalDate(2026, 10, 1),
+      ),
+    );
+
+    test('each loan keeps its own interest and fee categories', () async {
+      await onboard();
+      await addLoan('car');
+      await addLoan('boat');
+      final charges = categoryId('Fees and interest');
+      final shopping = categoryId('Shopping');
+      await state.saveLoanCategories(
+        'car',
+        interest: {charges},
+        fees: {shopping},
+      );
+      expect(state.loanCategories('car').interest, {charges});
+      expect(state.loanCategories('car').fees, {shopping});
+      expect(state.loanCategories('boat').interest, isEmpty);
+      expect(state.loanCategories('boat').fees, isEmpty);
+    });
+
+    test('the breakdown counts charges under the chosen categories', () async {
+      await onboard();
+      await addLoan('car');
+      final charges = categoryId('Fees and interest');
+      await state.post(
+        TransactionDraft(
+          type: TransactionType.transfer,
+          accountId: 'bank',
+          counterAccountId: 'car',
+          amount: Money(50000, aud),
+          effectiveDate: LocalDate(2026, 10, 10),
+        ),
+      );
+      await state.post(
+        TransactionDraft(
+          type: TransactionType.expense,
+          accountId: 'car',
+          amount: Money(8000, aud),
+          effectiveDate: LocalDate(2026, 10, 12),
+          splits: [Split(charges, Money(8000, aud))],
+        ),
+      );
+      final october = DateRange(LocalDate(2026, 10, 1), today);
+      final before = state.loanSummary('car', october);
+      expect(before.principalRepaid, Money(50000, aud));
+      expect(before.interest, Money.zero(aud));
+      expect(before.otherCharges, Money(8000, aud));
+
+      await state.saveLoanCategories('car', interest: {charges}, fees: {});
+      final after = state.loanSummary('car', october);
+      expect(after.interest, Money(8000, aud));
+      expect(after.otherCharges, Money.zero(aud));
+      expect(after.outstanding, Money(1958000, aud));
+    });
+  });
+
   test('holdings value an investment account and propose an update', () async {
     await onboard();
     await state.saveAccount(

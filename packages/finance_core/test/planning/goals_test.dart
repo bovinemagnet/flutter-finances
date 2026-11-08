@@ -245,6 +245,42 @@ void main() {
       expect(summary.outstanding, m('19585.00'));
     });
 
+    test('charges in other categories are shown, not dropped', () {
+      final ledger = LedgerProjection(chart, [
+        opening('o2', 'loan', '20000.00'),
+        expense('i1', 'loan', 'interest', '80.00'),
+        expense('x1', 'loan', 'groceries', '12.00'),
+      ]);
+      final summary = summariseLoan(
+        ledger,
+        'loan',
+        d('2026-07-01'),
+        d('2026-07-31'),
+        interestCategoryIds: {'interest'},
+      );
+      expect(summary.interest, m('80.00'));
+      expect(summary.otherCharges, m('12.00'));
+      expect(summary.otherChargeJournalIds, ['x1']);
+    });
+
+    test('with no categories chosen every charge is an other charge', () {
+      final ledger = LedgerProjection(chart, [
+        opening('o2', 'loan', '20000.00'),
+        expense('i1', 'loan', 'interest', '80.00'),
+        expense('f1', 'loan', 'fees', '5.00'),
+      ]);
+      final summary = summariseLoan(
+        ledger,
+        'loan',
+        d('2026-07-01'),
+        d('2026-07-31'),
+      );
+      expect(summary.interest, m('0.00'));
+      expect(summary.fees, m('0.00'));
+      expect(summary.otherCharges, m('85.00'));
+      expect(summary.otherChargeJournalIds, ['i1', 'f1']);
+    });
+
     test('only loans can be summarised', () {
       expect(
         () => summariseLoan(

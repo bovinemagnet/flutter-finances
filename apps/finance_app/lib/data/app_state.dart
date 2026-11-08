@@ -1034,6 +1034,47 @@ class AppState extends ChangeNotifier {
     refresh();
   }
 
+  /// The categories that hold a loan's interest and its fees (BUD 06). Both
+  /// are empty until the user chooses them.
+  ({Set<String> interest, Set<String> fees}) loanCategories(String accountId) {
+    final record = store.entity(
+      AppEntityTypes.loanCategories,
+      ownedEntityId(AppEntityTypes.loanCategories, accountId),
+    );
+    Set<String> ids(String key) => record == null || record.deleted
+        ? const {}
+        : {...(record.json[key] as List? ?? const []).cast<String>()};
+    return (interest: ids('interestCategoryIds'), fees: ids('feeCategoryIds'));
+  }
+
+  Future<void> saveLoanCategories(
+    String accountId, {
+    required Set<String> interest,
+    required Set<String> fees,
+  }) async {
+    final id = ownedEntityId(AppEntityTypes.loanCategories, accountId);
+    await _put(AppEntityTypes.loanCategories, id, {
+      'id': id,
+      'accountId': accountId,
+      'interestCategoryIds': interest.toList(),
+      'feeCategoryIds': fees.toList(),
+    });
+    refresh();
+  }
+
+  /// A loan's principal repaid, interest, fees and other charges in [range].
+  LoanSummary loanSummary(String accountId, DateRange range) {
+    final categories = loanCategories(accountId);
+    return summariseLoan(
+      ledger,
+      accountId,
+      range.start,
+      range.end,
+      interestCategoryIds: categories.interest,
+      feeCategoryIds: categories.fees,
+    );
+  }
+
   /// Avalanche, snowball and minimum-only payoff plans for every card and
   /// loan with an amount owed and recorded terms; null when there are none.
   DebtPayoffComparison? debtPayoff({Money? extraMonthly}) {

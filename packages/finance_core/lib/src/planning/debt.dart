@@ -14,9 +14,11 @@ class LoanSummary {
     required this.principalRepaid,
     required this.interest,
     required this.fees,
+    required this.otherCharges,
     required this.principalJournalIds,
     required this.interestJournalIds,
     required this.feeJournalIds,
+    required this.otherChargeJournalIds,
   });
 
   final String accountId;
@@ -33,9 +35,14 @@ class LoanSummary {
 
   /// Fees charged to the loan; an expense.
   final Money fees;
+
+  /// Other categories charged to the loan, so that nothing charged to it
+  /// goes unshown when its category is neither interest nor fees.
+  final Money otherCharges;
   final List<String> principalJournalIds;
   final List<String> interestJournalIds;
   final List<String> feeJournalIds;
+  final List<String> otherChargeJournalIds;
 }
 
 /// Separates a loan's activity in [from]..[to] into principal, interest
@@ -43,7 +50,8 @@ class LoanSummary {
 ///
 /// Principal repaid counts postings to the loan in posted journals that only
 /// touch owned accounts (transfers and their reversals). Interest and fees
-/// are postings to the given categories in journals charged to the loan.
+/// are postings to the given categories in journals charged to the loan, and
+/// postings there to any other category are other charges.
 LoanSummary summariseLoan(
   LedgerProjection ledger,
   String loanAccountId,
@@ -60,9 +68,11 @@ LoanSummary summariseLoan(
   var principal = zero;
   var interest = zero;
   var fees = zero;
+  var other = zero;
   final principalIds = <String>[];
   final interestIds = <String>[];
   final feeIds = <String>[];
+  final otherIds = <String>[];
   for (final journal in ledger.journals) {
     if (!journal.status.inPostedLedger ||
         journal.effectiveDate < from ||
@@ -83,6 +93,9 @@ LoanSummary summariseLoan(
       } else if (feeCategoryIds.contains(posting.ledgerAccountId)) {
         fees += posting.amount;
         if (!feeIds.contains(journal.id)) feeIds.add(journal.id);
+      } else if (chart.hasCategory(posting.ledgerAccountId)) {
+        other += posting.amount;
+        if (!otherIds.contains(journal.id)) otherIds.add(journal.id);
       }
     }
   }
@@ -92,8 +105,10 @@ LoanSummary summariseLoan(
     principalRepaid: principal,
     interest: interest,
     fees: fees,
+    otherCharges: other,
     principalJournalIds: principalIds,
     interestJournalIds: interestIds,
     feeJournalIds: feeIds,
+    otherChargeJournalIds: otherIds,
   );
 }
