@@ -48,6 +48,21 @@ RuleSubject subject({
 
 void main() {
   group('rule conditions (AUTO 01)', () {
+    test('a merchant with no words left in it matches nothing', () {
+      final noPayee = RuleSubject(accountId: 'bank', amount: m('5.00'));
+      expect(rule('r', merchant: '').matches(noPayee), isFalse);
+      expect(rule('r', merchant: '   ').matches(noPayee), isFalse);
+      expect(rule('r', merchant: '***').matches(noPayee), isFalse);
+      expect(rule('r', merchant: '').matches(subject()), isFalse);
+    });
+
+    test('a merchant of only digits is still a word to match', () {
+      expect(
+        rule('r', merchant: '1234').matches(subject(merchant: '1234')),
+        isTrue,
+      );
+    });
+
     test(
       'match normalised merchant words, description, account, amount and tags',
       () {

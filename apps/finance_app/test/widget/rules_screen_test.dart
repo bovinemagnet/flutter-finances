@@ -44,8 +44,10 @@ void main() {
     await tester.pump();
   }
 
-  /// Applies a rule through the screen, leaving its Undo on offer.
-  Future<void> applyRule(WidgetTester tester) async {
+  Future<void> pumpScreen(
+    WidgetTester tester,
+    Future<void> Function() prepare,
+  ) async {
     await tester.runAsync(() async {
       final store = await FinanceStore.create(
         dir,
@@ -64,6 +66,20 @@ void main() {
         );
       }
       state = AppState(store, today: () => LocalDate(2026, 10, 19));
+      await prepare();
+    });
+    await tester.pumpWidget(
+      AppScope(
+        state: state,
+        services: testServices(),
+        child: const MaterialApp(home: RulesScreen()),
+      ),
+    );
+  }
+
+  /// Applies a rule through the screen, leaving its Undo on offer.
+  Future<void> applyRule(WidgetTester tester) async {
+    await pumpScreen(tester, () async {
       await state.post(cafe('shopping'));
       await state.saveRule(
         CategorisationRule(
@@ -74,13 +90,6 @@ void main() {
         ),
       );
     });
-    await tester.pumpWidget(
-      AppScope(
-        state: state,
-        services: testServices(),
-        child: const MaterialApp(home: RulesScreen()),
-      ),
-    );
     await tester.tap(find.text('Apply to existing'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Apply'));
@@ -108,7 +117,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('1 of 1 entries had changed, so they were left as they are'),
+      find.text('1 of 1 entry had changed, so it was left as it is'),
       findsOneWidget,
     );
   });
@@ -120,7 +129,7 @@ void main() {
     await settleWrites(tester);
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('left as they are'), findsNothing);
+    expect(find.textContaining('left as'), findsNothing);
     expect(
       state.ledger.categoryNet(
         'shopping',
@@ -129,5 +138,92 @@ void main() {
       ),
       Money(900, Currency.aud),
     );
+  });
+
+  group('the message about entries left as they are', () {
+    test('matches how many there were', () {
+      expect(
+        rulesLeftAloneMessage(1, 3),
+        '1 of 3 entries had changed, so it was left as it is',
+      );
+      expect(
+        rulesLeftAloneMessage(2, 3),
+        '2 of 3 entries had changed, so they were left as they are',
+      );
+      expect(
+        rulesLeftAloneMessage(1, 1),
+        '1 of 1 entry had changed, so it was left as it is',
+      );
+    });
+  });
+
+  group('adding a rule', () {
+    Future<void> openNewRule(WidgetTester tester) async {
+      await pumpScreen(tester, () async {});
+      await tester.tap(find.text('New rule'));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> chooseCategory(WidgetTester tester) async {
+      await tester.tap(find.byType(DropdownButtonFormField<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('dining').last);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> enterMerchant(WidgetTester tester, String text) async {
+      await tester.enterText(find.byType(TextField), text);
+      await tester.pump();
+    }
+
+    bool canSave(WidgetTester tester) =>
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
+            .onPressed !=
+        null;
+
+    testWidgets('needs a merchant as well as a category', (tester) async {
+      await openNewRule(tester);
+      await chooseCategory(tester);
+      expect(canSave(tester), isFalse);
+    });
+
+    testWidgets('needs a category as well as a merchant', (tester) async {
+      await openNewRule(tester);
+      await enterMerchant(tester, 'Corner Cafe');
+      expect(canSave(tester), isFalse);
+    });
+
+    testWidgets('needs a merchant with a word a rule can match', (
+      tester,
+    ) async {
+      await openNewRule(tester);
+      await chooseCategory(tester);
+      await enterMerchant(tester, '   ');
+      expect(canSave(tester), isFalse);
+      await enterMerchant(tester, '***');
+      expect(canSave(tester), isFalse);
+    });
+
+    testWidgets('can be saved once both are filled in, in either order', (
+      tester,
+    ) async {
+      await openNewRule(tester);
+      await chooseCategory(tester);
+      await enterMerchant(tester, 'Corner Cafe');
+      expect(canSave(tester), isTrue);
+
+      await tester.tap(find.text('Save'));
+      await settleWrites(tester);
+      await tester.pumpAndSettle();
+      expect(state.rules.single.merchant, 'Corner Cafe');
+      expect(state.rules.single.categoryId, 'dining');
+
+      await tester.tap(find.text('New rule'));
+      await tester.pumpAndSettle();
+      await enterMerchant(tester, 'Station Kiosk');
+      await chooseCategory(tester);
+      expect(canSave(tester), isTrue);
+    });
   });
 }
