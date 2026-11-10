@@ -34,7 +34,7 @@ State is held in `AppState`, a `ChangeNotifier`, and exposed to the widget tree 
 The product requirements document proposes Riverpod as the state management choice, subject to a prototype. The plain notifier was chosen instead as the simpler option: the application has a single workspace-wide state object and the framework's own `InheritedNotifier` is enough to share it. Riverpod is not a dependency of `finance_app`.
 ====
 
-Every write goes through `FinanceStore`, which saves the change and its outbox command in one transaction; `AppState` then drops its derived caches (the `Chart` of accounts and categories and the `LedgerProjection`) and notifies listeners. Figures are always recomputed from journals and persisted plans, never stored as editable balances. `AppState.refresh()` is called after anything outside the class changes the store, such as a sync pull. `AppState.unsyncedCount` and `isUnsynced` expose outbox state so screens can show the unsynced indicator.
+Every write goes through `FinanceStore`, which saves the change and its outbox command in one transaction; `AppState` then drops its derived caches (the `Chart` of accounts and categories and the `LedgerProjection`) and notifies listeners. Figures are always recomputed from journals and persisted plans, never stored as editable balances. `AppState.refresh()` is called after anything outside the class changes the store, such as a sync pull. `AppState.unsyncedCount` and `isUnsynced` expose outbox state so screens can show the unsynced indicator, but only when `AppState.syncsWithServer` is true, so a device-only workspace never shows it.
 
 == Theme and fonts
 

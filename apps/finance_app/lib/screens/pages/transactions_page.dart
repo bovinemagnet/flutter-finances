@@ -59,7 +59,7 @@ class TransactionsPage extends StatelessWidget {
               j.type == TransactionType.openingBalance ||
               j.status == JournalStatus.reversed,
           hasReceipt: receiptJournalIds.contains(j.id),
-          unsynced: state.isUnsynced('journal', j.id),
+          unsynced: state.syncsWithServer && state.isUnsynced('journal', j.id),
         ),
     ];
     Future<void> categorise(List<String> ids, String categoryId) async {

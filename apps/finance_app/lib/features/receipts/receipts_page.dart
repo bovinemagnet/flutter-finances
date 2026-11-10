@@ -155,10 +155,11 @@ class _ReceiptsPageState extends State<ReceiptsPage> {
                               ? 'Not finished being read'
                               : extractionLabels[r.extractionState]!,
                           linked.contains(r.id) ? 'Matched' : 'Not matched',
-                          if (state.isUnsynced(
-                            ReceiptEntityTypes.receipt,
-                            r.id,
-                          ))
+                          if (state.syncsWithServer &&
+                              state.isUnsynced(
+                                ReceiptEntityTypes.receipt,
+                                r.id,
+                              ))
                             'Saved on this device only',
                         ].join(' · '),
                       ),

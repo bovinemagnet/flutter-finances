@@ -42,6 +42,10 @@ class AppState extends ChangeNotifier {
 
   int get unsyncedCount => store.pendingCommandCount;
 
+  /// Whether changes go to a server. When they do not, nothing is shown as
+  /// waiting to sync, since nothing ever will (#19).
+  bool get syncsWithServer => settings.syncMode == SyncMode.synced;
+
   /// Rises with every saved command. A sync never lowers it; undoing the
   /// newest action does.
   int get savedCommandMark => store.outboxHighWaterMark;

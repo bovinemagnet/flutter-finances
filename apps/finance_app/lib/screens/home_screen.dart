@@ -142,7 +142,10 @@ class _HomeScreenState extends State<HomeScreen> {
         onSelect: (d) => setState(() => _selected = d),
         onAdd: _add,
         syncStatus:
-            widget.syncStatus ?? _UnsyncedBadge(count: state.unsyncedCount),
+            widget.syncStatus ??
+            (state.syncsWithServer
+                ? _UnsyncedBadge(count: state.unsyncedCount)
+                : null),
         body: KeyedSubtree(key: ValueKey(_selected), child: body),
       ),
     );

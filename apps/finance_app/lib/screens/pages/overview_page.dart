@@ -395,7 +395,7 @@ class _YourMoney extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
           child: Text(
             'Calculated from your entries'
-            '${state.unsyncedCount == 0 ? '' : ' · ${state.unsyncedCount} changes not yet synced'}',
+            '${!state.syncsWithServer || state.unsyncedCount == 0 ? '' : ' · ${state.unsyncedCount} changes not yet synced'}',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ),

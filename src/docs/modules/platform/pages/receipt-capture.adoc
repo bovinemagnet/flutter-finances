@@ -94,7 +94,7 @@ Both engines produce an `OcrResult`, which the shared parser in `finance_core` t
 * A receipt that needs review can be read again, for example from cloud text, which replaces the suggestions and leaves confirmed values alone. A reviewed receipt is not read again, because that could offer a second expense for the same purchase.
 * Extraction never creates an expense by itself. The person reviews the suggested fields and chooses to create an expense or attach the receipt to an existing transaction (REC 06, OCR 04, A07).
 
-The Receipts page lists receipts with their state ("Saved, waiting to be read", "Reading", "Needs review", "Reviewed" or "Could not be read"), whether they are matched, and whether they are saved on this device only. It can be filtered to unmatched receipts and to receipts that could not be read.
+The Receipts page lists receipts with their state ("Saved, waiting to be read", "Reading", "Needs review", "Reviewed" or "Could not be read"), whether they are matched, and, for a workspace that syncs, whether they are saved on this device only. It can be filtered to unmatched receipts and to receipts that could not be read.
 
 If the device runs out of storage while a receipt is written, nothing is left half saved and the application says "Not saved: this device is out of storage. Free some space and try again." Any other write failure shows "Not saved: the receipt could not be written to storage."
 
