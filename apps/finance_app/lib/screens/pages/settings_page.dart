@@ -380,9 +380,8 @@ class SettingsPage extends StatelessWidget {
                   subtitle: Text(
                     'Receipts ${_size(report.originalBytes)}, readable copies '
                     '${_size(report.derivativeBytes)}, previews ${_size(report.previewBytes)}, '
-                    'database ${_size(report.databaseBytes)}. '
-                    '${_size(report.unsyncedBytes)} is not yet backed up to the server '
-                    'and is never removed.',
+                    'database ${_size(report.databaseBytes)}.'
+                    '${state.syncsWithServer ? ' ${_size(report.unsyncedBytes)} is not yet backed up to the server and is never removed.' : ''}',
                   ),
                 ),
                 if (report.evictableBytes > 0)

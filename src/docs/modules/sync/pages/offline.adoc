@@ -8,7 +8,7 @@ A receipt and an expense entered on a disconnected phone appear immediately on t
 
 == How it works
 
-* *Local commit.* The user action and its outbox command are saved in one local transaction and the local projection updates at once with an unsynced indicator. In local-only mode the same validation applies and no network operation is needed (SYNC 01).
+* *Local commit.* The user action and its outbox command are saved in one local transaction and the local projection updates at once with an unsynced indicator. In local-only mode the same validation applies, no network operation is needed and no unsynced indicator is shown, because nothing is waiting to sync (SYNC 01).
 * *Separate uploads.* Receipt images are uploaded independently of financial commands, with checksums, retry, bounded concurrency and backoff. Metadata may arrive first and other devices then show "Image pending". Upload completion cannot create a second receipt (SYNC 05).
 * *Safe retry.* A command whose response was lost is retried with the same `commandId` and returns the original result (A09).
 * *Conflicts.* Two devices changing the same amount keep both proposals; the user resolves them into one validated, balanced correction (A10).
