@@ -143,13 +143,15 @@ class _TransactionListState extends State<TransactionList> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          child: Semantics(
-            label: 'Search transactions',
-            textField: true,
-            child: SearchBar(
-              hintText: 'Search payee, notes, amount, tag or name',
-              leading: const Icon(Icons.search),
-              onChanged: (q) => setState(() => _query = q.trim()),
+          // One node for screen readers: the field itself, with its name.
+          child: MergeSemantics(
+            child: Semantics(
+              label: 'Search transactions',
+              child: SearchBar(
+                hintText: 'Search payee, notes, amount, tag or name',
+                leading: const Icon(Icons.search),
+                onChanged: (q) => setState(() => _query = q.trim()),
+              ),
             ),
           ),
         ),

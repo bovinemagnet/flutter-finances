@@ -84,13 +84,15 @@ class _ReceiptsPageState extends State<ReceiptsPage> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Semantics(
-            label: 'Search receipts',
-            textField: true,
-            child: SearchBar(
-              hintText: 'Search merchant, amount, notes or receipt text',
-              leading: const Icon(Icons.search),
-              onChanged: (q) => setState(() => _query = q.trim()),
+          // One node for screen readers: the field itself, with its name.
+          child: MergeSemantics(
+            child: Semantics(
+              label: 'Search receipts',
+              child: SearchBar(
+                hintText: 'Search merchant, amount, notes or receipt text',
+                leading: const Icon(Icons.search),
+                onChanged: (q) => setState(() => _query = q.trim()),
+              ),
             ),
           ),
         ),
