@@ -98,7 +98,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   }
 
   Widget _steps() {
+    // Step numbers grow with the text, so their circles must grow too.
+    final circle = MediaQuery.textScalerOf(context).scale(24).clamp(24.0, 80.0);
     return Stepper(
+      stepIconWidth: circle,
+      stepIconHeight: circle,
       currentStep: _step,
       onStepTapped: (i) => setState(() => _step = i),
       onStepContinue: _finishing ? null : _next,

@@ -1,6 +1,7 @@
 import 'package:finance_app/app/shell.dart';
 import 'package:finance_app/app/theme.dart';
 import 'package:finance_app/features/budget/budget_setup_form.dart';
+import 'package:finance_app/features/onboarding/onboarding_flow.dart';
 import 'package:finance_app/features/onboarding/onboarding_model.dart';
 import 'package:finance_app/features/transactions/transaction_form.dart';
 import 'package:finance_app/features/transactions/transaction_form_model.dart';
@@ -236,6 +237,73 @@ void main() {
       );
       for (final label in ['Expense', 'Income', 'Transfer', 'Refund']) {
         expect(lines(tester, label), 1, reason: label);
+      }
+    });
+  }
+
+  // 200% text on the iPhone SE and the 11-inch iPad Pro where set-up clipped.
+  for (final size in [const Size(375, 667), const Size(834, 1194)]) {
+    final wide = size.width.round();
+
+    testWidgets('set-up step numbers fit their circles at 200%, $wide wide', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        size,
+        OnboardingFlow(
+          model: OnboardingModel(today: LocalDate(2026, 11, 4)),
+          onFinish: (_) async {},
+        ),
+        scale: 2,
+      );
+      for (var step = 1; step <= 5; step++) {
+        // On the phone the later steps start below the screen.
+        await tester.scrollUntilVisible(
+          find.text('$step'),
+          100,
+          scrollable: find
+              .descendant(
+                of: find.byType(Stepper),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        expectWordsWhole(tester, '$step');
+      }
+    });
+
+    testWidgets('budget groups keep names and shares whole at 200%, '
+        '$wide wide', (tester) async {
+      final model = OnboardingModel(today: LocalDate(2026, 11, 4));
+      await pump(
+        tester,
+        size,
+        Scaffold(
+          body: SingleChildScrollView(
+            child: Stepper(
+              physics: const NeverScrollableScrollPhysics(),
+              controlsBuilder: (_, _) => const SizedBox(),
+              steps: [
+                Step(
+                  title: const Text('Budget'),
+                  isActive: true,
+                  content: BudgetSetupForm(
+                    model: model,
+                    payAccounts: const [],
+                    onChanged: () {},
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        scale: 2,
+      );
+      for (final group in defaultGroups) {
+        expectWordsWhole(tester, group.name);
+        final share = '${model.shares[group.id]! ~/ 100}%';
+        expect(lines(tester, share), 1, reason: share);
       }
     });
   }

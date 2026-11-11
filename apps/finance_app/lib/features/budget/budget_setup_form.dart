@@ -144,28 +144,27 @@ class _BudgetSetupFormState extends State<BudgetSetupForm> {
           ),
         ),
         if (model.budgetMode == BudgetMode.groups) ...[
-          for (final group in defaultGroups)
+          // Names and shares sit above their sliders so that, at large text
+          // sizes, names wrap only between words and shares stay on one line.
+          for (final group in defaultGroups) ...[
+            const SizedBox(height: 8),
             Row(
               children: [
-                SizedBox(width: 120, child: Text(group.name)),
-                Expanded(
-                  child: Slider(
-                    value: (model.shares[group.id]! / 100).toDouble(),
-                    max: 100,
-                    divisions: 20,
-                    label: '${model.shares[group.id]! ~/ 100}%',
-                    semanticFormatterCallback: (v) =>
-                        '${group.name} ${v.round()} percent',
-                    onChanged: (v) =>
-                        _change(() => model.shares[group.id] = v.round() * 100),
-                  ),
-                ),
-                SizedBox(
-                  width: 48,
-                  child: Text('${model.shares[group.id]! ~/ 100}%'),
-                ),
+                Expanded(child: Text(group.name)),
+                Text('${model.shares[group.id]! ~/ 100}%'),
               ],
             ),
+            Slider(
+              value: (model.shares[group.id]! / 100).toDouble(),
+              max: 100,
+              divisions: 20,
+              label: '${model.shares[group.id]! ~/ 100}%',
+              semanticFormatterCallback: (v) =>
+                  '${group.name} ${v.round()} percent',
+              onChanged: (v) =>
+                  _change(() => model.shares[group.id] = v.round() * 100),
+            ),
+          ],
           if (model.shareError != null)
             Text(
               model.shareError!,
